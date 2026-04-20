@@ -1,10 +1,14 @@
-# Використовуємо легкий nginx для роздачі статичних файлів
-FROM nginx:alpine
+FROM python:3.12-slim
 
-# Копіюємо наш index.html в nginx
-COPY index.html /usr/share/nginx/html/index.html
+WORKDIR /app
 
-# Відкриваємо порт 80
-EXPOSE 80
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# nginx запускається автоматично
+COPY . .
+
+RUN mkdir -p uploads
+
+EXPOSE 5500
+
+CMD ["python", "api.py"]
