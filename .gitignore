@@ -8,6 +8,9 @@ __pycache__/
 *.db
 *.sqlite
 *.sqlite3
+*.db-shm
+*.db-wal
+data/
 
 # Uploads (user files)
 uploads/
