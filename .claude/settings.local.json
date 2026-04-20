@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n \"innerHTML\" /c/Users/ab/Documents/reimbursement-app/js/*.js)",
+      "Bash(sqlite3 local.db \"SELECT c.name, COUNT\\(r.id\\) as cnt, SUM\\(r.remainder\\) as total FROM records r LEFT JOIN companies c ON r.company_id = c.id WHERE r.is_archived=0 AND r.is_deleted=0 AND r.remainder > 0 GROUP BY r.company_id ORDER BY total DESC;\")"
+    ]
+  }
+}

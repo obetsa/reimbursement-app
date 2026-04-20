@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reimbursement App</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<!-- ── LOADING ── -->
+<div class="loading-overlay" id="loading-overlay">
+  <div class="spinner"></div>
+  <div class="loading-text" data-i18n="loading.text">Завантаження...</div>
+</div>
+
+
+<!-- ── AUTH SCREEN ── -->
+<div class="auth-screen hidden" id="auth-screen">
+  <div class="auth-box">
+    <div class="auth-logo">
+      <div class="auth-logo-icon">💳</div>
+      <div>
+        <div class="auth-logo-text" data-i18n="auth.app_name">Reimbursement App</div>
+        <div class="auth-logo-sub" data-i18n="auth.app_sub">Управління витратами</div>
+      </div>
+    </div>
+
+    <!-- TODO: Google OAuth — додати кнопку "Sign in with Google" тут -->
+
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tab-login" onclick="switchAuthTab('login')" data-i18n="auth.login">Увійти</button>
+      <button class="auth-tab" id="tab-register" onclick="switchAuthTab('register')" data-i18n="auth.register">Реєстрація</button>
+    </div>
+
+    <div class="auth-error" id="auth-error"></div>
+
+    <div class="auth-form">
+      <div class="form-group" id="auth-name-group" style="display:none">
+        <label class="form-label" data-i18n="auth.name">Ім'я</label>
+        <input class="form-input" type="text" id="auth-name" data-i18n-placeholder="auth.name_placeholder" onkeydown="if(event.key==='Enter')handleAuth()">
+      </div>
+      <div class="form-group">
+        <label class="form-label" data-i18n="auth.email">Email <span class="required">*</span></label>
+        <input class="form-input" type="email" id="auth-email" placeholder="email@example.com" onkeydown="if(event.key==='Enter')handleAuth()">
+      </div>
+      <div class="form-group">
+        <label class="form-label" data-i18n="auth.password">Пароль <span class="required">*</span></label>
+        <input class="form-input" type="password" id="auth-password" placeholder="••••••••" onkeydown="if(event.key==='Enter')handleAuth()">
+      </div>
+      <button class="auth-submit" id="auth-submit-btn" onclick="handleAuth()" data-i18n="auth.login_btn">Увійти</button>
+    </div>
+  </div>
+</div>
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-mark">
+      <div class="logo-icon">💳</div>
+      <div>
+        <div class="logo-text">Reimbursement</div>
+        <div class="logo-sub">App</div>
+      </div>
+    </div>
+  </div>
+
+  <button class="sidebar-new-btn" onclick="openModal()">
+    <div class="plus">+</div>
+    <span data-i18n="nav.new_record">Новий запис</span>
+  </button>
+
+  <nav class="sidebar-nav">
+    <div class="nav-item active" onclick="showPage('dashboard', this)">
+      <div class="nav-icon">🏠</div>
+      <span data-i18n="nav.dashboard">Dashboard</span>
+    </div>
+    <div class="nav-item" onclick="showPageDocuments(this)">
+      <div class="nav-icon">📄</div>
+      <span data-i18n="nav.documents">Документи</span>
+      <span class="nav-badge" id="docs-count">0</span>
+    </div>
+    <div class="nav-item" onclick="showPage('trash', this)">
+      <div class="nav-icon">🗑️</div>
+      <span data-i18n="nav.trash">Корзина</span>
+      <span class="nav-badge" id="trash-count">0</span>
+    </div>
+
+    <div class="nav-divider"></div>
+
+    <div class="nav-section">Google Drive</div>
+    <div class="nav-item" onclick="syncNow()">
+      <div class="nav-icon">☁️</div>
+      <span data-i18n="nav.sync">Sync now</span>
+    </div>
+    <div class="nav-item" onclick="showPage('inbox', this)">
+      <div class="nav-icon">📥</div>
+      <span data-i18n="nav.inbox">Import Inbox</span>
+      <span class="nav-badge" id="inbox-count">0</span>
+    </div>
+    <div class="nav-item" onclick="showPage('unprocessed', this)">
+      <div class="nav-icon">📂</div>
+      <span data-i18n="nav.unprocessed">Unprocessed Imports</span>
+    </div>
+
+    <div class="nav-divider"></div>
+
+    <div class="nav-item" onclick="showPage('settings', this)">
+      <div class="nav-icon">⚙️</div>
+      <span data-i18n="nav.settings">Налаштування</span>
+    </div>
+  </nav>
+
+  <div class="sidebar-bottom">
+    <div class="user-card" onclick="showLogoutMenu()">
+      <div class="user-avatar" id="sidebar-avatar">?</div>
+      <div style="flex:1;min-width:0">
+        <div class="user-name" id="sidebar-email" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</div>
+        <div class="user-role" style="display:flex;align-items:center;gap:5px">
+          <div class="sync-indicator" id="sync-dot"></div>
+          <span id="sync-status-text" data-i18n="sidebar.online">Онлайн</span>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-ghost" style="width:100%;margin-top:6px;font-size:12px;justify-content:center" onclick="signOut()"> <span data-i18n="sidebar.logout">↩ Вийти</span> </button>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<main class="main">
+
+  <!-- ── DASHBOARD ── -->
+  <div id="page-dashboard" class="dashboard active">
+    <div class="topbar">
+      <div class="topbar-title" data-i18n="nav.dashboard">Dashboard</div>
+      <div class="topbar-actions">
+        <button class="btn btn-ghost" onclick="openModal()" data-i18n="nav.new_record">+ Новий запис</button>
+      </div>
+    </div>
+    <div class="content">
+
+      <div class="dash-hero">
+        <div>
+          <div class="dash-hero-label" data-i18n="dash.total_label">До повернення загалом</div>
+          <div class="dash-hero-amount"><span>€</span>—</div>
+          <div class="dash-hero-sub">—</div>
+        </div>
+      </div>
+
+      <div class="dash-stats">
+        <div class="stat-card stat-card-clickable" onclick="filterByStatusDash('waiting')">
+          <div class="stat-label">
+            <div class="stat-dot" style="background:var(--yellow)"></div>
+            <span data-i18n="dash.stat.waiting">Очікують повернення</span>
+          </div>
+          <div class="stat-value">0</div>
+          <div class="stat-sub" data-i18n="dash.records">записів</div>
+        </div>
+        <div class="stat-card stat-card-clickable" onclick="filterByStatusDash('partial')">
+          <div class="stat-label">
+            <div class="stat-dot" style="background:var(--accent)"></div>
+            <span data-i18n="dash.stat.partial">Частково повернені</span>
+          </div>
+          <div class="stat-value">0</div>
+          <div class="stat-sub" data-i18n="dash.records">записів</div>
+        </div>
+        <div class="stat-card stat-card-clickable" onclick="filterByStatusDash('done')">
+          <div class="stat-label">
+            <div class="stat-dot" style="background:var(--green)"></div>
+            <span data-i18n="dash.stat.done">Повністю повернені</span>
+          </div>
+          <div class="stat-value">0</div>
+          <div class="stat-sub" data-i18n="dash.records">записів</div>
+        </div>
+        <div class="stat-card stat-card-clickable" onclick="filterByStatusDash('no-return')">
+          <div class="stat-label">
+            <div class="stat-dot" style="background:var(--text3)"></div>
+            <span data-i18n="dash.stat.no_return">Не потребує повернення</span>
+          </div>
+          <div class="stat-value">0</div>
+          <div class="stat-sub" data-i18n="dash.records">записів</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">
+            <div class="stat-dot" style="background:var(--text3)"></div>
+            <span data-i18n="dash.stat.unsynced">Не синхронізовані</span>
+          </div>
+          <div class="stat-value">0</div>
+          <div class="stat-sub" data-i18n="dash.files">файлів</div>
+        </div>
+      </div>
+
+      <div class="dash-grid">
+        <!-- Companies -->
+        <div class="card">
+          <div class="section-header">
+            <div class="section-title" data-i18n="dash.by_companies">По компаніях</div>
+          </div>
+          <div id="company-list"></div>
+        </div>
+
+        <!-- Recent -->
+        <div class="card">
+          <div class="section-header">
+            <div class="section-title" data-i18n="dash.recent">Останні записи</div>
+            <a class="section-link" onclick="showPage('documents', document.querySelector('[onclick*=documents]'))" data-i18n="dash.all">Всі →</a>
+          </div>
+          <div id="recent-records-list">
+            <div style="text-align:center;padding:24px;color:var(--text3);font-size:13px" data-i18n="loading.text">Завантаження...</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── DOCUMENTS ── -->
+  <div id="page-documents" class="documents-page">
+    <div class="topbar">
+      <div class="topbar-title" data-i18n="nav.documents">Документи</div>
+      <div class="topbar-actions">
+        <button class="btn btn-ghost" onclick="openExportModal()" data-i18n="docs.export">↓ Експорт</button>
+        <button class="btn btn-primary" onclick="openModal()" data-i18n="nav.new_record">+ Новий запис</button>
+      </div>
+    </div>
+    <div class="content">
+
+      <div class="filters-bar">
+        <div class="search-wrap">
+          <span class="search-icon">🔍</span>
+          <input class="search-input" type="text" id="docs-search" oninput="filterDocs(this.value)" data-i18n-placeholder="docs.search">
+        </div>
+        <select class="filter-select" id="docs-filter-status" onchange="filterByStatus(this.value)">
+          <option value="" data-i18n="docs.all_statuses">Всі статуси</option>
+          <option value="waiting" data-i18n="status.waiting_full">⏳ Очікує повернення коштів</option>
+          <option value="partial" data-i18n="status.partial_full">🔄 Частково повернуто</option>
+          <option value="done" data-i18n="status.done_full">✔️ Повністю повернуто</option>
+          <option value="no-return" data-i18n="status.no_return_full">➖ Не потребує повернення</option>
+          <option value="archived" data-i18n="status.archived_full">🗄️ Архівовано</option>
+        </select>
+        <select class="filter-select" id="docs-filter-company" onchange="filterByCompany(this.value)">
+          <option value="" data-i18n="docs.all_companies">Всі компанії</option>
+        </select>
+        <select class="filter-select" id="docs-filter-paytype" onchange="filterByPayType(this.value)">
+          <option value="" data-i18n="docs.pay_type">Тип оплати</option>
+          <option value="private" data-i18n="docs.pay_private">💼 Приватна</option>
+          <option value="company" data-i18n="docs.pay_company">🏢 Фірмова картка</option>
+        </select>
+        <select class="filter-select" id="sort-select" onchange="sortDocs(this.value)">
+          <option value="date-desc" data-i18n="docs.sort_date_desc">↓ Дата витрати</option>
+          <option value="date-asc" data-i18n="docs.sort_date_asc">↑ Дата витрати</option>
+          <option value="amount-desc" data-i18n="docs.sort_amount_desc">↓ Сума</option>
+          <option value="amount-asc" data-i18n="docs.sort_amount_asc">↑ Сума</option>
+          <option value="company" data-i18n="docs.sort_company">Компанія</option>
+          <option value="status" data-i18n="docs.sort_status">Статус</option>
+        </select>
+        <div class="view-toggle">
+          <button class="view-btn active" id="view-table-btn" onclick="setView('table')" data-i18n-title="view.table">☰</button>
+          <button class="view-btn" id="view-cards-btn" onclick="setView('cards')" data-i18n-title="view.cards">⊞</button>
+        </div>
+      </div>
+
+      <!-- TABLE -->
+      <div id="table-view" class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th onclick="sortDocs('date-desc')" data-i18n="table.date">Дата <span class="sort-icon">↕</span></th>
+              <th data-i18n="table.title">Назва</th>
+              <th data-i18n="table.company">Компанія</th>
+              <th onclick="sortDocs('amount-desc')" data-i18n="table.amount">Сума <span class="sort-icon">↕</span></th>
+              <th data-i18n="table.pay_type">Тип оплати</th>
+              <th data-i18n="table.status">Статус</th>
+              <th onclick="sortDocs('amount-desc')" data-i18n="table.remainder">Залишок <span class="sort-icon">↕</span></th>
+              <th title="Вкладення">📎</th>
+              <th style="width:100px"></th>
+            </tr>
+          </thead>
+          <tbody id="docs-table-body">
+            <!-- filled by JS -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- CARDS -->
+      <div id="cards-view" class="cards-grid" style="display:none">
+        <!-- filled by JS -->
+      </div>
+
+      <!-- ARCHIVE SECTION -->
+      <div id="archive-section" style="display:none;margin-top:32px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+          <div style="flex:1;height:1px;background:var(--border)"></div>
+          <span style="font-size:13px;font-weight:600;color:var(--text3);white-space:nowrap">🗄️ <span data-i18n="nav.archive">Архів</span> &nbsp;<span id="archive-section-count" style="font-weight:400"></span></span>
+          <div style="flex:1;height:1px;background:var(--border)"></div>
+        </div>
+        <div id="table-view-archive" class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th data-i18n="table.date">Дата</th><th data-i18n="table.title">Назва</th><th data-i18n="table.company">Компанія</th><th data-i18n="table.amount">Сума</th><th data-i18n="table.pay_type">Тип оплати</th><th data-i18n="table.status">Статус</th><th data-i18n="table.remainder">Залишок</th><th>📎</th><th style="width:80px"></th>
+              </tr>
+            </thead>
+            <tbody id="archive-table-body"></tbody>
+          </table>
+        </div>
+        <div id="cards-view-archive" class="cards-grid" style="display:none"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── TRASH ── -->
+  <div id="page-trash" class="trash-page">
+    <div class="topbar">
+      <div class="topbar-title" data-i18n="nav.trash">Корзина</div>
+      <div class="topbar-actions">
+        <button class="btn btn-ghost" style="color:var(--red)" onclick="emptyTrash()" data-i18n="trash.clear">Очистити корзину</button>
+      </div>
+    </div>
+    <div class="content">
+      <div id="trash-list"></div>
+    </div>
+  </div>
+
+  <!-- ── IMPORT INBOX ── -->
+  <div id="page-inbox" style="display:none">
+    <div class="topbar">
+      <div class="topbar-title" data-i18n="nav.inbox">Import Inbox</div>
+    </div>
+    <div class="content">
+      <div class="empty-state">
+        <div class="empty-icon">📥</div>
+        <div class="empty-title" data-i18n="inbox.no_drive">Google Drive не підключено</div>
+        <div class="empty-sub" data-i18n="inbox.no_drive_sub">Підключіть Google Drive щоб бачити імпортовані файли</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── UNPROCESSED ── -->
+  <div id="page-unprocessed" style="display:none">
+    <div class="topbar">
+      <div class="topbar-title" data-i18n="nav.unprocessed">Unprocessed Imports</div>
+    </div>
+    <div class="content">
+      <div class="empty-state">
+        <div class="empty-icon">📂</div>
+        <div class="empty-title" data-i18n="unprocessed.no_drive">Google Drive не підключено</div>
+        <div class="empty-sub" data-i18n="unprocessed.no_drive_sub">Підключіть Google Drive щоб бачити необроблені файли</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SETTINGS ── -->
+  <div id="page-settings" class="settings-page">
+    <div class="topbar">
+      <div class="topbar-title" data-i18n="settings.title">Налаштування</div>
+    </div>
+    <div class="content">
+      <div class="settings-layout">
+
+        <div class="settings-nav">
+          <div class="settings-nav-item active" onclick="showSettingsTab('payments', this)"> <span data-i18n="settings.payments">💳 Платіжні інструменти</span></div>
+          <div class="settings-nav-item" onclick="showSettingsTab('companies', this)"> <span data-i18n="settings.companies">🏢 Компанії</span></div>
+          <div class="settings-nav-item" onclick="showSettingsTab('interface', this)"> <span data-i18n="settings.interface">🎨 Інтерфейс</span></div>
+          <div class="settings-nav-item" onclick="showSettingsTab('language', this)"> <span data-i18n="settings.language">🌐 Мова</span></div>
+          <div class="settings-nav-item" onclick="showSettingsTab('profile', this)"> <span data-i18n="settings.profile">👤 Профіль</span></div>
+        </div>
+
+        <div>
+          <!-- PAYMENTS -->
+          <div id="settings-payments" class="settings-content active">
+            <div class="settings-section">
+              <div class="settings-section-header">
+                <div class="settings-section-title" data-i18n="settings.payments">Платіжні інструменти</div>
+                <button class="btn btn-ghost" style="font-size:12px" onclick="openInstrumentModal()" data-i18n="settings.add">+ Додати</button>
+              </div>
+              <div id="instruments-list">
+                <div style="text-align:center;padding:20px;color:var(--text3);font-size:13px" data-i18n="loading.text">Завантаження...</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- COMPANIES -->
+          <div id="settings-companies" class="settings-content">
+            <div class="settings-section">
+              <div class="settings-section-header">
+                <div class="settings-section-title" data-i18n="settings.companies">Компанії</div>
+                <button class="btn btn-ghost" style="font-size:12px" onclick="openCompanyModal()" data-i18n="settings.add">+ Додати</button>
+              </div>
+              <div id="companies-list">
+                <div style="text-align:center;padding:20px;color:var(--text3);font-size:13px" data-i18n="loading.text">Завантаження...</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- LANGUAGE -->
+          <div id="settings-language" class="settings-content">
+            <div class="settings-section">
+              <div class="settings-section-header">
+                <div class="settings-section-title" data-i18n="settings.lang_title">Мова інтерфейсу</div>
+              </div>
+              <div class="lang-options">
+                <button class="lang-btn active" onclick="setLang('uk', this)">🇺🇦 Українська</button>
+                <button class="lang-btn" onclick="setLang('de', this)">🇩🇪 Deutsch</button>
+                <button class="lang-btn" onclick="setLang('en', this)">🇬🇧 English</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- INTERFACE -->
+          <div id="settings-interface" class="settings-content">
+            <div class="settings-section">
+              <div class="settings-section-header">
+                <div class="settings-section-title" data-i18n="settings.theme_title">Тема інтерфейсу</div>
+              </div>
+              <div style="padding:18px">
+                <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px" id="theme-grid">
+
+                  <div class="theme-card active" id="theme-dark" onclick="setTheme('dark', this)">
+                    <div class="theme-preview" style="background:#0f1117;border-color:#2a3348">
+                      <div class="theme-preview-sidebar" style="background:#161b27"></div>
+                      <div class="theme-preview-content">
+                        <div class="theme-preview-bar" style="background:#252d40;width:70%"></div>
+                        <div class="theme-preview-bar" style="background:#1e2535;width:50%"></div>
+                        <div class="theme-preview-bar" style="background:#1e2535;width:80%"></div>
+                      </div>
+                    </div>
+                    <div class="theme-label">
+                      <span class="theme-check">✓</span>
+                      🌑 Dark
+                    </div>
+                  </div>
+
+                  <div class="theme-card" id="theme-dark-blue" onclick="setTheme('dark-blue', this)">
+                    <div class="theme-preview" style="background:#0a0f1e;border-color:#1a2540">
+                      <div class="theme-preview-sidebar" style="background:#0d1528"></div>
+                      <div class="theme-preview-content">
+                        <div class="theme-preview-bar" style="background:#1a2540;width:70%"></div>
+                        <div class="theme-preview-bar" style="background:#162038;width:50%"></div>
+                        <div class="theme-preview-bar" style="background:#162038;width:80%"></div>
+                      </div>
+                    </div>
+                    <div class="theme-label">
+                      <span class="theme-check">✓</span>
+                      🌊 Dark Blue
+                    </div>
+                  </div>
+
+                  <div class="theme-card" id="theme-dark-green" onclick="setTheme('dark-green', this)">
+                    <div class="theme-preview" style="background:#0a1210;border-color:#1a2e26">
+                      <div class="theme-preview-sidebar" style="background:#0d1a16"></div>
+                      <div class="theme-preview-content">
+                        <div class="theme-preview-bar" style="background:#1a2e26;width:70%"></div>
+                        <div class="theme-preview-bar" style="background:#152620;width:50%"></div>
+                        <div class="theme-preview-bar" style="background:#152620;width:80%"></div>
+                      </div>
+                    </div>
+                    <div class="theme-label">
+                      <span class="theme-check">✓</span>
+                      🌿 Dark Green
+                    </div>
+                  </div>
+
+                  <div class="theme-card" id="theme-light" onclick="setTheme('light', this)">
+                    <div class="theme-preview" style="background:#f4f5f7;border-color:#d8dce4">
+                      <div class="theme-preview-sidebar" style="background:#ffffff"></div>
+                      <div class="theme-preview-content">
+                        <div class="theme-preview-bar" style="background:#e2e5eb;width:70%"></div>
+                        <div class="theme-preview-bar" style="background:#ebeef2;width:50%"></div>
+                        <div class="theme-preview-bar" style="background:#ebeef2;width:80%"></div>
+                      </div>
+                    </div>
+                    <div class="theme-label">
+                      <span class="theme-check">✓</span>
+                      ☀️ Light
+                    </div>
+                  </div>
+
+                  <div class="theme-card" id="theme-mocha" onclick="setTheme('mocha', this)">
+                    <div class="theme-preview" style="background:#1a1310;border-color:#2e2520">
+                      <div class="theme-preview-sidebar" style="background:#211916"></div>
+                      <div class="theme-preview-content">
+                        <div class="theme-preview-bar" style="background:#2e2520;width:70%"></div>
+                        <div class="theme-preview-bar" style="background:#26201c;width:50%"></div>
+                        <div class="theme-preview-bar" style="background:#26201c;width:80%"></div>
+                      </div>
+                    </div>
+                    <div class="theme-label">
+                      <span class="theme-check">✓</span>
+                      ☕ Mocha
+                    </div>
+                  </div>
+
+                  <div class="theme-card" id="theme-slate" onclick="setTheme('slate', this)">
+                    <div class="theme-preview" style="background:#13161f;border-color:#252a38">
+                      <div class="theme-preview-sidebar" style="background:#191d28"></div>
+                      <div class="theme-preview-content">
+                        <div class="theme-preview-bar" style="background:#252a38;width:70%"></div>
+                        <div class="theme-preview-bar" style="background:#1f2330;width:50%"></div>
+                        <div class="theme-preview-bar" style="background:#1f2330;width:80%"></div>
+                      </div>
+                    </div>
+                    <div class="theme-label">
+                      <span class="theme-check">✓</span>
+                      🪨 Slate
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-section" style="margin-top:16px">
+              <div class="settings-section-header">
+                <div class="settings-section-title" data-i18n="settings.accent_title">Акцентний колір</div>
+              </div>
+              <div style="padding:16px 18px">
+                <div style="display:flex;gap:10px;flex-wrap:wrap" id="accent-grid">
+                  <button class="accent-swatch active" style="--sw:#4f8ef7" onclick="setAccent('#4f8ef7','#3a7ae8',this)" title="Blue"></button>
+                  <button class="accent-swatch" style="--sw:#a78bfa" onclick="setAccent('#a78bfa','#8b6ef5',this)" title="Violet"></button>
+                  <button class="accent-swatch" style="--sw:#3ecf8e" onclick="setAccent('#3ecf8e','#2db87a',this)" title="Green"></button>
+                  <button class="accent-swatch" style="--sw:#f5a623" onclick="setAccent('#f5a623','#e09318',this)" title="Orange"></button>
+                  <button class="accent-swatch" style="--sw:#f76f6f" onclick="setAccent('#f76f6f','#e05555',this)" title="Red"></button>
+                  <button class="accent-swatch" style="--sw:#e879a0" onclick="setAccent('#e879a0','#d45f8c',this)" title="Pink"></button>
+                  <button class="accent-swatch" style="--sw:#38bdf8" onclick="setAccent('#38bdf8','#22a8e8',this)" title="Sky"></button>
+                </div>
+                <div style="font-size:11px;color:var(--text3);margin-top:10px" data-i18n="settings.accent_hint">Акцентний колір впливає на активні елементи, кнопки та посилання</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- PROFILE -->
+          <div id="settings-profile" class="settings-content">
+            <div class="settings-section">
+              <div class="settings-section-header">
+                <div class="settings-section-title" data-i18n="settings.profile_title">Профіль</div>
+              </div>
+              <div style="padding:18px">
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label class="form-label" data-i18n="settings.name">Ім'я</label>
+                    <input class="form-input" type="text" data-i18n-placeholder="auth.name_placeholder">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" data-i18n="settings.email">Email</label>
+                    <input class="form-input" type="email" placeholder="email@example.com">
+                  </div>
+                </div>
+                <div style="margin-top:14px">
+                  <button class="btn btn-primary" onclick="showToast('Збережено', 'success')" data-i18n="settings.save">Зберегти</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ── MODAL: NEW RECORD ── -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModalOutside(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div style="display:flex;align-items:center;gap:10px;flex:1">
+      <div class="modal-title" id="modal-title" data-i18n="modal.new_record">Новий запис</div>
+      <span id="modal-edit-badge" data-i18n="modal.editing_badge" style="display:none;background:var(--yellow-bg);color:var(--yellow);font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;letter-spacing:0.06em">РЕДАГУВАННЯ</span>
+      </div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+
+        <div class="form-group full">
+          <label class="form-label" data-i18n="form.attachments">Вкладення</label>
+          <div class="upload-zone" onclick="document.getElementById('file-input').click()">
+            <div class="upload-icon">📎</div>
+            <div class="upload-text" data-i18n="form.drop_files">Перетягніть файли або натисніть для вибору</div>
+            <div class="upload-sub" data-i18n="form.files_hint">JPG, PNG, PDF · до 5 файлів за раз</div>
+          </div>
+          <input type="file" id="file-input" multiple accept="image/*,.pdf" style="display:none" onchange="handleFiles(this)">
+          <div class="upload-actions">
+            <button class="upload-btn" onclick="document.getElementById('file-input').click()" data-i18n="form.camera">📷 Камера</button>
+            <button class="upload-btn" onclick="document.getElementById('file-input').click()" data-i18n="form.gallery">🖼️ Галерея</button>
+            <button class="upload-btn" onclick="document.getElementById('file-input').click()" data-i18n="form.files">📁 Файли</button>
+          </div>
+          <div id="existing-attachments-preview" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"></div>
+          <div id="files-preview" style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap"></div>
+        </div>
+
+        <div class="form-group full"><div class="form-section-title" data-i18n="form.main_info">Основна інформація</div></div>
+
+        <div class="form-group">
+          <label class="form-label" data-i18n="form.date">Дата витрати <span class="required">*</span></label>
+          <input class="form-input" type="date" id="field-date">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" data-i18n="form.amount">Сума (€) <span class="required">*</span></label>
+          <input class="form-input" type="number" id="field-amount" placeholder="0.00" step="0.01" min="0" oninput="recalcRemainder()">
+        </div>
+
+        <div class="form-group full">
+          <label class="form-label" data-i18n="form.title">Заголовок / Назва <span class="required">*</span></label>
+          <input class="form-input" type="text" id="field-title" placeholder="Наприклад: Taxi to airport" data-i18n-placeholder="form.title_placeholder">
+        </div>
+
+        <div class="form-group full">
+          <label class="form-label" data-i18n="form.note">Примітка / Опис</label>
+          <textarea class="form-textarea" id="field-note" placeholder="Додаткова інформація..." data-i18n-placeholder="form.note_placeholder"></textarea>
+        </div>
+
+        <div class="form-group full"><div class="form-section-title" data-i18n="form.payment">Оплата</div></div>
+
+        <div class="form-group">
+          <label class="form-label" data-i18n="form.pay_type">Тип оплати <span class="required">*</span></label>
+          <select class="form-select" id="field-payment-type" onchange="onPaymentTypeChange()">
+            <option value="" data-i18n="form.select">— Вибрати —</option>
+            <option value="private" data-i18n="form.pay_private">💼 Оплачено приватно</option>
+            <option value="company" data-i18n="form.pay_company">🏢 Фірмова картка</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" data-i18n="form.pay_method">Спосіб оплати <span class="required">*</span></label>
+          <select class="form-select" id="field-payment-method" onchange="onPaymentMethodChange()">
+            <option value="" data-i18n="form.select">— Вибрати —</option>
+            <option value="card" data-i18n="form.pay_card">💳 Картка</option>
+            <option value="cash" data-i18n="form.pay_cash">💵 Готівка</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="card-select-group">
+          <label class="form-label" data-i18n="form.card">Картка</label>
+          <select class="form-select" id="field-card">
+            <option value="" data-i18n="form.select_card">— Вибрати картку —</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" data-i18n="form.company">Компанія</label>
+          <select class="form-select" id="field-company">
+            <option value="" data-i18n="form.select">— Вибрати —</option>
+          </select>
+        </div>
+
+        <!-- RETURN BLOCK (shown only for private payment) -->
+        <div class="form-group full" id="return-block" style="display:none">
+          <div class="form-section-title" data-i18n="form.returns">Повернення коштів</div>
+        </div>
+
+        <div id="return-fields" style="display:none; grid-column:1/-1">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label" data-i18n="form.to_return">Сума до повернення (€)</label>
+              <input class="form-input" type="number" id="field-to-return" placeholder="0.00" step="0.01" readonly style="opacity:0.7">
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-i18n="form.returned">Вже повернено (€)</label>
+              <input class="form-input" type="number" id="field-returned" placeholder="0.00" step="0.01" oninput="recalcRemainder()">
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-i18n="form.remainder">Залишок (€)</label>
+              <input class="form-input" type="number" id="field-remainder" placeholder="0.00" readonly style="opacity:0.7">
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-i18n="form.return_date">Дата повернення</label>
+              <input class="form-input" type="date" id="field-return-date">
+            </div>
+            <div class="form-group full">
+              <label class="form-label" data-i18n="form.return_method">Метод повернення</label>
+              <select class="form-select" id="field-return-method">
+                <option value="" data-i18n="form.return_optional">— Необовʼязково —</option>
+                <option data-i18n="form.return_bank">Банківський переказ</option>
+                <option data-i18n="form.return_cash">Готівка</option>
+                <option data-i18n="form.return_card">Картка</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group full">
+          <label class="form-label" data-i18n="form.status">Статус <span class="required">*</span></label>
+          <select class="form-select" id="field-status">
+            <option value="waiting" data-i18n="status.waiting_full">⏳ Очікує повернення коштів</option>
+            <option value="partial" data-i18n="status.partial_full">🔄 Частково повернуто</option>
+            <option value="done" data-i18n="status.done_full">✔️ Повністю повернуто</option>
+            <option value="no-return" data-i18n="status.no_return_full">➖ Не потребує повернення</option>
+            <option value="archived" data-i18n="status.archived_full">🗄️ Архівовано</option>
+          </select>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px" data-i18n="form.status_hint">⚡ Статус оновлюється автоматично на основі повернень</div>
+        </div>
+
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()" data-i18n="form.cancel">Скасувати</button>
+      <button class="btn btn-primary" id="modal-save-btn" onclick="saveRecord()" data-i18n="form.save">💾 Зберегти запис</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: DETAIL VIEW ── -->
+<div class="modal-overlay" id="detail-overlay" onclick="closeDetailOutside(event)">
+  <div class="modal detail-modal">
+
+    <div class="detail-header-band">
+      <div class="detail-header-icon" id="detail-icon">📄</div>
+      <div class="detail-header-info">
+        <div class="detail-title" id="detail-title">—</div>
+        <div class="detail-meta-row">
+          <span id="detail-status-badge"></span>
+          <span style="color:var(--text3);font-size:12px;margin-left:6px" id="detail-company-meta"></span>
+          <span style="color:var(--text3);font-size:12px;margin-left:6px" id="detail-date-meta"></span>
+        </div>
+      </div>
+      <div class="detail-header-actions">
+        <button class="btn btn-ghost" style="font-size:12px" onclick="editRecord()" data-i18n="detail.edit">✏️ Редагувати</button>
+        <button class="modal-close" onclick="closeDetail()">✕</button>
+      </div>
+    </div>
+
+    <div class="detail-body">
+
+      <div class="detail-section">
+        <div class="detail-section-title" data-i18n="detail.finance">Фінансова інформація</div>
+        <div class="detail-grid" id="detail-finance-grid"></div>
+      </div>
+
+      <div class="detail-section" id="detail-return-section">
+        <div class="detail-section-title" data-i18n="detail.returns">Повернення коштів</div>
+        <div class="return-summary" id="detail-return-summary"></div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar-fill" id="detail-progress-bar" style="width:0%"></div>
+        </div>
+        <div class="return-events" id="detail-return-events"></div>
+        <button class="add-return-btn" onclick="toggleAddReturn()" data-i18n="detail.add_return">+ Додати повернення</button>
+        <div class="add-return-form" id="add-return-form">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+            <div class="form-group">
+              <label class="form-label" data-i18n="form.amount">Сума (€) <span class="required">*</span></label>
+              <input class="form-input" type="number" id="ret-amount" placeholder="0.00" step="0.01">
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-i18n="return.date_label">Дата <span class="required">*</span></label>
+              <input class="form-input" type="date" id="ret-date">
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-i18n="return.method_label">Метод</label>
+              <select class="form-select" id="ret-method">
+                <option value="" data-i18n="form.return_optional">— Необовʼязково —</option>
+                <option data-i18n="form.return_bank">Банківський переказ</option>
+                <option data-i18n="form.return_cash">Готівка</option>
+                <option data-i18n="form.return_card">Картка</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button class="btn btn-ghost" style="font-size:12px" onclick="toggleAddReturn()" data-i18n="form.cancel">Скасувати</button>
+            <button class="btn btn-primary" style="font-size:12px" onclick="saveReturn()" data-i18n="detail.return_save">Зберегти повернення</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="detail-section">
+        <div class="detail-section-title" data-i18n="detail.payment">Деталі оплати</div>
+        <div class="detail-grid" id="detail-payment-grid"></div>
+      </div>
+
+      <div class="detail-section">
+        <div class="detail-section-title" data-i18n="detail.note">Примітка</div>
+        <div class="detail-note" id="detail-note-text">—</div>
+      </div>
+
+      <div class="detail-section">
+        <div class="detail-section-title" data-i18n="detail.attachments">Вкладення</div>
+        <div class="attachments-grid" id="detail-attachments"></div>
+        <input type="file" id="detail-file-input" multiple accept="image/*,.pdf" style="display:none" onchange="addFilesToRecord(this)">
+        <button class="attachment-add" onclick="document.getElementById('detail-file-input').click()" style="width:auto;padding:6px 14px;border-radius:var(--radius-sm);flex-direction:row;height:auto;gap:6px;font-size:12px" data-i18n="detail.add_file">+ Додати файл</button>
+      </div>
+
+      <div class="detail-section">
+        <div class="detail-section-title" data-i18n="detail.actions">Дії</div>
+        <div class="danger-actions">
+          <button class="btn btn-archive" onclick="archiveRecord()" data-i18n="detail.archive">🗄️ Архівувати</button>
+          <button class="btn btn-danger" onclick="deleteRecord()" data-i18n="detail.delete">🗑️ Видалити</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast-container" id="toast-container"></div>
+
+
+<!-- ── MODAL: COMPANY ── -->
+<div class="modal-overlay" id="company-modal-overlay" onclick="if(event.target===this)closeCompanyModal()">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <div class="modal-title" id="company-modal-title" data-i18n="modal.new_company">Нова компанія</div>
+      <button class="modal-close" onclick="closeCompanyModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label class="form-label" data-i18n="company.name">Назва компанії <span class="required">*</span></label>
+          <input class="form-input" type="text" id="company-name-input" data-i18n-placeholder="company.name_placeholder" onkeydown="if(event.key==='Enter')saveCompanyModal()">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeCompanyModal()" data-i18n="form.cancel">Скасувати</button>
+      <button class="btn btn-primary" onclick="saveCompanyModal()" data-i18n="settings.save">💾 Зберегти</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: INSTRUMENT ── -->
+<div class="modal-overlay" id="instrument-modal-overlay" onclick="if(event.target===this)closeInstrumentModal()">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <div class="modal-title" id="instrument-modal-title" data-i18n="modal.new_instrument">Новий платіжний інструмент</div>
+      <button class="modal-close" onclick="closeInstrumentModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label class="form-label" data-i18n="instrument.name">Назва <span class="required">*</span></label>
+          <input class="form-input" type="text" id="instrument-name-input" data-i18n-placeholder="instrument.name_placeholder" onkeydown="if(event.key==='Enter')saveInstrumentModal()">
+        </div>
+        <div class="form-group full">
+          <label class="form-label" data-i18n="instrument.type">Тип <span class="required">*</span></label>
+          <select class="form-select" id="instrument-type-input">
+            <option value="" data-i18n="instrument.select">— Вибрати —</option>
+            <option value="private_card" data-i18n="instrument.private_card">💳 Приватна картка</option>
+            <option value="company_card" data-i18n="instrument.company_card">🏢 Фірмова картка</option>
+            <option value="cash" data-i18n="instrument.cash">💵 Готівка</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closeInstrumentModal()" data-i18n="form.cancel">Скасувати</button>
+      <button class="btn btn-primary" onclick="saveInstrumentModal()" data-i18n="settings.save">💾 Зберегти</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: EXPORT ── -->
+<div class="modal-overlay" id="export-modal-overlay" onclick="if(event.target===this)closeExportModal()">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <div class="modal-title" data-i18n="export.title">Експорт даних</div>
+      <button class="modal-close" onclick="closeExportModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+
+        <div class="form-group full">
+          <label class="form-label" data-i18n="export.period">Період</label>
+          <select class="form-select" id="export-period" onchange="onExportPeriodChange()">
+            <option value="all" data-i18n="export.all">Всі записи</option>
+            <option value="custom" data-i18n="export.custom">Вибрати період</option>
+            <option value="this_month" data-i18n="export.this_month">Цей місяць</option>
+            <option value="last_month" data-i18n="export.last_month">Минулий місяць</option>
+            <option value="this_year" data-i18n="export.this_year">Цей рік</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="export-date-from-group" style="display:none">
+          <label class="form-label" data-i18n="export.from">Від</label>
+          <input class="form-input" type="date" id="export-date-from">
+        </div>
+        <div class="form-group" id="export-date-to-group" style="display:none">
+          <label class="form-label" data-i18n="export.to">До</label>
+          <input class="form-input" type="date" id="export-date-to">
+        </div>
+
+        <div class="form-group full">
+          <label class="form-label" data-i18n="export.status">Статус</label>
+          <select class="form-select" id="export-status" onchange="updateExportCount()">
+            <option value="all" data-i18n="export.all_statuses">Всі статуси</option>
+            <option value="waiting" data-i18n="status.waiting_full">⏳ Очікує повернення коштів</option>
+            <option value="partial" data-i18n="status.partial_full">🔄 Частково повернуто</option>
+            <option value="done" data-i18n="status.done_full">✔️ Повністю повернуто</option>
+            <option value="no-return" data-i18n="status.no_return_full">➖ Не потребує повернення</option>
+            <option value="archived" data-i18n="status.archived_full">🗄️ Архівовано</option>
+          </select>
+        </div>
+
+        <div class="form-group full">
+          <label class="form-label" data-i18n="export.include_archived">Включати архівовані</label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:4px">
+            <input type="checkbox" id="export-include-archived" style="width:14px;height:14px;accent-color:var(--accent)" onchange="updateExportCount()">
+            <span style="font-size:13px;color:var(--text2)" data-i18n="export.include_archived_label">Так, включати архів</span>
+          </label>
+        </div>
+
+        <div class="form-group full">
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px">
+            <div style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px" data-i18n="export.fields_title">Буде експортовано полів:</div>
+            <div style="font-size:12px;color:var(--text2);line-height:1.8" data-i18n="export.fields_list">
+              Дата витрати · Дата створення · Заголовок · Компанія · Тип оплати · Спосіб оплати · Картка · Сума · Валюта · Статус · До повернення · Повернено · Залишок · Примітка · Кількість вкладень
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group full" id="export-count-info" style="font-size:13px;color:var(--text3);text-align:center"></div>
+
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeExportModal()" data-i18n="export.cancel">Скасувати</button>
+      <button class="btn btn-ghost" onclick="doExport('csv')" style="gap:6px" data-i18n="export.csv">📄 CSV</button>
+      <button class="btn btn-ghost" onclick="doExport('pdf')" style="gap:6px" data-i18n="export.pdf">📕 PDF</button>
+      <button class="btn btn-primary" onclick="doExport('xlsx')" style="gap:6px" data-i18n="export.xlsx">📊 XLSX</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/config.js"></script>
+<script src="js/db.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
