@@ -9,8 +9,8 @@ from datetime import datetime
 app = Flask(__name__, static_folder='.')
 CORS(app)
 
-DB_PATH = 'local.db'
-UPLOAD_FOLDER = 'uploads'
+DB_PATH = os.path.join('data', 'local.db')
+UPLOAD_FOLDER = os.path.join('data', 'uploads')
 DRIVE_ROOT = 'ReceiptsManager'
 
 # ══════════════════════════════════════════
@@ -795,6 +795,8 @@ def static_files(path):
 # MAIN
 # ══════════════════════════════════════════
 if __name__ == '__main__':
+    os.makedirs('data', exist_ok=True)
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     init_db()
     print("🚀 Starting Reimbursement App server...")
     print("📍 Open: http://localhost:5500")

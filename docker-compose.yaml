@@ -1,0 +1,11 @@
+services:
+  app:
+    image: obetsa/reimbursement-app:latest
+    ports:
+      - "5500:5500"
+    volumes:
+      - reimbursement-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  reimbursement-data:
