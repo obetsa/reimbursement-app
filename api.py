@@ -1,13 +1,27 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, session as flask_session, redirect
 from flask_cors import CORS
+from dotenv import load_dotenv
+import requests as http_requests
 import sqlite3
 import uuid
 import os
 import re
+import secrets
+import hashlib
+import base64
 from datetime import datetime
 
+load_dotenv()
+
 app = Flask(__name__, static_folder='.')
-CORS(app)
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-prod')
+CORS(app, supports_credentials=True)
+
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'  # HTTP allowed in development
+
+GOOGLE_CLIENT_ID     = os.environ.get('GOOGLE_CLIENT_ID')
+GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET')
+REDIRECT_URI         = os.environ.get('REDIRECT_URI', 'http://localhost:5500/auth/callback')
 
 DB_PATH = os.path.join('data', 'local.db')
 UPLOAD_FOLDER = os.path.join('data', 'uploads')
@@ -162,106 +176,95 @@ def init_db():
 # ══════════════════════════════════════════
 # AUTH
 # ══════════════════════════════════════════
-import hashlib
-import json
-import time
-
-# Simple in-memory sessions
-sessions = {}
-
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
 
 def get_user_from_token(request):
-    # TODO: restore auth — remove this line and uncomment the block below
-    return '6895da8f-e07e-4b06-b64b-255d50a1a32e'
-    # token = request.headers.get('Authorization', '').replace('Bearer ', '')
-    # if not token or token not in sessions:
-    #     return None
-    # session = sessions[token]
-    # if session['expires'] < time.time():
-    #     del sessions[token]
-    #     return None
-    # return session['user_id']
+    return flask_session.get('user_id')
 
-@app.route('/auth/login', methods=['POST'])
-def login():
-    data = request.json
-    email = data.get('email', '').strip()
-    password = data.get('password', '')
+def _pkce_pair():
+    verifier  = secrets.token_urlsafe(48)
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(verifier.encode()).digest()
+    ).rstrip(b'=').decode()
+    return verifier, challenge
+
+@app.route('/auth/google')
+def auth_google():
+    verifier, challenge = _pkce_pair()
+    state = secrets.token_urlsafe(16)
+    flask_session['oauth_state']    = state
+    flask_session['code_verifier']  = verifier
+
+    params = '&'.join([
+        f'client_id={GOOGLE_CLIENT_ID}',
+        f'redirect_uri={REDIRECT_URI}',
+        'response_type=code',
+        'scope=openid%20email%20profile',
+        f'state={state}',
+        f'code_challenge={challenge}',
+        'code_challenge_method=S256',
+        'prompt=consent',
+        'access_type=offline',
+    ])
+    return redirect(f'https://accounts.google.com/o/oauth2/auth?{params}')
+
+@app.route('/auth/callback')
+def auth_callback():
+    code          = request.args.get('code')
+    code_verifier = flask_session.pop('code_verifier', '')
+
+    token_resp = http_requests.post('https://oauth2.googleapis.com/token', data={
+        'client_id':     GOOGLE_CLIENT_ID,
+        'client_secret': GOOGLE_CLIENT_SECRET,
+        'redirect_uri':  REDIRECT_URI,
+        'grant_type':    'authorization_code',
+        'code':          code,
+        'code_verifier': code_verifier,
+    })
+    access_token = token_resp.json().get('access_token')
+
+    user_info = http_requests.get(
+        'https://www.googleapis.com/oauth2/v2/userinfo',
+        headers={'Authorization': f'Bearer {access_token}'}
+    ).json()
+
+    email     = user_info.get('email', '')
+    full_name = user_info.get('name', '')
 
     conn = get_db()
-    user = conn.execute(
-        "select * from users where email=? and password_hash=?",
-        (email, hash_password(password))
-    ).fetchone()
+    user = conn.execute("select id from users where email=?", (email,)).fetchone()
+    if user:
+        user_id = user['id']
+    else:
+        user_id = str(uuid.uuid4())
+        conn.execute(
+            "insert into users (id, email, password_hash, full_name) values (?,?,?,?)",
+            (user_id, email, 'GOOGLE_AUTH', full_name)
+        )
+        conn.commit()
     conn.close()
 
-    if not user:
-        return jsonify({'error': 'Невірний email або пароль'}), 401
+    flask_session['user_id']   = user_id
+    flask_session['email']     = email
+    flask_session['full_name'] = full_name
+    flask_session.permanent    = True
 
-    token = str(uuid.uuid4())
-    sessions[token] = {
-        'user_id': user['id'],
-        'email': user['email'],
-        'expires': time.time() + 86400 * 7  # 7 days
-    }
+    return redirect('/')
 
-    return jsonify({
-        'token': token,
-        'user': {'id': user['id'], 'email': user['email'], 'full_name': user['full_name']}
-    })
-
-@app.route('/auth/register', methods=['POST'])
-def register():
-    data = request.json
-    email = data.get('email', '').strip()
-    password = data.get('password', '')
-    full_name = data.get('full_name', '')
-
-    if not email or not password:
-        return jsonify({'error': 'Email і пароль обовʼязкові'}), 400
-
-    conn = get_db()
-    existing = conn.execute("select id from users where email=?", (email,)).fetchone()
-    if existing:
-        conn.close()
-        return jsonify({'error': 'Цей email вже зареєстровано'}), 400
-
-    user_id = str(uuid.uuid4())
-    conn.execute(
-        "insert into users (id, email, password_hash, full_name) values (?,?,?,?)",
-        (user_id, email, hash_password(password), full_name)
-    )
-    conn.commit()
-    conn.close()
-
-    token = str(uuid.uuid4())
-    sessions[token] = {
-        'user_id': user_id,
-        'email': email,
-        'expires': time.time() + 86400 * 7
-    }
-
-    return jsonify({
-        'token': token,
-        'user': {'id': user_id, 'email': email, 'full_name': full_name}
-    })
+@app.route('/auth/logout', methods=['POST'])
+def logout():
+    flask_session.clear()
+    return jsonify({'ok': True})
 
 @app.route('/auth/me', methods=['GET'])
 def me():
-    user_id = get_user_from_token(request)
+    user_id = flask_session.get('user_id')
     if not user_id:
         return jsonify({'error': 'Unauthorized'}), 401
-
-    conn = get_db()
-    user = conn.execute("select id, email, full_name from users where id=?", (user_id,)).fetchone()
-    conn.close()
-
-    if not user:
-        return jsonify({'error': 'User not found'}), 404
-
-    return jsonify({'id': user['id'], 'email': user['email'], 'full_name': user['full_name']})
+    return jsonify({
+        'id':        user_id,
+        'email':     flask_session.get('email', ''),
+        'full_name': flask_session.get('full_name', '')
+    })
 
 # ══════════════════════════════════════════
 # COMPANIES

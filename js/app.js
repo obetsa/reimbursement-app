@@ -238,18 +238,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadSavedTheme();
   loadSavedLang();
 
-  // Show dashboard page structure
-  document.getElementById('page-dashboard').style.display = '';
-  document.getElementById('page-dashboard').classList.add('active');
-
-  // TODO: restore auth — remove this block and uncomment the section below
-  await initApp({ id: '6895da8f-e07e-4b06-b64b-255d50a1a32e', email: 'admin@local.app', full_name: 'Admin' });
-  // const user = await authGetCurrentUser();
-  // if(user) {
-  //   await initApp(user);
-  // } else {
-  //   showAuthScreen();
-  // }
+  const user = await authGetCurrentUser();
+  if(user) {
+    document.getElementById('page-dashboard').style.display = '';
+    document.getElementById('page-dashboard').classList.add('active');
+    await initApp(user);
+  } else {
+    showAuthScreen();
+  }
 });
 
 // ── SETTINGS TABS ──
