@@ -35,6 +35,7 @@ async function initApp(user) {
     renderDocs();
     updateDashboard();
     await updateBadges();
+    loadUnprocessed();
     showApp();
   } catch(e) {
     console.error('initApp error', e);
@@ -227,8 +228,11 @@ function showPage(name, el) {
 
   if(name === 'documents') renderDocs();
   if(name === 'trash') loadAndRenderTrash();
-  if(name === 'settings') loadAndRenderInstruments();
-  if(name === 'inbox' || name === 'unprocessed') applyTranslations();
+  if(name === 'settings') { restoreSettingsTab(); loadProfile(); }
+  if(name === 'unprocessed') { applyTranslations(); loadUnprocessed(); }
+  if(name === 'gallery') { applyTranslations(); loadGallery(); }
+
+  localStorage.setItem('currentPage', name);
 }
 
 // ── INIT ──
@@ -243,6 +247,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('page-dashboard').style.display = '';
     document.getElementById('page-dashboard').classList.add('active');
     await initApp(user);
+    const savedPage = localStorage.getItem('currentPage');
+    if(savedPage && savedPage !== 'dashboard') {
+      const navEl = document.querySelector(`[onclick*="${savedPage}"]`);
+      if(savedPage === 'documents') showPageDocuments(navEl);
+      else showPage(savedPage, navEl);
+    }
   } else {
     showAuthScreen();
   }
@@ -254,13 +264,55 @@ function showSettingsTab(name, el) {
   document.querySelectorAll('.settings-nav-item').forEach(i => i.classList.remove('active'));
   document.getElementById('settings-' + name).classList.add('active');
   el.classList.add('active');
+  localStorage.setItem('settingsTab', name);
   if(name === 'payments') loadAndRenderInstruments();
   if(name === 'companies') loadAndRenderCompanies();
+  if(name === 'storage') loadStorageInfo();
+  if(name === 'profile') loadProfile();
+}
+
+async function loadProfile() {
+  const container = document.getElementById('profile-content');
+  if(!container) return;
+  try {
+    const res  = await fetch('/profile', { credentials: 'include' });
+    const data = await res.json();
+    if(!res.ok) return;
+
+    const driveStatus = data.drive_connected
+      ? `<span style="color:var(--green,#4caf50);font-weight:600">● ${t('profile.drive_connected')}</span>`
+      : `<span style="color:var(--red,#e05555);font-weight:600">● ${t('profile.drive_disconnected')}</span>`;
+
+    container.innerHTML = `
+      <div class="profile-row">
+        <div class="profile-label" data-i18n="settings.name">${t('settings.name')}</div>
+        <div class="profile-value">${data.full_name || '—'}</div>
+      </div>
+      <div class="profile-row">
+        <div class="profile-label" data-i18n="settings.email">${t('settings.email')}</div>
+        <div class="profile-value">${data.email || '—'}</div>
+      </div>
+      <div class="profile-row">
+        <div class="profile-label">Google Drive</div>
+        <div class="profile-value">${driveStatus}</div>
+      </div>
+    `;
+  } catch {
+    if(container) container.innerHTML = '';
+  }
+}
+
+function restoreSettingsTab() {
+  const saved = localStorage.getItem('settingsTab') || 'companies';
+  const el = document.querySelector(`.settings-nav-item[onclick*="'${saved}'"]`);
+  if(el) showSettingsTab(saved, el);
+  else showSettingsTab('companies', document.querySelector('.settings-nav-item'));
 }
 
 // ── MODAL ──
 let editingId = null;
 let pendingFiles = [];
+let pendingDriveFiles = [];
 
 function openModal() {
   editingId = null;
@@ -305,6 +357,7 @@ function resetModalForm() {
   setDisplay('return-fields', 'none');
   setDisplay('card-select-group', 'none');
   pendingFiles = [];
+  pendingDriveFiles = [];
   const fp = document.getElementById('files-preview');
   if(fp) fp.innerHTML = '';
   const ep = document.getElementById('existing-attachments-preview');
@@ -351,6 +404,7 @@ function openEditModal(id) {
   }
 
   pendingFiles = [];
+  pendingDriveFiles = [];
   document.getElementById('files-preview').innerHTML = '';
   renderExistingAttachments(doc);
   document.getElementById('modal-overlay').classList.add('open');
@@ -429,12 +483,24 @@ function removePendingFile(index) {
 function renderFilesPreview() {
   const preview = document.getElementById('files-preview');
   if(!preview) return;
-  preview.innerHTML = pendingFiles.map((f, i) => `
+  const localHtml = pendingFiles.map((f, i) => `
     <div style="background:var(--bg4);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;">
       ${f.type.includes('pdf') ? '📄' : '🖼️'} ${f.name.substring(0,20)}${f.name.length>20?'...':''}
       <span style="cursor:pointer;color:var(--text3)" onclick="removePendingFile(${i})">✕</span>
     </div>
   `).join('');
+  const driveHtml = pendingDriveFiles.map((f, i) => `
+    <div style="background:var(--bg4);border:1px solid var(--accent,#4f8ef7);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;">
+      ☁️ ${f.file_name.substring(0,20)}${f.file_name.length>20?'...':''}
+      <span style="cursor:pointer;color:var(--text3)" onclick="removePendingDriveFile(${i})">✕</span>
+    </div>
+  `).join('');
+  preview.innerHTML = localHtml + driveHtml;
+}
+
+function removePendingDriveFile(index) {
+  pendingDriveFiles.splice(index, 1);
+  renderFilesPreview();
 }
 
 function renderExistingAttachments(doc) {
@@ -528,17 +594,47 @@ async function saveRecord() {
     if(editingId !== null) {
       await updateRecord(editingId, recordData);
 
+      const _editDoc = sampleDocs.find(d => d.id === editingId) || archivedDocs.find(d => d.id === editingId);
       if(pendingFiles.length > 0) {
-        const doc = sampleDocs.find(d => d.id === editingId) || archivedDocs.find(d => d.id === editingId);
-        for(const file of pendingFiles) {
-          const att = await uploadAttachment(editingId, file);
-          if(doc) {
-            if(!doc.attachments) doc.attachments = [];
-            doc.attachments.push({ id: att.id, name: att.file_name, type: att.file_type, storageType: 'local' });
-            doc.files = doc.attachments.length;
+        setBusy(true, 'busy.uploading');
+        try {
+          for(const file of pendingFiles) {
+            const att = await uploadAttachment(editingId, file);
+            if(_editDoc) {
+              if(!_editDoc.attachments) _editDoc.attachments = [];
+              _editDoc.attachments.push({ id: att.id, name: att.file_name, type: att.file_type, storageType: 'local' });
+              _editDoc.files = _editDoc.attachments.length;
+            }
           }
+          if(_editDoc && currentDetailId === editingId) renderAttachments(_editDoc);
+        } finally {
+          setBusy(false);
         }
         pendingFiles = [];
+      }
+      if(pendingDriveFiles.length > 0) {
+        setBusy(true, 'busy.drive_download');
+        try {
+          for(const df of pendingDriveFiles) {
+            const resp = await fetch(`/records/${editingId}/attach-from-drive`, {
+              method: 'POST', credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(df),
+            });
+            if(resp.ok) {
+              const att = await resp.json();
+              if(_editDoc) {
+                if(!_editDoc.attachments) _editDoc.attachments = [];
+                _editDoc.attachments.push({ id: att.id, name: att.file_name, type: att.file_type, storageType: att.storage_type });
+                _editDoc.files = _editDoc.attachments.length;
+              }
+            }
+          }
+          if(_editDoc && currentDetailId === editingId) renderAttachments(_editDoc);
+        } finally {
+          setBusy(false);
+        }
+        pendingDriveFiles = [];
       }
 
       const sIdx = sampleDocs.findIndex(d => d.id === editingId);
@@ -568,12 +664,37 @@ async function saveRecord() {
       newDoc.card = cardName;
 
       if(pendingFiles.length > 0) {
-        for(const file of pendingFiles) {
-          const att = await uploadAttachment(newDoc.id, file);
-          newDoc.attachments.push({ id: att.id, name: att.file_name, type: att.file_type, storageType: 'local' });
-          newDoc.files = newDoc.attachments.length;
+        setBusy(true, 'busy.uploading');
+        try {
+          for(const file of pendingFiles) {
+            const att = await uploadAttachment(newDoc.id, file);
+            newDoc.attachments.push({ id: att.id, name: att.file_name, type: att.file_type, storageType: 'local' });
+            newDoc.files = newDoc.attachments.length;
+          }
+        } finally {
+          setBusy(false);
         }
         pendingFiles = [];
+      }
+      if(pendingDriveFiles.length > 0) {
+        setBusy(true, 'busy.drive_download');
+        try {
+          for(const df of pendingDriveFiles) {
+            const resp = await fetch(`/records/${newDoc.id}/attach-from-drive`, {
+              method: 'POST', credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(df),
+            });
+            if(resp.ok) {
+              const att = await resp.json();
+              newDoc.attachments.push({ id: att.id, name: att.file_name, type: att.file_type, storageType: att.storage_type });
+              newDoc.files = newDoc.attachments.length;
+            }
+          }
+        } finally {
+          setBusy(false);
+        }
+        pendingDriveFiles = [];
       }
 
       sampleDocs.unshift(newDoc);
@@ -675,6 +796,14 @@ function formatDate(d) {
   if(!d) return '';
   const [y,m,day] = d.split('-');
   return `${day}.${m}.${y}`;
+}
+
+function formatDateTime(d) {
+  if(!d) return '';
+  const [datePart, timePart] = d.split(' ');
+  const [y,m,day] = datePart.split('-');
+  const time = timePart ? timePart.slice(0,5) : '';
+  return time ? `${day}.${m}.${y} ${time}` : `${day}.${m}.${y}`;
 }
 
 function renderTable() {
@@ -819,7 +948,8 @@ function applyFilters() {
     filteredArchived = [];
   }
 
-  renderDocs();
+  const sortVal = document.getElementById('sort-select')?.value || 'date-desc';
+  sortDocs(sortVal);
 }
 
 function sortDocs(val) {
@@ -839,7 +969,84 @@ function sortDocs(val) {
 
 // ── SYNC ──
 function syncNow() {
-  showToast(t('toast.sync_unavailable'), 'error');
+  document.getElementById('sync-preview-overlay').classList.add('open');
+}
+
+function closeSyncPreview() {
+  document.getElementById('sync-preview-overlay').classList.remove('open');
+}
+
+async function confirmSync() {
+  closeSyncPreview();
+  setBusy(true, 'sync.busy');
+  try {
+    const res  = await fetch('/sync', { method: 'POST', credentials: 'include' });
+    const data = await res.json();
+    if(!res.ok || !data.ok) {
+      showToast(t('toast.sync_error'), 'error');
+      return;
+    }
+    const uploaded = data.uploaded || 0;
+    if(uploaded === 0) {
+      showToast(t('toast.sync_nothing'), 'info');
+    } else {
+      showToast(t('toast.sync_done').replace('{n}', uploaded), 'success');
+    }
+  } catch {
+    showToast(t('toast.sync_error'), 'error');
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function runDriveCleanup() {
+  closeSyncPreview();
+  setBusy(true, 'sync.drive_cleanup_busy');
+  try {
+    const res  = await fetch('/drive-cleanup', { method: 'POST', credentials: 'include' });
+    const data = await res.json();
+    if(!res.ok || !data.ok) {
+      showToast(t(data.message === 'no_drive_token' ? 'toast.sync_no_drive' : 'toast.sync_error'), 'error');
+      return;
+    }
+    const f = data.deleted_files   || 0;
+    const d = data.deleted_folders || 0;
+    if(f === 0 && d === 0) {
+      showToast(t('sync.drive_cleanup_nothing'), 'info');
+    } else {
+      showToast(t('sync.drive_cleanup_done').replace('{f}', f).replace('{d}', d), 'success');
+    }
+  } catch {
+    showToast(t('toast.sync_error'), 'error');
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function importFromDrive() {
+  setBusy(true, 'sync.importing');
+  try {
+    const res  = await fetch('/import-from-drive', { method: 'POST', credentials: 'include' });
+    const data = await res.json();
+    if(!res.ok || !data.ok) {
+      showToast(t(data.message === 'no_drive_token' ? 'toast.sync_no_drive' : 'toast.sync_error'), 'error');
+      return;
+    }
+    const imported = data.imported || 0;
+    const cleaned  = data.cleaned  || 0;
+    if(imported === 0 && cleaned === 0) {
+      showToast(t('sync.import_nothing'), 'info');
+    } else {
+      if(imported > 0) showToast(t('toast.sync_imported').replace('{n}', imported), 'success');
+      if(cleaned  > 0) showToast(t('sync.import_cleaned').replace('{n}', cleaned), 'info');
+      loadUnprocessed();
+      updateUnprocessedBadge();
+    }
+  } catch {
+    showToast(t('toast.sync_error'), 'error');
+  } finally {
+    setBusy(false);
+  }
 }
 
 // ══════════════════════════════════════════
@@ -1132,6 +1339,17 @@ async function updateBadges() {
 }
 
 // ── TOAST ──
+function setBusy(on, msgKey = 'busy.uploading') {
+  const el = document.getElementById('busy-overlay');
+  if (!el) return;
+  if (on) {
+    document.getElementById('busy-text').textContent = t(msgKey);
+    el.classList.remove('hidden');
+  } else {
+    el.classList.add('hidden');
+  }
+}
+
 function showToast(msg, type='success') {
   const container = document.getElementById('toast-container');
   const toast = document.createElement('div');
@@ -1174,7 +1392,7 @@ function openDetail(id) {
     </div>
     <div class="detail-field">
       <div class="detail-field-label">${t('detail.created')}</div>
-      <div class="detail-field-value" style="color:var(--text2)">${formatDate(doc.created)}</div>
+      <div class="detail-field-value" style="color:var(--text2)">${formatDateTime(doc.created)}</div>
     </div>
   `;
 
@@ -1315,6 +1533,8 @@ async function addFilesToRecord(input) {
   if(!files.length) return;
   const doc = sampleDocs.find(d => d.id === currentDetailId) || archivedDocs.find(d => d.id === currentDetailId);
   if(!doc) return;
+  input.value = '';
+  setBusy(true, 'busy.uploading');
   try {
     for(const file of files) {
       const att = await uploadAttachment(currentDetailId, file);
@@ -1327,8 +1547,9 @@ async function addFilesToRecord(input) {
     showToast(t('toast.files_added'), 'success');
   } catch(e) {
     showToast(t('toast.file_upload_error'), 'error');
+  } finally {
+    setBusy(false);
   }
-  input.value = '';
 }
 
 function closeDetail() {
@@ -1641,6 +1862,26 @@ const themes = {
     '--bg':'#13161f','--bg2':'#191d28','--bg3':'#1f2330','--bg4':'#252a38',
     '--border':'#2c3244','--border2':'#363d52',
     '--text':'#e2e6f0','--text2':'#808aa0','--text3':'#4a5268',
+  },
+  'lavender': {
+    '--bg':'#edeaf4','--bg2':'#f4f2f9','--bg3':'#e3e0ee','--bg4':'#d8d4e8',
+    '--border':'#c4bedd','--border2':'#b0a8cc',
+    '--text':'#2a2640','--text2':'#645e88','--text3':'#9890b4',
+  },
+  'frost': {
+    '--bg':'#e8edf4','--bg2':'#f2f5f9','--bg3':'#dce4ee','--bg4':'#cfd8e8',
+    '--border':'#bacad8','--border2':'#a4b8c8',
+    '--text':'#1a2434','--text2':'#4a607a','--text3':'#849ab0',
+  },
+  'sage': {
+    '--bg':'#e8eeea','--bg2':'#f2f6f3','--bg3':'#dce5de','--bg4':'#d0dbd2',
+    '--border':'#bccebe','--border2':'#a8bcaa',
+    '--text':'#1e2c22','--text2':'#4c6452','--text3':'#88a08e',
+  },
+  'mist': {
+    '--bg':'#e8eaee','--bg2':'#f2f3f6','--bg3':'#dcdfe6','--bg4':'#d0d4dc',
+    '--border':'#bcc0cc','--border2':'#a8adb8',
+    '--text':'#1c2030','--text2':'#4a5068','--text3':'#828898',
   },
 };
 
@@ -1976,4 +2217,527 @@ async function permanentDeleteInstrument(id) {
     loadAndRenderTrash();
     updateBadges();
   } catch(e) { showToast(t('toast.error'), 'error'); }
+}
+
+// ══════════════════════════════════════════
+// UNPROCESSED IMPORTS
+// ══════════════════════════════════════════
+// ══════════════════════════════════════════
+// GALLERY
+// ══════════════════════════════════════════
+let _galleryItems = [];
+
+async function loadGallery() {
+  try {
+    const res = await fetch('/gallery', { credentials: 'include' });
+    _galleryItems = await res.json();
+    renderGallery(_galleryItems);
+  } catch(e) {
+    renderGallery([]);
+  }
+}
+
+function renderGallery(items) {
+  const grid  = document.getElementById('gallery-grid');
+  const empty = document.getElementById('gallery-empty');
+  if (!grid) return;
+
+  if (!items.length) {
+    empty.style.display = '';
+    grid.innerHTML = '';
+    return;
+  }
+  empty.style.display = 'none';
+
+  grid.innerHTML = items.map((item, idx) => {
+    const details = [item.record_date, item.company_name, item.card_name].filter(Boolean).join(' · ');
+    return `<div class="gallery-row" onclick="openGalleryPreview(${idx})">
+      <div class="gallery-row-icon">${fileIcon(item.file_name)}</div>
+      <div class="gallery-row-info">
+        <div class="gallery-row-name">${item.file_name}</div>
+        ${details ? `<div class="gallery-row-meta">${details}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function fileIcon(name) {
+  const ext = (name || '').split('.').pop().toLowerCase();
+  if (['jpg','jpeg','png','gif','webp','svg'].includes(ext)) return '🖼️';
+  if (ext === 'pdf') return '📄';
+  if (ext === 'heic') return '📷';
+  if (['xlsx','xls','csv'].includes(ext)) return '📊';
+  if (['docx','doc'].includes(ext)) return '📝';
+  return '📎';
+}
+
+function openGalleryPreview(idx) {
+  const item = _galleryItems[idx];
+  if (!item) return;
+
+  const modal   = document.getElementById('gallery-modal');
+  const content = document.getElementById('gallery-preview-content');
+  const meta    = document.getElementById('gallery-preview-meta');
+
+  const isPdf   = /pdf/i.test(item.file_type || '') || /\.pdf$/i.test(item.file_name);
+  const isImage = /^image\//i.test(item.file_type || '') && !/heic/i.test(item.file_type || '');
+  const isHeic  = /heic/i.test(item.file_type || '') || /\.heic$/i.test(item.file_name);
+
+  if (isPdf || isHeic || (!isImage && item.source !== 'unprocessed')) {
+    const url = item.file_path ? `/attachments/${item.id}/file` : null;
+    if (url) { window.open(url, '_blank'); return; }
+    if (item.drive_id) { window.open(`https://drive.google.com/file/d/${item.drive_id}/view`, '_blank'); return; }
+    return;
+  }
+
+  if (item.source === 'unprocessed') {
+    content.innerHTML = `<div class="gallery-preview-placeholder"><div class="icon">📂</div><div>${t('gallery.unprocessed_badge')}</div></div>`;
+  } else if (isImage && item.file_path) {
+    content.innerHTML = `<img src="/attachments/${item.id}/file" alt="${item.file_name}">`;
+  } else {
+    content.innerHTML = `<div class="gallery-preview-placeholder"><div class="icon">${fileIcon(item.file_name)}</div></div>`;
+  }
+
+  const details = [item.record_date, item.company_name, item.card_name].filter(Boolean).join(' · ');
+  meta.innerHTML = `
+    <div class="meta-name">${item.file_name}</div>
+    ${details ? `<div class="meta-detail">${details}</div>` : ''}
+    <div class="meta-detail">${item.created_at ? item.created_at.slice(0,10) : ''}</div>
+  `;
+
+  modal.classList.add('open');
+}
+
+function closeGalleryModal() {
+  document.getElementById('gallery-modal').classList.remove('open');
+}
+
+let _unprocessedItems = [];
+let _currentImportId = null;
+
+async function loadUnprocessed() {
+  try {
+    const res = await fetch('/unprocessed', { credentials: 'include' });
+    _unprocessedItems = await res.json();
+    renderUnprocessed(_unprocessedItems);
+    updateUnprocessedBadge();
+  } catch { }
+}
+
+function updateUnprocessedBadge() {
+  const badge = document.getElementById('unprocessed-count');
+  if (!badge) return;
+  const count = _unprocessedItems.length;
+  badge.textContent = count;
+  badge.style.display = count > 0 ? '' : 'none';
+}
+
+function _unprocessedItemHtml(item) {
+  const ext = (item.file_name.split('.').pop() || '').toLowerCase();
+  const icon = ['jpg','jpeg','png','gif','webp'].includes(ext) ? '🖼️'
+              : ext === 'pdf' ? '📄'
+              : ['doc','docx'].includes(ext) ? '📝' : '📎';
+  const date   = item.synced_at ? item.synced_at.slice(0, 10) : '';
+  const folder = item.drive_folder || '';
+  const pathHtml = folder
+    ? `<div class="unprocessed-item-path">📁 ${folder}</div>`
+    : '';
+  return `<div class="unprocessed-item" onclick="openAssignModal('${item.id}','${item.file_name.replace(/'/g,"\\'")}')">
+    <div class="unprocessed-item-icon">${icon}</div>
+    <div class="unprocessed-item-info">
+      <div class="unprocessed-item-name">${item.file_name}</div>
+      ${pathHtml}
+    </div>
+    <div class="unprocessed-item-date">${date}</div>
+  </div>`;
+}
+
+function renderUnprocessed(items) {
+  const list = document.getElementById('unprocessed-list');
+  const empty = document.getElementById('unprocessed-empty');
+  if (!list) return;
+  if (!items.length) {
+    list.innerHTML = '';
+    if (empty) empty.style.display = '';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+
+  const fromFolder = items.filter(i => i.drive_folder === 'Unprocessed Imports');
+  const others     = items.filter(i => i.drive_folder !== 'Unprocessed Imports');
+
+  let html = '';
+  if (fromFolder.length) {
+    html += `<div class="unprocessed-group-title" data-i18n="unprocessed.from_folder">${t('unprocessed.from_folder')}</div>`;
+    html += fromFolder.map(_unprocessedItemHtml).join('');
+  }
+  if (others.length) {
+    html += `<div class="unprocessed-group-title" data-i18n="unprocessed.from_other">${t('unprocessed.from_other')}</div>`;
+    html += others.map(_unprocessedItemHtml).join('');
+  }
+  list.innerHTML = html;
+}
+
+function openAssignModal(impId, fileName) {
+  _currentImportId = impId;
+  document.getElementById('assign-file-name').textContent = fileName;
+  document.getElementById('assign-search').value = '';
+  renderAssignRecords(sampleDocs || []);
+  document.getElementById('assign-modal').classList.add('open');
+}
+
+function closeAssignModal() {
+  document.getElementById('assign-modal').classList.remove('open');
+  _currentImportId = null;
+}
+
+function filterAssignRecords(query) {
+  const all = sampleDocs || [];
+  const q = query.toLowerCase();
+  const filtered = q ? all.filter(r =>
+    r.title.toLowerCase().includes(q) ||
+    (r.company_name || '').toLowerCase().includes(q)
+  ) : all;
+  renderAssignRecords(filtered);
+}
+
+function renderAssignRecords(records) {
+  const el = document.getElementById('assign-records-list');
+  if (!el) return;
+  const sorted = [...records].filter(r => !r.is_deleted && !r.is_archived)
+    .sort((a,b) => b.date.localeCompare(a.date));
+  el.innerHTML = sorted.map(r => `
+    <div class="assign-record-item" onclick="assignToRecord('${r.id}')">
+      <div class="assign-record-title">${r.title}</div>
+      <div class="assign-record-meta">${r.date}${r.company_name ? ' · ' + r.company_name : ''} · ${r.amount} ${r.currency}</div>
+    </div>
+  `).join('');
+}
+
+async function assignToRecord(recordId) {
+  if (!_currentImportId) return;
+  const impId = _currentImportId;
+  closeAssignModal();
+  setBusy(true, 'busy.assigning');
+  try {
+    const res = await fetch(`/unprocessed/${impId}/assign`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ record_id: recordId })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      _unprocessedItems = _unprocessedItems.filter(i => i.id !== impId);
+      showToast(t(data.drive_ok === false ? 'toast.assign_no_drive' : 'toast.unprocessed_assigned'), data.drive_ok === false ? 'warning' : 'success');
+      const records = await loadRecords();
+      sampleDocs.length = 0;
+      records.forEach(r => sampleDocs.push(r));
+      filteredDocs = sampleDocs.filter(d => !d.isArchived && !d.isDeleted);
+      renderDocs();
+      loadUnprocessed();
+    } else {
+      showToast(t('toast.error'), 'error');
+    }
+  } catch { showToast(t('toast.error'), 'error'); }
+  finally { setBusy(false); }
+}
+
+async function createNewRecordFromImport() {
+  if (!_currentImportId) return;
+  const impId = _currentImportId;
+  const imp = _unprocessedItems.find(i => i.id === impId);
+  if (!imp) return;
+  closeAssignModal();
+  setBusy(true, 'busy.assigning');
+  try {
+    const res = await fetch(`/unprocessed/${impId}/new-record`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: imp.file_name.replace(/\.[^.]+$/, '') })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      _unprocessedItems = _unprocessedItems.filter(i => i.id !== impId);
+      showToast(t(data.drive_ok === false ? 'toast.assign_no_drive' : 'toast.unprocessed_created'), data.drive_ok === false ? 'warning' : 'success');
+      const records = await loadRecords();
+      sampleDocs.length = 0;
+      records.forEach(r => sampleDocs.push(r));
+      filteredDocs = sampleDocs.filter(d => !d.isArchived && !d.isDeleted);
+      renderDocs();
+      loadUnprocessed();
+    } else {
+      showToast(t('toast.error'), 'error');
+    }
+  } catch { showToast(t('toast.error'), 'error'); }
+  finally { setBusy(false); }
+}
+
+// ══════════════════════════════════════════
+// STORAGE INFO
+// ══════════════════════════════════════════
+function _formatBytes(bytes) {
+  if(bytes === 0) return '0 B';
+  if(bytes < 1024) return bytes + ' B';
+  if(bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  if(bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+}
+
+async function loadBackupList() {
+  const btn  = document.getElementById('backup-list-btn');
+  const list = document.getElementById('backup-drive-list');
+  if(btn) { btn.disabled = true; btn.textContent = t('loading.text'); }
+  try {
+    const res  = await fetch('/backup/list', { credentials: 'include' });
+    const data = await res.json();
+    if(!res.ok || !data.ok) {
+      showToast(t(data.message === 'no_drive_token' ? 'toast.sync_no_drive' : 'toast.error'), 'error');
+      return;
+    }
+    list.style.display = 'flex';
+    if(!data.files.length) {
+      list.innerHTML = `<div style="font-size:12px;color:var(--text3)">${t('settings.restore_drive_empty')}</div>`;
+      return;
+    }
+    list.innerHTML = data.files.map(f => {
+      const date = f.modifiedTime ? f.modifiedTime.slice(0, 10) : '';
+      const size = f.size ? Math.round(f.size / 1024) + ' KB' : '';
+      return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;background:var(--bg3);border-radius:var(--radius-sm);border:1px solid var(--border)">
+        <div>
+          <div style="font-size:12px;font-weight:500;color:var(--text1)">${f.name}</div>
+          <div style="font-size:11px;color:var(--text3)">${date}${size ? ' · ' + size : ''}</div>
+        </div>
+        <button class="btn btn-danger" style="font-size:12px;padding:4px 10px" onclick="restoreFromDrive('${f.id}','${f.name}')">${t('settings.restore_btn_short')}</button>
+      </div>`;
+    }).join('');
+  } catch {
+    showToast(t('toast.error'), 'error');
+  } finally {
+    if(btn) { btn.disabled = false; btn.textContent = t('settings.restore_drive_btn'); }
+  }
+}
+
+async function restoreFromDrive(driveId, name) {
+  if(!confirm(t('settings.restore_confirm').replace('{f}', name))) return;
+  setBusy(true, 'loading.text');
+  try {
+    const res  = await fetch('/backup/restore-from-drive', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ drive_id: driveId }),
+    });
+    const data = await res.json();
+    if(!res.ok || !data.ok) { showToast(t('toast.error'), 'error'); return; }
+    showToast(t('settings.restore_done'), 'success');
+    setTimeout(() => location.reload(), 1500);
+  } catch {
+    showToast(t('toast.error'), 'error');
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function restoreBackup(input) {
+  const file = input.files[0];
+  if(!file) return;
+  input.value = '';
+  if(!confirm(t('settings.restore_confirm'))) return;
+  const status = document.getElementById('restore-status');
+  if(status) status.textContent = t('loading.text');
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    const res  = await fetch('/backup/restore', { method: 'POST', credentials: 'include', body: form });
+    const data = await res.json();
+    if(!res.ok || !data.ok) {
+      showToast(t('toast.error'), 'error');
+      if(status) status.textContent = '';
+      return;
+    }
+    showToast(t('settings.restore_done'), 'success');
+    if(status) status.textContent = '';
+    setTimeout(() => location.reload(), 1500);
+  } catch {
+    showToast(t('toast.error'), 'error');
+    if(status) status.textContent = '';
+  }
+}
+
+async function downloadBackupPC() {
+  const res  = await fetch('/backup/download', { credentials: 'include' });
+  if(!res.ok) { showToast(t('toast.error'), 'error'); return; }
+  const blob = await res.blob();
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `backup_${new Date().toISOString().slice(0,10)}.zip`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function downloadBackup() {
+  const btn = document.getElementById('backup-btn');
+  if(btn) { btn.disabled = true; btn.textContent = t('loading.text'); }
+  try {
+    const res  = await fetch('/backup', { method: 'POST', credentials: 'include' });
+    const data = await res.json();
+    if(!res.ok || !data.ok) {
+      showToast(t(data.message === 'no_drive_token' ? 'toast.sync_no_drive' : 'toast.error'), 'error');
+      return;
+    }
+    showToast(t('settings.backup_done').replace('{f}', data.filename), 'success');
+  } catch {
+    showToast(t('toast.error'), 'error');
+  } finally {
+    if(btn) { btn.disabled = false; btn.textContent = t('settings.backup_btn'); }
+  }
+}
+
+async function loadStorageInfo() {
+  const container = document.getElementById('storage-info-content');
+  container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--text3);font-size:13px">${t('loading.text')}</div>`;
+  try {
+    const resp = await fetch('/storage-info', { credentials: 'include' });
+    if(!resp.ok) throw new Error();
+    const d = await resp.json();
+    container.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div style="grid-column:1/-1;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;display:flex;align-items:center;gap:16px">
+          <div style="font-size:28px">💾</div>
+          <div>
+            <div style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px">${t('storage.total')}</div>
+            <div style="font-size:24px;font-weight:600;color:var(--text1)">${_formatBytes(d.total_size)}</div>
+          </div>
+        </div>
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px">
+          <div style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">${t('storage.files')}</div>
+          <div style="font-size:20px;font-weight:600;color:var(--text1)">${_formatBytes(d.uploads_size)}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:4px">${d.file_count} ${t('storage.files_unit')}</div>
+        </div>
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px">
+          <div style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">${t('storage.db')}</div>
+          <div style="font-size:20px;font-weight:600;color:var(--text1)">${_formatBytes(d.db_size)}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:4px">${t('storage.db_hint')}</div>
+        </div>
+      </div>
+    `;
+  } catch(e) {
+    container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--red);font-size:13px">${t('toast.error')}</div>`;
+  }
+}
+
+async function runStorageCleanup() {
+  const btn = document.getElementById('cleanup-btn');
+  if(btn) { btn.disabled = true; btn.textContent = t('btn.saving'); }
+  try {
+    const resp = await fetch('/storage-cleanup', { method: 'POST', credentials: 'include' });
+    if(!resp.ok) throw new Error();
+    const d = await resp.json();
+    const msg = t('storage.cleanup_done')
+      .replace('{f}', d.deleted_files)
+      .replace('{d}', d.deleted_folders);
+    showToast(msg, 'success');
+    loadStorageInfo();
+  } catch(e) {
+    showToast(t('toast.error'), 'error');
+  } finally {
+    if(btn) { btn.disabled = false; btn.textContent = t('storage.cleanup_btn'); }
+  }
+}
+
+// ══════════════════════════════════════════
+// DRIVE PICKER
+// ══════════════════════════════════════════
+let _drivePickerContext = null;
+let _drivePickerTimer   = null;
+
+function openDrivePicker(context) {
+  _drivePickerContext = context;
+  document.getElementById('drive-picker-search').value = '';
+  document.getElementById('drive-picker-overlay').classList.add('open');
+  _loadDriveFiles('');
+}
+
+function closeDrivePicker() {
+  document.getElementById('drive-picker-overlay').classList.remove('open');
+  _drivePickerContext = null;
+}
+
+function onDrivePickerSearch(val) {
+  clearTimeout(_drivePickerTimer);
+  _drivePickerTimer = setTimeout(() => _loadDriveFiles(val.trim()), 400);
+}
+
+async function _loadDriveFiles(query) {
+  const list = document.getElementById('drive-picker-list');
+  list.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text3);font-size:13px">${t('drive.loading')}</div>`;
+  try {
+    const url = query ? `/drive/files?q=${encodeURIComponent(query)}` : '/drive/files';
+    const resp = await fetch(url, { credentials: 'include' });
+    if(!resp.ok) {
+      list.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text3);font-size:13px">${t('drive.no_drive')}</div>`;
+      return;
+    }
+    const files = await resp.json();
+    if(!files.length) {
+      list.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text3);font-size:13px">${t('drive.empty')}</div>`;
+      return;
+    }
+    list.innerHTML = files.map(f => {
+      const icon = f.mimeType && f.mimeType.includes('pdf') ? '📄' :
+                   f.mimeType && f.mimeType.startsWith('image/') ? '🖼️' : '📎';
+      const name = f.name || '';
+      const shortName = name.length > 48 ? name.substring(0, 46) + '…' : name;
+      const safeId   = f.id.replace(/'/g, '');
+      const safeMime = (f.mimeType || '').replace(/'/g, '');
+      const safeName = name.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$');
+      return `<div onclick="selectDriveFile('${safeId}',\`${safeName}\`,'${safeMime}')"
+                style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-sm);cursor:pointer;transition:background 0.12s"
+                onmouseover="this.style.background='var(--bg3)'"
+                onmouseout="this.style.background=''">
+        <span style="font-size:16px;flex-shrink:0">${icon}</span>
+        <span style="font-size:13px;color:var(--text1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${shortName}</span>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    list.innerHTML = `<div style="text-align:center;padding:24px;color:var(--red);font-size:13px">${t('toast.error')}</div>`;
+  }
+}
+
+async function selectDriveFile(driveId, fileName, mimeType) {
+  const ctx = _drivePickerContext;
+  closeDrivePicker();
+
+  if(ctx === 'form') {
+    pendingDriveFiles.push({ drive_id: driveId, file_name: fileName, mime_type: mimeType });
+    renderFilesPreview();
+    return;
+  }
+
+  // context is a record_id — attach directly
+  setBusy(true, 'busy.drive_download');
+  try {
+    const resp = await fetch(`/records/${ctx}/attach-from-drive`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ drive_id: driveId, file_name: fileName, mime_type: mimeType }),
+    });
+    if(!resp.ok) throw new Error();
+    const att  = await resp.json();
+    const doc  = sampleDocs.find(d => d.id === ctx) || archivedDocs.find(d => d.id === ctx);
+    if(doc) {
+      if(!doc.attachments) doc.attachments = [];
+      doc.attachments.push({ id: att.id, name: att.file_name, type: att.file_type, storageType: att.storage_type });
+      doc.files = doc.attachments.length;
+      renderAttachments(doc);
+      renderDocs();
+    }
+    showToast(t('toast.drive_attached'), 'success');
+  } catch(e) {
+    showToast(t('toast.drive_error'), 'error');
+  } finally {
+    setBusy(false);
+  }
 }

@@ -17,6 +17,13 @@
   <div class="loading-text" data-i18n="loading.text">Завантаження...</div>
 </div>
 
+<div class="busy-overlay hidden" id="busy-overlay">
+  <div class="busy-card">
+    <div class="spinner"></div>
+    <div class="busy-text" id="busy-text">...</div>
+  </div>
+</div>
+
 
 <!-- ── AUTH SCREEN ── -->
 <div class="auth-screen hidden" id="auth-screen">
@@ -80,14 +87,18 @@
       <div class="nav-icon">☁️</div>
       <span data-i18n="nav.sync">Sync now</span>
     </div>
-    <div class="nav-item" onclick="showPage('inbox', this)">
+    <div class="nav-item" onclick="importFromDrive()">
       <div class="nav-icon">📥</div>
-      <span data-i18n="nav.inbox">Import Inbox</span>
-      <span class="nav-badge" id="inbox-count">0</span>
+      <span data-i18n="nav.import_drive">Import from Drive</span>
     </div>
     <div class="nav-item" onclick="showPage('unprocessed', this)">
       <div class="nav-icon">📂</div>
       <span data-i18n="nav.unprocessed">Unprocessed Imports</span>
+      <span class="nav-badge" id="unprocessed-count" style="display:none">0</span>
+    </div>
+    <div class="nav-item" onclick="showPage('gallery', this)">
+      <div class="nav-icon">🖼️</div>
+      <span data-i18n="nav.gallery">Галерея чеків</span>
     </div>
 
     <div class="nav-divider"></div>
@@ -310,30 +321,69 @@
     </div>
   </div>
 
-  <!-- ── IMPORT INBOX ── -->
-  <div id="page-inbox" style="display:none">
-    <div class="topbar">
-      <div class="topbar-title" data-i18n="nav.inbox">Import Inbox</div>
-    </div>
-    <div class="content">
-      <div class="empty-state">
-        <div class="empty-icon">📥</div>
-        <div class="empty-title" data-i18n="inbox.no_drive">Google Drive не підключено</div>
-        <div class="empty-sub" data-i18n="inbox.no_drive_sub">Підключіть Google Drive щоб бачити імпортовані файли</div>
-      </div>
-    </div>
-  </div>
-
   <!-- ── UNPROCESSED ── -->
   <div id="page-unprocessed" style="display:none">
     <div class="topbar">
       <div class="topbar-title" data-i18n="nav.unprocessed">Unprocessed Imports</div>
     </div>
     <div class="content">
-      <div class="empty-state">
+      <div id="unprocessed-empty" class="empty-state" style="display:none">
         <div class="empty-icon">📂</div>
-        <div class="empty-title" data-i18n="unprocessed.no_drive">Google Drive не підключено</div>
-        <div class="empty-sub" data-i18n="unprocessed.no_drive_sub">Підключіть Google Drive щоб бачити необроблені файли</div>
+        <div class="empty-title" data-i18n="unprocessed.empty">Немає файлів для обробки</div>
+        <div class="empty-sub" data-i18n="unprocessed.empty_sub">Додайте файли в папку ReceiptsManager/Unprocessed Imports на Google Drive і натисніть Sync now</div>
+      </div>
+      <div id="unprocessed-list" class="unprocessed-list"></div>
+    </div>
+  </div>
+
+  <!-- ── GALLERY ── -->
+  <div id="page-gallery" style="display:none">
+    <div class="topbar">
+      <div class="topbar-title" data-i18n="nav.gallery">Галерея чеків</div>
+    </div>
+    <div class="content">
+      <div id="gallery-empty" class="empty-state" style="display:none">
+        <div class="empty-icon">🖼️</div>
+        <div class="empty-title" data-i18n="gallery.empty">Немає чеків</div>
+        <div class="empty-sub" data-i18n="gallery.empty_sub">Додайте вкладення до записів</div>
+      </div>
+      <div id="gallery-grid" class="gallery-list"></div>
+    </div>
+  </div>
+
+  <!-- ── GALLERY PREVIEW MODAL ── -->
+  <div id="gallery-modal" class="modal-overlay" onclick="if(event.target===this)closeGalleryModal()">
+    <div class="gallery-modal-box">
+      <button class="modal-close gallery-modal-close" onclick="closeGalleryModal()">✕</button>
+      <div id="gallery-preview-content" class="gallery-preview-content"></div>
+      <div id="gallery-preview-meta" class="gallery-preview-meta"></div>
+    </div>
+  </div>
+
+  <!-- ── ASSIGN MODAL ── -->
+  <div id="assign-modal" class="modal-overlay" onclick="if(event.target===this)closeAssignModal()">
+    <div class="modal" style="max-width:500px">
+      <div class="modal-header">
+        <div class="modal-title" data-i18n="unprocessed.assign_title">Прив'язати файл до запису</div>
+        <button class="modal-close" onclick="closeAssignModal()">✕</button>
+      </div>
+      <div class="modal-body" style="padding:16px 20px 20px;display:flex;flex-direction:column;gap:16px">
+        <div class="assign-file-banner">
+          <div class="assign-file-banner-icon">📎</div>
+          <div id="assign-file-name" class="assign-file-banner-name"></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em" data-i18n="unprocessed.select_record">Оберіть запис</div>
+          <input class="form-input" type="text" id="assign-search"
+            data-i18n-placeholder="unprocessed.search_placeholder"
+            placeholder="Пошук запису..."
+            oninput="filterAssignRecords(this.value)">
+          <div id="assign-records-list" class="assign-records-list"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeAssignModal()" data-i18n="form.cancel">Скасувати</button>
+        <button class="btn btn-primary" onclick="createNewRecordFromImport()" data-i18n="unprocessed.create_record">Створити новий запис</button>
       </div>
     </div>
   </div>
@@ -347,16 +397,18 @@
       <div class="settings-layout">
 
         <div class="settings-nav">
-          <div class="settings-nav-item active" onclick="showSettingsTab('payments', this)"> <span data-i18n="settings.payments">💳 Платіжні інструменти</span></div>
-          <div class="settings-nav-item" onclick="showSettingsTab('companies', this)"> <span data-i18n="settings.companies">🏢 Компанії</span></div>
+          <div class="settings-nav-item active" onclick="showSettingsTab('companies', this)"> <span data-i18n="settings.companies">🏢 Компанії</span></div>
+          <div class="settings-nav-item" onclick="showSettingsTab('payments', this)"> <span data-i18n="settings.payments">💳 Платіжні інструменти</span></div>
           <div class="settings-nav-item" onclick="showSettingsTab('interface', this)"> <span data-i18n="settings.interface">🎨 Інтерфейс</span></div>
           <div class="settings-nav-item" onclick="showSettingsTab('language', this)"> <span data-i18n="settings.language">🌐 Мова</span></div>
+          <div class="settings-nav-item" onclick="showSettingsTab('storage', this)"> <span data-i18n="settings.storage">💾 Пам'ять</span></div>
+          <div class="settings-nav-item" onclick="showSettingsTab('backup', this)"> <span data-i18n="settings.backup">📦 Резервне копіювання</span></div>
           <div class="settings-nav-item" onclick="showSettingsTab('profile', this)"> <span data-i18n="settings.profile">👤 Профіль</span></div>
         </div>
 
         <div>
           <!-- PAYMENTS -->
-          <div id="settings-payments" class="settings-content active">
+          <div id="settings-payments" class="settings-content">
             <div class="settings-section">
               <div class="settings-section-header">
                 <div class="settings-section-title" data-i18n="settings.payments">Платіжні інструменти</div>
@@ -369,7 +421,7 @@
           </div>
 
           <!-- COMPANIES -->
-          <div id="settings-companies" class="settings-content">
+          <div id="settings-companies" class="settings-content active">
             <div class="settings-section">
               <div class="settings-section-header">
                 <div class="settings-section-title" data-i18n="settings.companies">Компанії</div>
@@ -494,6 +546,66 @@
                     </div>
                   </div>
 
+                  <div class="theme-card" id="theme-lavender" onclick="setTheme('lavender', this)">
+                    <div class="theme-preview" style="background:#edeaf4;border-color:#c4bedd">
+                      <div class="theme-preview-sidebar" style="background:#f4f2f9"></div>
+                      <div class="theme-preview-content">
+                        <div class="theme-preview-bar" style="background:#d8d4e8;width:70%"></div>
+                        <div class="theme-preview-bar" style="background:#e3e0ee;width:50%"></div>
+                        <div class="theme-preview-bar" style="background:#e3e0ee;width:80%"></div>
+                      </div>
+                    </div>
+                    <div class="theme-label">
+                      <span class="theme-check">✓</span>
+                      🪻 Lavender
+                    </div>
+                  </div>
+
+                  <div class="theme-card" id="theme-frost" onclick="setTheme('frost', this)">
+                    <div class="theme-preview" style="background:#e8edf4;border-color:#bacad8">
+                      <div class="theme-preview-sidebar" style="background:#f2f5f9"></div>
+                      <div class="theme-preview-content">
+                        <div class="theme-preview-bar" style="background:#cfd8e8;width:70%"></div>
+                        <div class="theme-preview-bar" style="background:#dce4ee;width:50%"></div>
+                        <div class="theme-preview-bar" style="background:#dce4ee;width:80%"></div>
+                      </div>
+                    </div>
+                    <div class="theme-label">
+                      <span class="theme-check">✓</span>
+                      ❄️ Frost
+                    </div>
+                  </div>
+
+                  <div class="theme-card" id="theme-sage" onclick="setTheme('sage', this)">
+                    <div class="theme-preview" style="background:#e8eeea;border-color:#bccebe">
+                      <div class="theme-preview-sidebar" style="background:#f2f6f3"></div>
+                      <div class="theme-preview-content">
+                        <div class="theme-preview-bar" style="background:#d0dbd2;width:70%"></div>
+                        <div class="theme-preview-bar" style="background:#dce5de;width:50%"></div>
+                        <div class="theme-preview-bar" style="background:#dce5de;width:80%"></div>
+                      </div>
+                    </div>
+                    <div class="theme-label">
+                      <span class="theme-check">✓</span>
+                      🌿 Sage
+                    </div>
+                  </div>
+
+                  <div class="theme-card" id="theme-mist" onclick="setTheme('mist', this)">
+                    <div class="theme-preview" style="background:#e8eaee;border-color:#bcc0cc">
+                      <div class="theme-preview-sidebar" style="background:#f2f3f6"></div>
+                      <div class="theme-preview-content">
+                        <div class="theme-preview-bar" style="background:#d0d4dc;width:70%"></div>
+                        <div class="theme-preview-bar" style="background:#dcdfe6;width:50%"></div>
+                        <div class="theme-preview-bar" style="background:#dcdfe6;width:80%"></div>
+                      </div>
+                    </div>
+                    <div class="theme-label">
+                      <span class="theme-check">✓</span>
+                      🌫️ Mist
+                    </div>
+                  </div>
+
                 </div>
               </div>
             </div>
@@ -523,20 +635,74 @@
               <div class="settings-section-header">
                 <div class="settings-section-title" data-i18n="settings.profile_title">Профіль</div>
               </div>
-              <div style="padding:18px">
-                <div class="form-grid">
-                  <div class="form-group">
-                    <label class="form-label" data-i18n="settings.name">Ім'я</label>
-                    <input class="form-input" type="text" data-i18n-placeholder="auth.name_placeholder">
-                  </div>
-                  <div class="form-group">
-                    <label class="form-label" data-i18n="settings.email">Email</label>
-                    <input class="form-input" type="email" placeholder="email@example.com">
+              <div id="profile-content" style="padding:18px;display:flex;flex-direction:column;gap:16px">
+                <div style="text-align:center;padding:20px;color:var(--text3);font-size:13px" data-i18n="loading.text">Завантаження...</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- BACKUP -->
+          <div id="settings-backup" class="settings-content">
+            <div class="settings-section">
+              <div class="settings-section-header">
+                <div class="settings-section-title" data-i18n="settings.backup_title">Резервне копіювання</div>
+              </div>
+              <div style="padding:12px 18px 18px;display:flex;flex-direction:column;gap:20px">
+
+                <!-- ПК -->
+                <div>
+                  <div class="backup-group-title">💻 ПК</div>
+                  <div style="display:flex;flex-direction:column;gap:10px">
+                    <div class="backup-block">
+                      <div class="backup-block-title" data-i18n="settings.backup_pc_title">Резервна копія на ПК</div>
+                      <div class="backup-block-desc" data-i18n="settings.backup_pc_desc">Завантажує ZIP-архів з базою даних та файлами чеків на ваш комп'ютер.</div>
+                      <button class="btn btn-ghost" onclick="downloadBackupPC()" data-i18n="settings.backup_pc_btn">⬇️ Завантажити резервну копію</button>
+                    </div>
+                    <div class="backup-block backup-block--danger">
+                      <div class="backup-block-title" data-i18n="settings.restore_title">Відновлення з резервної копії</div>
+                      <div class="backup-block-desc" data-i18n="settings.restore_desc">Замінює поточну базу даних та файли чеків вмістом вибраного ZIP-архіву. Поточні дані будуть втрачені.</div>
+                      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                        <input type="file" id="restore-file-input" accept=".zip" style="display:none" onchange="restoreBackup(this)">
+                        <button class="btn btn-ghost backup-btn--outline-danger" onclick="document.getElementById('restore-file-input').click()" data-i18n="settings.restore_btn">🔄 Відновити резервну копію</button>
+                        <span id="restore-status" style="font-size:12px;color:var(--text3)"></span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div style="margin-top:14px">
-                  <button class="btn btn-primary" onclick="showToast('Збережено', 'success')" data-i18n="settings.save">Зберегти</button>
+
+                <!-- Google Drive -->
+                <div>
+                  <div class="backup-group-title">☁️ Google Drive</div>
+                  <div style="display:flex;flex-direction:column;gap:10px">
+                    <div class="backup-block">
+                      <div class="backup-block-title" data-i18n="settings.backup_drive_title">Резервна копія на Google Drive</div>
+                      <div class="backup-block-desc" data-i18n="settings.backup_drive_desc">Створює ZIP-архів і зберігає в папці ReceiptsManager/Backup на Google Drive.</div>
+                      <button class="btn btn-primary" onclick="downloadBackup()" id="backup-btn" data-i18n="settings.backup_btn">📦 Зберегти резервну копію на Drive</button>
+                    </div>
+                    <div class="backup-block backup-block--danger">
+                      <div class="backup-block-title" data-i18n="settings.restore_drive_title">Відновлення з Google Drive</div>
+                      <div class="backup-block-desc" data-i18n="settings.restore_drive_desc">Показує список резервних копій з папки ReceiptsManager/Backup на Drive. Поточні дані будуть втрачені.</div>
+                      <button class="btn btn-danger" onclick="loadBackupList()" id="backup-list-btn" data-i18n="settings.restore_drive_btn">☁️ Показати резервні копії з Drive</button>
+                      <div id="backup-drive-list" style="margin-top:8px;display:none;flex-direction:column;gap:6px"></div>
+                    </div>
+                  </div>
                 </div>
+
+              </div>
+            </div>
+          </div>
+
+          <!-- STORAGE -->
+          <div id="settings-storage" class="settings-content">
+            <div class="settings-section">
+              <div class="settings-section-header">
+                <div class="settings-section-title" data-i18n="settings.storage_title">Використання пам'яті</div>
+              </div>
+              <div style="padding:18px;display:flex;flex-direction:column;gap:12px" id="storage-info-content">
+                <div style="text-align:center;padding:20px;color:var(--text3);font-size:13px" data-i18n="loading.text">Завантаження...</div>
+              </div>
+              <div style="padding:0 18px 18px">
+                <button class="btn btn-ghost" style="font-size:13px" onclick="runStorageCleanup()" id="cleanup-btn" data-i18n="storage.cleanup_btn">🧹 Очистити зайві файли та порожні папки</button>
               </div>
             </div>
           </div>
@@ -574,6 +740,7 @@
             <button class="upload-btn" onclick="document.getElementById('file-input').click()" data-i18n="form.camera">📷 Камера</button>
             <button class="upload-btn" onclick="document.getElementById('file-input').click()" data-i18n="form.gallery">🖼️ Галерея</button>
             <button class="upload-btn" onclick="document.getElementById('file-input').click()" data-i18n="form.files">📁 Файли</button>
+            <button class="upload-btn" onclick="openDrivePicker('form')" data-i18n="drive.btn">☁️ З Drive</button>
           </div>
           <div id="existing-attachments-preview" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"></div>
           <div id="files-preview" style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap"></div>
@@ -767,7 +934,10 @@
         <div class="detail-section-title" data-i18n="detail.attachments">Вкладення</div>
         <div class="attachments-grid" id="detail-attachments"></div>
         <input type="file" id="detail-file-input" multiple accept="image/*,.pdf" style="display:none" onchange="addFilesToRecord(this)">
-        <button class="attachment-add" onclick="document.getElementById('detail-file-input').click()" style="width:auto;padding:6px 14px;border-radius:var(--radius-sm);flex-direction:row;height:auto;gap:6px;font-size:12px" data-i18n="detail.add_file">+ Додати файл</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="attachment-add" onclick="document.getElementById('detail-file-input').click()" style="width:auto;padding:6px 14px;border-radius:var(--radius-sm);flex-direction:row;height:auto;gap:6px;font-size:12px" data-i18n="detail.add_file">+ Додати файл</button>
+          <button class="attachment-add" onclick="openDrivePicker(currentDetailId)" style="width:auto;padding:6px 14px;border-radius:var(--radius-sm);flex-direction:row;height:auto;gap:6px;font-size:12px" data-i18n="drive.btn">☁️ З Drive</button>
+        </div>
       </div>
 
       <div class="detail-section">
@@ -784,6 +954,59 @@
 
 <!-- TOAST -->
 <div class="toast-container" id="toast-container"></div>
+
+<!-- ── MODAL: SYNC PREVIEW ── -->
+<div class="modal-overlay" id="sync-preview-overlay" onclick="if(event.target===this)closeSyncPreview()">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <div class="modal-title">☁️ Google Drive</div>
+      <button class="modal-close" onclick="closeSyncPreview()">✕</button>
+    </div>
+    <div class="modal-body" style="padding:8px 16px 16px">
+      <div class="sync-action-row" onclick="confirmSync()">
+        <div class="sync-action-icon">☁️</div>
+        <div class="sync-action-text">
+          <div class="sync-action-title" data-i18n="sync.confirm_btn">Синхронізувати</div>
+          <div class="sync-action-desc" data-i18n="sync.body_push">Завантажує локальні файли, яких ще немає на Drive</div>
+        </div>
+        <div class="sync-action-arrow">›</div>
+      </div>
+      <div class="sync-action-row" onclick="runDriveCleanup()">
+        <div class="sync-action-icon">🧹</div>
+        <div class="sync-action-text">
+          <div class="sync-action-title" data-i18n="sync.drive_cleanup_btn">Очистити на Drive</div>
+          <div class="sync-action-desc" data-i18n="sync.body_cleanup">Видаляє зайві файли та порожні папки на Drive</div>
+        </div>
+        <div class="sync-action-arrow">›</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeSyncPreview()" data-i18n="form.cancel">Скасувати</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: DRIVE PICKER ── -->
+<div class="modal-overlay" id="drive-picker-overlay" onclick="if(event.target===this)closeDrivePicker()">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <div class="modal-title" data-i18n="drive.picker_title">Вибрати файл з Google Drive</div>
+      <button class="modal-close" onclick="closeDrivePicker()">✕</button>
+    </div>
+    <div class="modal-body" style="padding:12px 16px">
+      <div class="search-wrap" style="margin-bottom:12px">
+        <span class="search-icon">🔍</span>
+        <input class="search-input" type="text" id="drive-picker-search"
+          data-i18n-placeholder="drive.search_placeholder"
+          oninput="onDrivePickerSearch(this.value)">
+      </div>
+      <div id="drive-picker-list" style="max-height:360px;overflow-y:auto"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeDrivePicker()" data-i18n="form.cancel">Скасувати</button>
+    </div>
+  </div>
+</div>
 
 
 <!-- ── MODAL: COMPANY ── -->
@@ -911,7 +1134,8 @@
   </div>
 </div>
 
-<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+
+<script src="/js/vendor/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="js/i18n.js"></script>
