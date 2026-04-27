@@ -1680,7 +1680,7 @@ def backup_restore_from_drive():
         with zipfile.ZipFile(buf, 'r') as zf:
             if 'local.db' not in zf.namelist():
                 return jsonify({'ok': False, 'message': 'invalid_backup'}), 400
-            with zf.open('local.db') as src:
+            with zf.open('docs/local.db') as src:
                 with open(DB_PATH, 'wb') as dst:
                     dst.write(src.read())
             upload_prefix = 'uploads/'
@@ -1716,7 +1716,7 @@ def backup_restore():
                 return jsonify({'ok': False, 'message': 'invalid_backup'}), 400
 
             # Restore DB
-            with zf.open('local.db') as src:
+            with zf.open('docs/local.db') as src:
                 with open(DB_PATH, 'wb') as dst:
                     dst.write(src.read())
 
