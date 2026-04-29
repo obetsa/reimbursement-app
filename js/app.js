@@ -106,7 +106,6 @@ function updateDashboard() {
   if(statEls[1]) statEls[1].textContent = partial.length;
   if(statEls[2]) statEls[2].textContent = done.length;
   if(statEls[3]) statEls[3].textContent = noReturn.length;
-  if(statEls[4]) statEls[4].textContent = 0; // Google Drive — майбутнє
 
   // ── Company breakdown ──
   // Show ALL companies from active docs (not just with remainder)
@@ -201,7 +200,7 @@ const sampleDocs = [];
 let archivedDocs = [];
 let filteredArchived = [];
 
-let currentView = 'table';
+let currentView = window.innerWidth <= 768 ? 'cards' : (localStorage.getItem('docView') || 'table');
 let filteredDocs = sampleDocs.filter(d => !d.isArchived && !d.isDeleted);
 
 // ── NAVIGATION ──
@@ -225,6 +224,8 @@ function showPage(name, el) {
 
   document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
   if(el) el.classList.add('active');
+  document.querySelector('.sidebar')?.classList.remove('mob-expanded');
+  document.getElementById('mob-sidebar-overlay')?.classList.remove('open');
 
   if(name === 'documents') renderDocs();
   if(name === 'trash') loadAndRenderTrash();
@@ -239,6 +240,13 @@ function showPage(name, el) {
 document.addEventListener('DOMContentLoaded', async () => {
   const dateEl = document.getElementById('field-date');
   if(dateEl) dateEl.value = new Date().toISOString().split('T')[0];
+
+  document.getElementById('field-status')?.addEventListener('change', function() {
+    if(this.value === 'done') {
+      const amount = document.getElementById('field-amount')?.value;
+      if(amount) document.getElementById('field-returned').value = amount;
+    }
+  });
   loadSavedTheme();
   loadSavedLang();
 
@@ -309,6 +317,11 @@ function restoreSettingsTab() {
   else showSettingsTab('companies', document.querySelector('.settings-nav-item'));
 }
 
+// ── SCROLL LOCK ──
+let _scrollLockCount = 0;
+function lockScroll()   { if (++_scrollLockCount === 1) document.body.style.overflow = 'hidden'; }
+function unlockScroll() { if (--_scrollLockCount <= 0) { _scrollLockCount = 0; document.body.style.overflow = ''; } }
+
 // ── MODAL ──
 let editingId = null;
 let pendingFiles = [];
@@ -321,6 +334,7 @@ function openModal() {
   document.getElementById('modal-save-btn').textContent = t('btn.save_record');
   document.getElementById('modal-edit-badge').style.display = 'none';
   document.getElementById('modal-overlay').classList.add('open');
+  lockScroll();
 }
 
 function setVal(id, val) {
@@ -408,10 +422,12 @@ function openEditModal(id) {
   document.getElementById('files-preview').innerHTML = '';
   renderExistingAttachments(doc);
   document.getElementById('modal-overlay').classList.add('open');
+  lockScroll();
 }
 
 function closeModal() {
   document.getElementById('modal-overlay').classList.remove('open');
+  unlockScroll();
 }
 
 function closeModalOutside(e) {
@@ -730,6 +746,9 @@ function renderArchiveSection() {
   document.getElementById('archive-section-count').textContent = `${filteredArchived.length} ${t('dash.checks')}`;
   renderArchiveTable();
   renderArchiveCards();
+  const archiveView = window.innerWidth <= 768 ? 'cards' : currentView;
+  document.getElementById('table-view-archive').style.display = archiveView === 'table' ? '' : 'none';
+  document.getElementById('cards-view-archive').style.display = archiveView === 'cards' ? 'grid' : 'none';
 }
 
 function renderArchiveTable() {
@@ -870,7 +889,9 @@ function renderCards() {
 
 // ── VIEW TOGGLE ──
 function setView(type) {
+  if (window.innerWidth <= 768) type = 'cards';
   currentView = type;
+  localStorage.setItem('docView', type);
   document.getElementById('table-view').style.display = type === 'table' ? '' : 'none';
   document.getElementById('cards-view').style.display = type === 'cards' ? 'grid' : 'none';
   document.getElementById('table-view-archive').style.display = type === 'table' ? '' : 'none';
@@ -967,6 +988,22 @@ function sortDocs(val) {
 
 // ── LANG — see js/i18n.js ──
 
+// ── MOBILE SIDEBAR ──
+function toggleMobSidebar() {
+  const sidebar = document.querySelector('.sidebar');
+  const overlay = document.getElementById('mob-sidebar-overlay');
+  sidebar.classList.toggle('mob-expanded');
+  overlay.classList.toggle('open');
+}
+
+function userCardClick() {
+  if (window.innerWidth <= 768) {
+    toggleMobSidebar();
+  } else {
+    showLogoutMenu();
+  }
+}
+
 // ── SYNC ──
 function syncNow() {
   document.getElementById('sync-preview-overlay').classList.add('open');
@@ -1054,11 +1091,13 @@ async function importFromDrive() {
 // ══════════════════════════════════════════
 function openExportModal() {
   document.getElementById('export-modal-overlay').classList.add('open');
+  lockScroll();
   updateExportCount();
 }
 
 function closeExportModal() {
   document.getElementById('export-modal-overlay').classList.remove('open');
+  unlockScroll();
 }
 
 function onExportPeriodChange() {
@@ -1448,6 +1487,7 @@ function openDetail(id) {
   document.getElementById('ret-date').value = new Date().toISOString().split('T')[0];
 
   document.getElementById('detail-overlay').classList.add('open');
+  lockScroll();
 }
 
 function renderReturnSection(doc) {
@@ -1554,6 +1594,7 @@ async function addFilesToRecord(input) {
 
 function closeDetail() {
   document.getElementById('detail-overlay').classList.remove('open');
+  unlockScroll();
   currentDetailId = null;
 }
 
@@ -1849,8 +1890,8 @@ const themes = {
     '--text':'#d8ede6','--text2':'#6a9982','--text3':'#3a6050',
   },
   'light': {
-    '--bg':'#f4f5f7','--bg2':'#ffffff','--bg3':'#ebeef2','--bg4':'#e2e5eb',
-    '--border':'#d0d5de','--border2':'#b8bfcc',
+    '--bg':'#d8dce6','--bg2':'#e8ecf4','--bg3':'#ccd2de','--bg4':'#c0c8d4',
+    '--border':'#adb8c8','--border2':'#96a4b8',
     '--text':'#1a1f2e','--text2':'#4a5568','--text3':'#8896aa',
   },
   'mocha': {
@@ -1864,23 +1905,23 @@ const themes = {
     '--text':'#e2e6f0','--text2':'#808aa0','--text3':'#4a5268',
   },
   'lavender': {
-    '--bg':'#edeaf4','--bg2':'#f4f2f9','--bg3':'#e3e0ee','--bg4':'#d8d4e8',
-    '--border':'#c4bedd','--border2':'#b0a8cc',
+    '--bg':'#cfc8e8','--bg2':'#dfdaf0','--bg3':'#c4bcdc','--bg4':'#b8b0d0',
+    '--border':'#a49cc2','--border2':'#9088b2',
     '--text':'#2a2640','--text2':'#645e88','--text3':'#9890b4',
   },
   'frost': {
-    '--bg':'#e8edf4','--bg2':'#f2f5f9','--bg3':'#dce4ee','--bg4':'#cfd8e8',
-    '--border':'#bacad8','--border2':'#a4b8c8',
+    '--bg':'#ccd4e4','--bg2':'#dce4f0','--bg3':'#bec8d8','--bg4':'#b2bece',
+    '--border':'#9aaec0','--border2':'#88a0b4',
     '--text':'#1a2434','--text2':'#4a607a','--text3':'#849ab0',
   },
   'sage': {
-    '--bg':'#e8eeea','--bg2':'#f2f6f3','--bg3':'#dce5de','--bg4':'#d0dbd2',
-    '--border':'#bccebe','--border2':'#a8bcaa',
+    '--bg':'#c8d8ca','--bg2':'#d8e8da','--bg3':'#bccebe','--bg4':'#b0c4b2',
+    '--border':'#9cb8a0','--border2':'#8aaa8e',
     '--text':'#1e2c22','--text2':'#4c6452','--text3':'#88a08e',
   },
   'mist': {
-    '--bg':'#e8eaee','--bg2':'#f2f3f6','--bg3':'#dcdfe6','--bg4':'#d0d4dc',
-    '--border':'#bcc0cc','--border2':'#a8adb8',
+    '--bg':'#ccd0d8','--bg2':'#dcdfe8','--bg3':'#bec4cc','--bg4':'#b2b8c2',
+    '--border':'#9ea6b4','--border2':'#8c96a8',
     '--text':'#1c2030','--text2':'#4a5068','--text3':'#828898',
   },
 };
@@ -1987,11 +2028,13 @@ function openCompanyModal(id = null) {
   }
 
   document.getElementById('company-modal-overlay').classList.add('open');
+  lockScroll();
   setTimeout(() => nameInput.focus(), 100);
 }
 
 function closeCompanyModal() {
   document.getElementById('company-modal-overlay').classList.remove('open');
+  unlockScroll();
   editingCompanyId = null;
 }
 
@@ -2135,11 +2178,13 @@ function openInstrumentModal(id = null) {
   }
 
   document.getElementById('instrument-modal-overlay').classList.add('open');
+  lockScroll();
   setTimeout(() => nameInput.focus(), 100);
 }
 
 function closeInstrumentModal() {
   document.getElementById('instrument-modal-overlay').classList.remove('open');
+  unlockScroll();
   editingInstrumentId = null;
 }
 

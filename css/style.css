@@ -1819,6 +1819,33 @@
     background: rgba(247,111,111,0.2);
   }
 
+  /* ARCHIVE SECTION */
+  #archive-section { margin-top: 32px; }
+
+  .archive-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .archive-divider-line {
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .archive-divider-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text3);
+    white-space: nowrap;
+  }
+
+  .archive-divider-label span:last-child {
+    font-weight: 400;
+  }
+
   .btn-archive {
     background: var(--bg4);
     color: var(--text2);

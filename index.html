@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 <link rel="stylesheet" href="css/components.css">
+<link rel="stylesheet" href="css/mobile.css">
 </head>
 <body>
 
@@ -49,10 +50,11 @@
   </div>
 </div>
 
+<div class="mob-sidebar-overlay" id="mob-sidebar-overlay" onclick="toggleMobSidebar()"></div>
 <aside class="sidebar">
   <div class="sidebar-logo">
     <div class="logo-mark">
-      <div class="logo-icon">💳</div>
+      <div class="logo-icon" onclick="toggleMobSidebar()" style="cursor:pointer">💳</div>
       <div>
         <div class="logo-text">Reimbursement</div>
         <div class="logo-sub">App</div>
@@ -111,7 +113,7 @@
   </nav>
 
   <div class="sidebar-bottom">
-    <div class="user-card" onclick="showLogoutMenu()">
+    <div class="user-card" onclick="userCardClick()">
       <div class="user-avatar" id="sidebar-avatar">?</div>
       <div style="flex:1;min-width:0">
         <div class="user-name" id="sidebar-email" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</div>
@@ -133,7 +135,7 @@
     <div class="topbar">
       <div class="topbar-title" data-i18n="nav.dashboard">Dashboard</div>
       <div class="topbar-actions">
-        <button class="btn btn-ghost" onclick="openModal()" data-i18n="nav.new_record">+ Новий запис</button>
+        <button class="btn btn-primary" onclick="openModal()" data-i18n="nav.new_record">+ Новий запис</button>
       </div>
     </div>
     <div class="content">
@@ -178,14 +180,6 @@
           </div>
           <div class="stat-value">0</div>
           <div class="stat-sub" data-i18n="dash.records">записів</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">
-            <div class="stat-dot" style="background:var(--text3)"></div>
-            <span data-i18n="dash.stat.unsynced">Не синхронізовані</span>
-          </div>
-          <div class="stat-value">0</div>
-          <div class="stat-sub" data-i18n="dash.files">файлів</div>
         </div>
       </div>
 
@@ -287,11 +281,11 @@
       </div>
 
       <!-- ARCHIVE SECTION -->
-      <div id="archive-section" style="display:none;margin-top:32px">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-          <div style="flex:1;height:1px;background:var(--border)"></div>
-          <span style="font-size:13px;font-weight:600;color:var(--text3);white-space:nowrap">🗄️ <span data-i18n="nav.archive">Архів</span> &nbsp;<span id="archive-section-count" style="font-weight:400"></span></span>
-          <div style="flex:1;height:1px;background:var(--border)"></div>
+      <div id="archive-section" style="display:none">
+        <div class="archive-divider">
+          <div class="archive-divider-line"></div>
+          <span class="archive-divider-label">🗄️ <span data-i18n="nav.archive">Архів</span> <span id="archive-section-count"></span></span>
+          <div class="archive-divider-line"></div>
         </div>
         <div id="table-view-archive" class="table-wrap">
           <table>
@@ -502,18 +496,18 @@
                     </div>
                   </div>
 
-                  <div class="theme-card" id="theme-light" onclick="setTheme('light', this)">
-                    <div class="theme-preview" style="background:#f4f5f7;border-color:#d8dce4">
-                      <div class="theme-preview-sidebar" style="background:#ffffff"></div>
+                  <div class="theme-card" id="theme-slate" onclick="setTheme('slate', this)">
+                    <div class="theme-preview" style="background:#13161f;border-color:#252a38">
+                      <div class="theme-preview-sidebar" style="background:#191d28"></div>
                       <div class="theme-preview-content">
-                        <div class="theme-preview-bar" style="background:#e2e5eb;width:70%"></div>
-                        <div class="theme-preview-bar" style="background:#ebeef2;width:50%"></div>
-                        <div class="theme-preview-bar" style="background:#ebeef2;width:80%"></div>
+                        <div class="theme-preview-bar" style="background:#252a38;width:70%"></div>
+                        <div class="theme-preview-bar" style="background:#1f2330;width:50%"></div>
+                        <div class="theme-preview-bar" style="background:#1f2330;width:80%"></div>
                       </div>
                     </div>
                     <div class="theme-label">
                       <span class="theme-check">✓</span>
-                      ☀️ Light
+                      🪨 Slate
                     </div>
                   </div>
 
@@ -532,18 +526,18 @@
                     </div>
                   </div>
 
-                  <div class="theme-card" id="theme-slate" onclick="setTheme('slate', this)">
-                    <div class="theme-preview" style="background:#13161f;border-color:#252a38">
-                      <div class="theme-preview-sidebar" style="background:#191d28"></div>
+                  <div class="theme-card" id="theme-light" onclick="setTheme('light', this)">
+                    <div class="theme-preview" style="background:#d8dce6;border-color:#adb8c8">
+                      <div class="theme-preview-sidebar" style="background:#e8ecf4"></div>
                       <div class="theme-preview-content">
-                        <div class="theme-preview-bar" style="background:#252a38;width:70%"></div>
-                        <div class="theme-preview-bar" style="background:#1f2330;width:50%"></div>
-                        <div class="theme-preview-bar" style="background:#1f2330;width:80%"></div>
+                        <div class="theme-preview-bar" style="background:#c0c8d4;width:70%"></div>
+                        <div class="theme-preview-bar" style="background:#ccd2de;width:50%"></div>
+                        <div class="theme-preview-bar" style="background:#ccd2de;width:80%"></div>
                       </div>
                     </div>
                     <div class="theme-label">
                       <span class="theme-check">✓</span>
-                      🪨 Slate
+                      ☀️ Light
                     </div>
                   </div>
 
@@ -724,7 +718,6 @@
       <span id="modal-edit-badge" data-i18n="modal.editing_badge" style="display:none;background:var(--yellow-bg);color:var(--yellow);font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;letter-spacing:0.06em">РЕДАГУВАННЯ</span>
       </div>
       <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
     </div>
     <div class="modal-body">
       <div class="form-grid">

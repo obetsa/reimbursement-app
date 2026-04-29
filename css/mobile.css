@@ -1,0 +1,200 @@
+/* @formatter:off */
+
+@media (max-width: 768px) {
+
+  /* ── SIDEBAR OVERLAY ── */
+  .mob-sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 99; }
+  .mob-sidebar-overlay.open { display: block; }
+
+  /* ── SIDEBAR: icon-only 60px ── */
+  .sidebar { width: 60px; transition: width 0.25s ease; z-index: 100; }
+  .logo-text, .logo-sub, .nav-section { display: none; }
+  .sidebar-logo { padding: 12px 8px; justify-content: center; }
+  .logo-mark { gap: 0; }
+  .sidebar-new-btn { padding: 8px; margin: 10px 6px; width: calc(100% - 12px); justify-content: center; }
+  .sidebar-new-btn span { display: none; }
+  .sidebar-new-btn .plus { margin: 0; }
+  .nav-item { padding: 10px 6px; justify-content: center; margin: 2px 4px; position: relative; }
+  .nav-item span { display: none; }
+  .nav-item::before { display: none; }
+  .nav-icon { width: 22px; height: 22px; font-size: 18px; }
+  .nav-badge { position: absolute; top: 4px; right: 4px; min-width: 14px; font-size: 9px; padding: 0 3px; }
+
+  /* ── SIDEBAR BOTTOM (collapsed) ── */
+  .sidebar-bottom { padding: 8px 4px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .user-card { justify-content: center; padding: 6px; flex-direction: column; gap: 4px; }
+  .user-name { display: none; }
+  .user-role { display: flex; justify-content: center; font-size: 9px; }
+  .user-avatar { width: 28px; height: 28px; font-size: 11px; }
+  .sidebar-bottom .btn { display: none; }
+  .sidebar.mob-expanded .sidebar-bottom .btn { display: flex; width: 100%; justify-content: center; padding: 9px 14px; font-size: 12px; }
+
+  /* ── SIDEBAR EXPANDED ── */
+  .sidebar.mob-expanded { width: 240px; }
+  .sidebar.mob-expanded .logo-text,
+  .sidebar.mob-expanded .logo-sub,
+  .sidebar.mob-expanded .nav-section { display: block; }
+  .sidebar.mob-expanded .logo-mark { gap: 10px; }
+  .sidebar.mob-expanded .sidebar-logo { padding: 20px 20px 16px; justify-content: flex-start; }
+  .sidebar.mob-expanded .sidebar-new-btn { padding: 9px 14px; justify-content: flex-start; }
+  .sidebar.mob-expanded .sidebar-new-btn span { display: inline; }
+  .sidebar.mob-expanded .nav-item { padding: 8px 14px; justify-content: flex-start; }
+  .sidebar.mob-expanded .nav-item span { display: inline; }
+  .sidebar.mob-expanded .user-card { flex-direction: row; gap: 10px; padding: 8px; }
+  .sidebar.mob-expanded .user-name { display: block; }
+  .sidebar.mob-expanded .user-role { justify-content: flex-start; }
+  .sidebar.mob-expanded .user-avatar { width: 30px; height: 30px; font-size: 12px; }
+
+  /* ── MAIN ── */
+  .main { margin-left: 60px; }
+  .topbar { padding: 0 12px; height: 48px; }
+  .topbar-title { font-size: 14px; }
+  .content { padding: 12px; }
+  .dashboard .content { padding: 12px; }
+
+  /* ── FORMS ── */
+  .form-grid { grid-template-columns: 1fr !important; }
+  .form-input, .form-select, .form-textarea { font-size: 16px; }
+
+  /* ── DASHBOARD ── */
+  .dash-hero { padding: 12px 14px; }
+  .dash-hero-label { font-size: 10px; margin-bottom: 4px; }
+  .dash-hero-amount { font-size: 28px; }
+  .dash-hero-amount span { font-size: 16px; }
+  .dash-hero-sub { font-size: 11px; margin-top: 6px; }
+
+  .card { padding: 12px 14px; }
+  .section-title { font-size: 11px; margin-bottom: 8px; }
+
+  .company-row { padding: 7px 0; }
+  .company-name { font-size: 12px; }
+  .company-amount { font-size: 12px; }
+  .company-dot { width: 7px; height: 7px; }
+
+  .recent-item { padding: 8px 0; }
+  .recent-title { font-size: 12px; }
+  .recent-meta { font-size: 10px; }
+  .recent-amount { font-size: 12px; }
+  .dash-stats { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .dash-grid { grid-template-columns: 1fr !important; }
+  .stat-card { padding: 8px 10px; }
+  .stat-value { font-size: 20px; }
+  .stat-label { font-size: 9px; margin-bottom: 3px; }
+  .stat-sub { font-size: 9px; }
+
+  /* ── TABLE ── */
+  .table-wrap { overflow-x: auto; }
+  table { min-width: 600px; }
+
+  /* ── CARDS ── */
+  .cards-grid { grid-template-columns: 1fr !important; }
+
+  /* ── MODALS — bottom sheet ── */
+  .modal-overlay { align-items: center !important; padding: 0 !important; }
+  .modal {
+    max-width: 100% !important;
+    width: 100%;
+    border-radius: 14px;
+    max-height: 90vh;
+    overflow-y: hidden !important;
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+  }
+  .modal-header { padding: 10px 14px; flex-shrink: 0; overflow: visible; }
+  .modal-title { font-size: 14px; }
+  .modal-body { padding: 10px 12px !important; overflow-y: auto !important; flex: 1 1 auto; min-height: 0; }
+  .modal-footer { padding: 10px 14px; flex-shrink: 0; overflow: visible; }
+
+  /* Форма всередині модалки */
+  .form-label { font-size: 10px; margin-bottom: 2px; }
+  .form-input, .form-select { font-size: 13px; padding: 5px 8px; height: 32px; }
+  .form-textarea { font-size: 13px; padding: 5px 8px; min-height: 50px; }
+  .form-group { gap: 2px; margin-bottom: 0; }
+  .form-grid { gap: 8px !important; }
+  .form-section-title { font-size: 10px; padding: 4px 0 2px; margin-top: 4px; }
+  .required { font-size: 9px; }
+  .upload-zone { padding: 8px; gap: 4px; }
+  .upload-icon { font-size: 16px; }
+  .upload-text { font-size: 11px; }
+  .upload-sub { display: none; }
+  .upload-actions { flex-wrap: wrap; gap: 4px; }
+  .upload-btn { font-size: 10px; padding: 5px 6px; flex: 1; min-width: calc(50% - 2px); }
+  .modal-footer .btn { font-size: 12px; padding: 8px 12px; }
+
+  .detail-modal { max-width: 100% !important; border-radius: 14px; }
+  .detail-body { overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+  .detail-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .return-summary { grid-template-columns: repeat(2, 1fr) !important; gap: 6px; margin-bottom: 10px; }
+  .return-box { padding: 7px 10px; }
+  .return-box-value { font-size: 15px; }
+  .return-event-row { padding: 7px 10px; gap: 8px; }
+  .return-event-amount { font-size: 12px; }
+  .return-event-date { font-size: 11px; }
+  .add-return-form > div { grid-template-columns: 1fr !important; }
+  .detail-note { font-size: 12px; font-weight: 500; padding: 9px; min-height: 32px; line-height: 1.4; }
+  .detail-section-title { font-size: 9px; margin-bottom: 8px; }
+
+  /* ── ARCHIVE SECTION ── */
+  #archive-section { margin-top: 20px; }
+  .archive-divider { gap: 8px; margin-bottom: 12px; }
+  .archive-divider-label { font-size: 11px; }
+
+  /* ── SETTINGS ── */
+  .settings-layout { display: flex !important; flex-direction: column; }
+  .settings-nav {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-auto-rows: 48px;
+    overflow-x: unset;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 8px;
+    gap: 6px;
+    white-space: normal;
+  }
+  .settings-nav-item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    padding: 6px 8px;
+    line-height: 1.3;
+    font-size: 12px;
+    border-radius: var(--radius-sm);
+    text-align: center;
+    flex-shrink: unset;
+    border: 1px solid var(--border);
+    background: var(--bg3);
+  }
+  .settings-nav-item.active { border-color: var(--accent); }
+
+  /* settings-item → картка на мобільному */
+  #companies-list, #instruments-list { padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .settings-item { flex-wrap: wrap; padding: 12px 14px; gap: 8px; border-bottom: none; margin-bottom: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg2); }
+  .settings-item:last-child { margin-bottom: 0; border-bottom: 1px solid var(--border); }
+  .settings-item-icon { width: 28px; height: 28px; font-size: 14px; }
+  .settings-item-info { flex: 1; min-width: 0; }
+  .settings-item-name { font-size: 13px; }
+  .settings-item-actions { width: 100%; justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 8px; margin-top: 0; }
+
+  /* мови — в стовпчик */
+  .lang-options { flex-direction: column; }
+  .lang-btn { flex: unset; text-align: left; padding: 10px 14px; }
+
+  /* ── FILTERS ── */
+  .filters-bar { padding: 8px 12px; gap: 6px; }
+  .search-wrap { min-width: 0; flex: 1 1 100%; }
+  #view-table-btn { display: none; }
+
+  /* ── GALLERY / UNPROCESSED ── */
+  .gallery-list { padding: 8px; }
+  .unprocessed-list { padding: 8px; }
+
+}
+
+@media (max-width: 480px) {
+  .dash-stats { grid-template-columns: 1fr; }
+  .detail-grid { grid-template-columns: 1fr !important; }
+  .return-summary { grid-template-columns: 1fr !important; }
+}
