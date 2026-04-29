@@ -58,6 +58,10 @@ att_local   = conn.execute("SELECT COUNT(*) FROM attachments WHERE file_path IS 
 att_drive   = conn.execute("SELECT COUNT(*) FROM attachments WHERE drive_id IS NOT NULL AND storage_type='drive'").fetchone()[0]
 att_both    = conn.execute("SELECT COUNT(*) FROM attachments WHERE file_path IS NOT NULL AND drive_id IS NOT NULL").fetchone()[0]
 unprocessed = conn.execute("SELECT COUNT(*) FROM unprocessed_imports").fetchone()[0]
+rec_total    = conn.execute("SELECT COUNT(*) FROM records").fetchone()[0]
+rec_active   = conn.execute("SELECT COUNT(*) FROM records WHERE is_deleted=0 AND is_archived=0").fetchone()[0]
+rec_archived = conn.execute("SELECT COUNT(*) FROM records WHERE is_archived=1 AND is_deleted=0").fetchone()[0]
+rec_deleted  = conn.execute("SELECT COUNT(*) FROM records WHERE is_deleted=1").fetchone()[0]
 row = conn.execute("SELECT refresh_token FROM users WHERE refresh_token IS NOT NULL LIMIT 1").fetchone()
 conn.close()
 
@@ -77,6 +81,21 @@ if row and row[0]:
     except Exception:
         pass
 
-print(f'БД:       {att_total}')
-print(f'Локально: {local_count}')
-print(f'Drive:    {drive_files}')
+print()
+print('─' * 36)
+print('  ЗАПИСИ')
+print('─' * 36)
+print(f'  Всього:    {rec_total}')
+print(f'  Активних:  {rec_active}')
+print(f'  Архів:     {rec_archived}')
+print(f'  Корзина:   {rec_deleted}')
+print('─' * 36)
+print('  ЧЕКИ')
+print('─' * 36)
+print(f'  БД:        {att_total}')
+print(f'  Локально:  {local_count}')
+print(f'  Drive:     {drive_files}')
+if unprocessed:
+    print(f'  Необроб.:  {unprocessed}')
+print('─' * 36)
+print()

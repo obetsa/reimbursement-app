@@ -1869,6 +1869,31 @@ def storage_info():
     })
 
 
+@app.route('/records-stats', methods=['GET'])
+def records_stats():
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+
+    conn = get_db()
+    rec_total    = conn.execute("SELECT COUNT(*) FROM records WHERE user_id=?", (user_id,)).fetchone()[0]
+    rec_active   = conn.execute("SELECT COUNT(*) FROM records WHERE user_id=? AND is_deleted=0 AND is_archived=0", (user_id,)).fetchone()[0]
+    rec_archived = conn.execute("SELECT COUNT(*) FROM records WHERE user_id=? AND is_archived=1 AND is_deleted=0", (user_id,)).fetchone()[0]
+    rec_deleted  = conn.execute("SELECT COUNT(*) FROM records WHERE user_id=? AND is_deleted=1", (user_id,)).fetchone()[0]
+    att_total    = conn.execute("SELECT COUNT(*) FROM attachments a JOIN records r ON a.record_id=r.id WHERE r.user_id=?", (user_id,)).fetchone()[0]
+    att_local = 0
+    if os.path.exists(UPLOAD_FOLDER):
+        for _, _, files in os.walk(UPLOAD_FOLDER):
+            att_local += len(files)
+    att_drive    = conn.execute("SELECT COUNT(*) FROM attachments a JOIN records r ON a.record_id=r.id WHERE r.user_id=? AND a.drive_id IS NOT NULL AND a.storage_type='drive'", (user_id,)).fetchone()[0]
+    unprocessed  = conn.execute("SELECT COUNT(*) FROM unprocessed_imports WHERE user_id=?", (user_id,)).fetchone()[0]
+    conn.close()
+
+    return jsonify({
+        'records':     {'total': rec_total, 'active': rec_active, 'archived': rec_archived, 'deleted': rec_deleted},
+        'attachments': {'total': att_total, 'local': att_local, 'drive': att_drive, 'unprocessed': unprocessed},
+    })
+
+
 # ══════════════════════════════════════════
 # DRIVE PICKER
 # ══════════════════════════════════════════

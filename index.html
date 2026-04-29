@@ -62,11 +62,6 @@
     </div>
   </div>
 
-  <button class="sidebar-new-btn" onclick="openModal()">
-    <div class="plus">+</div>
-    <span data-i18n="nav.new_record">Новий запис</span>
-  </button>
-
   <nav class="sidebar-nav">
     <div class="nav-item active" onclick="showPage('dashboard', this)">
       <div class="nav-icon">🏠</div>
@@ -696,7 +691,8 @@
               <div style="padding:18px;display:flex;flex-direction:column;gap:12px" id="storage-info-content">
                 <div style="text-align:center;padding:20px;color:var(--text3);font-size:13px" data-i18n="loading.text">Завантаження...</div>
               </div>
-              <div style="padding:0 18px 18px">
+              <div style="padding:0 18px 18px;display:flex;flex-direction:column;gap:8px">
+                <button class="btn btn-ghost" style="font-size:13px" onclick="checkRecordsStats()">📊 Перевірити кількість записів і чеків</button>
                 <button class="btn btn-ghost" style="font-size:13px" onclick="runStorageCleanup()" id="cleanup-btn" data-i18n="storage.cleanup_btn">🧹 Очистити зайві файли та порожні папки</button>
               </div>
             </div>
@@ -707,6 +703,16 @@
     </div>
   </div>
 
+  <!-- Stats Modal -->
+  <div class="stats-overlay" id="stats-overlay" onclick="closeStatsModal()">
+    <div class="stats-modal" onclick="event.stopPropagation()">
+      <div class="stats-modal-header">
+        <div class="stats-modal-title">Статистика</div>
+        <button class="icon-btn" onclick="closeStatsModal()">✕</button>
+      </div>
+      <div id="stats-modal-body" class="stats-modal-body"></div>
+    </div>
+  </div>
 </main>
 
 <!-- ── MODAL: NEW RECORD ── -->

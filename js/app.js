@@ -757,7 +757,7 @@ function renderArchiveTable() {
   tbody.innerHTML = filteredArchived.map(d => `
     <tr onclick="openDetail('${d.id}')" style="opacity:0.7">
       <td class="td-date">${formatDate(d.date)}</td>
-      <td><strong style="font-weight:500">${d.title}</strong></td>
+      <td class="td-title"><strong style="font-weight:500">${d.title}</strong></td>
       <td style="color:var(--text2)">${d.company}</td>
       <td class="td-amount">${d.currency}${d.amount.toFixed(2)}</td>
       <td><span style="font-size:12px;color:var(--text2)">${d.payType === 'private' ? t('detail.private') : t('detail.company_pay')}</span></td>
@@ -835,7 +835,7 @@ function renderTable() {
   tbody.innerHTML = filteredDocs.map(d => `
     <tr onclick="openDetail('${d.id}')">
       <td class="td-date">${formatDate(d.date)}</td>
-      <td><strong style="font-weight:500">${d.title}</strong></td>
+      <td class="td-title"><strong style="font-weight:500">${d.title}</strong></td>
       <td style="color:var(--text2)">${d.company}</td>
       <td class="td-amount">${d.currency}${d.amount.toFixed(2)}</td>
       <td><span style="font-size:12px;color:var(--text2)">${d.payType === 'private' ? t('detail.private') : t('detail.company_pay')}</span></td>
@@ -995,6 +995,36 @@ function toggleMobSidebar() {
   sidebar.classList.toggle('mob-expanded');
   overlay.classList.toggle('open');
 }
+
+function initSidebarSwipe() {
+  let startX = 0, startY = 0, active = false;
+
+  document.addEventListener('touchstart', e => {
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    active = true;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', e => {
+    if (!active) return;
+    const dx = e.touches[0].clientX - startX;
+    const dy = e.touches[0].clientY - startY;
+    if (Math.abs(dy) > Math.abs(dx)) active = false;
+  }, { passive: true });
+
+  document.addEventListener('touchend', e => {
+    if (!active) return;
+    active = false;
+    const dx = e.changedTouches[0].clientX - startX;
+    const sidebar = document.querySelector('.sidebar');
+    if (!sidebar) return;
+    const isExpanded = sidebar.classList.contains('mob-expanded');
+    if (dx > 60 && startX < 80 && !isExpanded) toggleMobSidebar();
+    else if (dx < -60 && isExpanded) toggleMobSidebar();
+  }, { passive: true });
+}
+
+initSidebarSwipe();
 
 function userCardClick() {
   if (window.innerWidth <= 768) {
@@ -1995,7 +2025,7 @@ function renderCompaniesList() {
     list.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text3);font-size:13px">${t('settings.no_companies')}</div>`;
     return;
   }
-  list.innerHTML = companiesCache.map(c => `
+  list.innerHTML = companiesCache.slice().reverse().map(c => `
     <div class="settings-item ${!c.is_active ? 'deactivated' : ''}">
       <div class="settings-item-icon">🏢</div>
       <div class="settings-item-info">
@@ -2139,7 +2169,7 @@ function renderInstrumentsList() {
   const typeClass = { private_card: 'type-private', company_card: 'type-company', cash: 'type-cash' };
   const typeIcon  = { private_card: '💳', company_card: '🏢', cash: '💵' };
 
-  list.innerHTML = instrumentsCache.map(i => `
+  list.innerHTML = instrumentsCache.slice().reverse().map(i => `
     <div class="settings-item ${!i.is_active ? 'deactivated' : ''}">
       <div class="settings-item-icon">${typeIcon[i.type] || '💳'}</div>
       <div class="settings-item-info">
@@ -2671,6 +2701,44 @@ async function loadStorageInfo() {
   } catch(e) {
     container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--red);font-size:13px">${t('toast.error')}</div>`;
   }
+}
+
+async function checkRecordsStats() {
+  const overlay = document.getElementById('stats-overlay');
+  const body = document.getElementById('stats-modal-body');
+  body.innerHTML = '<div style="text-align:center;padding:24px"><div class="spinner" style="margin:0 auto"></div></div>';
+  overlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
+
+  try {
+    const resp = await fetch('/records-stats', { credentials: 'include' });
+    const data = await resp.json();
+    const r = data.records;
+    const a = data.attachments;
+    body.innerHTML = `
+      <div>
+        <div class="stats-section-title">Записи</div>
+        <div class="stats-row"><span class="stats-row-label">Всього</span><span class="stats-row-value">${r.total}</span></div>
+        <div class="stats-row"><span class="stats-row-label">Активних</span><span class="stats-row-value">${r.active}</span></div>
+        <div class="stats-row"><span class="stats-row-label">Архів</span><span class="stats-row-value">${r.archived}</span></div>
+        <div class="stats-row"><span class="stats-row-label">Корзина</span><span class="stats-row-value">${r.deleted}</span></div>
+      </div>
+      <div>
+        <div class="stats-section-title">Чеки</div>
+        <div class="stats-row"><span class="stats-row-label">Всього в БД</span><span class="stats-row-value">${a.total}</span></div>
+        <div class="stats-row"><span class="stats-row-label">Локально</span><span class="stats-row-value">${a.local}</span></div>
+        <div class="stats-row"><span class="stats-row-label">Google Drive</span><span class="stats-row-value">${a.drive}</span></div>
+        ${a.unprocessed ? `<div class="stats-row"><span class="stats-row-label">Необроблені</span><span class="stats-row-value">${a.unprocessed}</span></div>` : ''}
+      </div>
+    `;
+  } catch(e) {
+    body.innerHTML = '<div style="text-align:center;padding:24px;color:var(--red)">Помилка завантаження</div>';
+  }
+}
+
+function closeStatsModal() {
+  document.getElementById('stats-overlay').classList.remove('open');
+  document.body.style.overflow = '';
 }
 
 async function runStorageCleanup() {
