@@ -693,6 +693,8 @@
               </div>
               <div style="padding:0 18px 18px;display:flex;flex-direction:column;gap:8px">
                 <button class="btn btn-ghost" style="font-size:13px" onclick="checkRecordsStats()">📊 Перевірити кількість записів і чеків</button>
+                <button class="btn btn-ghost" style="font-size:13px" onclick="runVerifyDrive()" id="verify-drive-btn">🔍 Перевірити Drive і виправити розбіжності</button>
+                <button class="btn btn-ghost" style="font-size:13px" onclick="runDriveCleanup()" id="drive-cleanup-btn">🧹 Очистити на Drive</button>
                 <button class="btn btn-ghost" style="font-size:13px" onclick="runStorageCleanup()" id="cleanup-btn" data-i18n="storage.cleanup_btn">🧹 Очистити зайві файли та порожні папки</button>
               </div>
             </div>
@@ -968,14 +970,6 @@
         <div class="sync-action-text">
           <div class="sync-action-title" data-i18n="sync.confirm_btn">Синхронізувати</div>
           <div class="sync-action-desc" data-i18n="sync.body_push">Завантажує локальні файли, яких ще немає на Drive</div>
-        </div>
-        <div class="sync-action-arrow">›</div>
-      </div>
-      <div class="sync-action-row" onclick="runDriveCleanup()">
-        <div class="sync-action-icon">🧹</div>
-        <div class="sync-action-text">
-          <div class="sync-action-title" data-i18n="sync.drive_cleanup_btn">Очистити на Drive</div>
-          <div class="sync-action-desc" data-i18n="sync.body_cleanup">Видаляє зайві файли та порожні папки на Drive</div>
         </div>
         <div class="sync-action-arrow">›</div>
       </div>

@@ -1036,7 +1036,7 @@ function userCardClick() {
 
 // ── SYNC ──
 function syncNow() {
-  document.getElementById('sync-preview-overlay').classList.add('open');
+  confirmSync();
 }
 
 function closeSyncPreview() {
@@ -1044,7 +1044,6 @@ function closeSyncPreview() {
 }
 
 async function confirmSync() {
-  closeSyncPreview();
   setBusy(true, 'sync.busy');
   try {
     const res  = await fetch('/sync', { method: 'POST', credentials: 'include' });
@@ -1067,7 +1066,6 @@ async function confirmSync() {
 }
 
 async function runDriveCleanup() {
-  closeSyncPreview();
   setBusy(true, 'sync.drive_cleanup_busy');
   try {
     const res  = await fetch('/drive-cleanup', { method: 'POST', credentials: 'include' });
@@ -1584,7 +1582,7 @@ function viewAttachment(id) {
 
 async function deleteAttachment(id) {
   try {
-    await deleteAttachmentDB(id);
+    const res = await deleteAttachmentDB(id);
     const doc = sampleDocs.find(d => d.id === currentDetailId) || archivedDocs.find(d => d.id === currentDetailId);
     if(doc) {
       doc.attachments = doc.attachments.filter(a => a.id !== id);
@@ -1593,6 +1591,7 @@ async function deleteAttachment(id) {
     }
     renderDocs();
     updateDashboard();
+    if(res.drive_warning) showToast('Файл видалено локально, але не з Drive: ' + res.drive_warning, 'warning');
   } catch(e) {
     showToast(t('toast.file_delete_error'), 'error');
   }
@@ -2706,13 +2705,14 @@ async function loadStorageInfo() {
 async function checkRecordsStats() {
   const overlay = document.getElementById('stats-overlay');
   const body = document.getElementById('stats-modal-body');
-  body.innerHTML = '<div style="text-align:center;padding:24px"><div class="spinner" style="margin:0 auto"></div></div>';
-  overlay.classList.add('open');
-  document.body.style.overflow = 'hidden';
 
+  setBusy(true, 'busy.uploading');
   try {
     const resp = await fetch('/records-stats', { credentials: 'include' });
     const data = await resp.json();
+    setBusy(false);
+    overlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
     const r = data.records;
     const a = data.attachments;
     body.innerHTML = `
@@ -2725,20 +2725,39 @@ async function checkRecordsStats() {
       </div>
       <div>
         <div class="stats-section-title">Чеки</div>
-        <div class="stats-row"><span class="stats-row-label">Всього в БД</span><span class="stats-row-value">${a.total}</span></div>
+        <div class="stats-row"><span class="stats-row-label">БД</span><span class="stats-row-value">${a.total}</span></div>
         <div class="stats-row"><span class="stats-row-label">Локально</span><span class="stats-row-value">${a.local}</span></div>
-        <div class="stats-row"><span class="stats-row-label">Google Drive</span><span class="stats-row-value">${a.drive}</span></div>
+        <div class="stats-row"><span class="stats-row-label">Drive</span><span class="stats-row-value">${a.drive !== null && a.drive !== undefined ? a.drive : (a.drive_error || '?')}</span></div>
         ${a.unprocessed ? `<div class="stats-row"><span class="stats-row-label">Необроблені</span><span class="stats-row-value">${a.unprocessed}</span></div>` : ''}
       </div>
     `;
   } catch(e) {
+    setBusy(false);
     body.innerHTML = '<div style="text-align:center;padding:24px;color:var(--red)">Помилка завантаження</div>';
+    overlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
   }
 }
 
 function closeStatsModal() {
   document.getElementById('stats-overlay').classList.remove('open');
   document.body.style.overflow = '';
+}
+
+async function runVerifyDrive() {
+  const btn = document.getElementById('verify-drive-btn');
+  if(btn) { btn.disabled = true; btn.textContent = 'Перевірка...'; }
+  try {
+    const res = await fetch('/sync/verify-drive', { method: 'POST', credentials: 'include' });
+    const d = await res.json();
+    if(!d.ok) { showToast(d.message || 'Помилка', 'error'); return; }
+    if(d.fixed > 0) showToast(`Виправлено ${d.fixed} файл(ів) — тепер синхронізуйте`, 'success');
+    else showToast('Розбіжностей не знайдено', 'success');
+  } catch(e) {
+    showToast('Помилка', 'error');
+  } finally {
+    if(btn) { btn.disabled = false; btn.textContent = '🔍 Перевірити Drive і виправити розбіжності'; }
+  }
 }
 
 async function runStorageCleanup() {
