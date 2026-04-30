@@ -3,6 +3,8 @@ services:
     image: obetsa/reimbursement-app:latest
     ports:
       - "5500:5500"
+    env_file:
+      - .env
     volumes:
       - reimbursement-data:/app/data
     restart: unless-stopped
