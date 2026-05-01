@@ -1,7 +1,7 @@
 // ══════════════════════════════════════════
 // DB — LOCAL API (Flask + SQLite)
 // ══════════════════════════════════════════
-const API_URL = 'http://localhost:5500';
+const API_URL = '';
 
 async function apiGet(path) {
   const token = localStorage.getItem('auth_token');
