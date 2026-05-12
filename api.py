@@ -1494,6 +1494,8 @@ def get_gallery():
         select
             a.id, a.file_name, a.file_type, a.file_path, a.drive_id,
             a.storage_type, a.created_at,
+            r.id as record_id,
+            r.title as record_title,
             r.date as record_date,
             c.name as company_name,
             p.name as card_name,
@@ -1503,7 +1505,7 @@ def get_gallery():
         left join companies c on r.company_id = c.id
         left join payment_instruments p on r.card_id = p.id
         where r.user_id = ? and r.is_deleted = 0 and a.file_path is not null
-        order by a.created_at desc
+        order by r.date desc, a.created_at desc
     ''', (user_id,)).fetchall()
 
     conn.close()

@@ -2311,6 +2311,10 @@ async function loadGallery() {
   }
 }
 
+function _gesc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 function renderGallery(items) {
   const grid  = document.getElementById('gallery-grid');
   const empty = document.getElementById('gallery-empty');
@@ -2323,16 +2327,64 @@ function renderGallery(items) {
   }
   empty.style.display = 'none';
 
-  grid.innerHTML = items.map((item, idx) => {
-    const details = [item.record_date, item.company_name, item.card_name].filter(Boolean).join(' · ');
-    return `<div class="gallery-row" onclick="openGalleryPreview(${idx})">
-      <div class="gallery-row-icon">${fileIcon(item.file_name)}</div>
-      <div class="gallery-row-info">
-        <div class="gallery-row-name">${item.file_name}</div>
-        ${details ? `<div class="gallery-row-meta">${details}</div>` : ''}
-      </div>
-    </div>`;
-  }).join('');
+  const locale = currentLang === 'de' ? 'de-DE' : currentLang === 'en' ? 'en-GB' : 'uk-UA';
+
+  // Group: year → month → day → record_id → { title, meta, files[] }
+  const tree = {};
+  items.forEach((item, idx) => {
+    const date = (item.record_date || '').slice(0, 10) || '0000-00-00';
+    const [year, month, day] = date.split('-');
+    const recId = item.record_id || '_';
+    if (!tree[year]) tree[year] = {};
+    if (!tree[year][month]) tree[year][month] = {};
+    if (!tree[year][month][day]) tree[year][month][day] = {};
+    if (!tree[year][month][day][recId]) tree[year][month][day][recId] = {
+      title: item.record_title || '—',
+      meta: [item.company_name, item.card_name].filter(Boolean).join(' · '),
+      files: []
+    };
+    tree[year][month][day][recId].files.push({ item, idx });
+  });
+
+  const years = Object.keys(tree).sort().reverse();
+  let html = '<div class="gallery-tree">';
+
+  years.forEach((year, yi) => {
+    const months = Object.keys(tree[year]).sort().reverse();
+    html += `<details class="gt-year" open><summary class="gt-node gt-year-node"><span class="gt-arrow"></span><span class="gt-year-label gt-lbl">${_gesc(year)}</span></summary>`;
+
+    months.forEach((month) => {
+      const monthName = new Date(+year, parseInt(month) - 1).toLocaleString(locale, { month: 'long' });
+      const monthLabel = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+      const days = Object.keys(tree[year][month]).sort().reverse();
+      html += `<details class="gt-month" open><summary class="gt-node gt-month-node"><span class="gt-arrow"></span><span class="gt-lbl">${_gesc(monthLabel)}</span></summary>`;
+
+      days.forEach(day => {
+        const d = new Date(+year, parseInt(month) - 1, +day);
+        const dayLabel = d.toLocaleString(locale, { day: 'numeric', month: 'long' });
+        const records = Object.keys(tree[year][month][day]);
+        html += `<details class="gt-day"><summary class="gt-node gt-day-node"><span class="gt-arrow"></span><span class="gt-lbl">${_gesc(dayLabel)}</span></summary>`;
+
+        records.forEach(recId => {
+          const rec = tree[year][month][day][recId];
+          html += `<details class="gt-record"><summary class="gt-node gt-record-node"><span class="gt-arrow"></span><div class="gt-record-info"><div class="gt-record-title">${_gesc(rec.title)}</div>${rec.meta ? `<div class="gt-record-meta">${_gesc(rec.meta)}</div>` : ''}</div></summary>`;
+          rec.files.forEach(({ item, idx }) => {
+            html += `<div class="gt-file" onclick="openGalleryPreview(${idx})"><span class="gt-file-icon">${fileIcon(item.file_name)}</span><span class="gt-file-name">${_gesc(item.file_name)}</span></div>`;
+          });
+          html += '</details>';
+        });
+
+        html += '</details>';
+      });
+
+      html += '</details>';
+    });
+
+    html += '</details>';
+  });
+
+  html += '</div>';
+  grid.innerHTML = html;
 }
 
 function fileIcon(name) {
