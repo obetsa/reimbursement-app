@@ -47,9 +47,9 @@
   .sidebar.mob-expanded .user-avatar { width: 30px; height: 30px; font-size: 12px; }
 
   /* ── MAIN ── */
-  .main { margin-left: 60px; }
+  .main { margin-left: 60px; min-width: 0; }
   .topbar { padding: 0 12px; height: 56px; }
-  .content { padding: 12px; }
+  .content { padding: 12px; min-width: 0; }
   .dashboard .content { padding: 12px; }
 
   /* ── FORMS ── */
@@ -191,6 +191,7 @@
   /* ── FILTERS ── */
   .filters-bar { padding: 8px 12px; gap: 6px; }
   .search-wrap { min-width: 0; flex: 1 1 100%; }
+  .filter-select { max-width: 100%; }
   #view-table-btn { display: none; }
 
   /* ── GALLERY / UNPROCESSED ── */

@@ -736,6 +736,11 @@ function renderDocs() {
   renderTable();
   renderCards();
   renderArchiveSection();
+  const view = window.innerWidth <= 768 ? 'cards' : currentView;
+  document.getElementById('table-view').style.display = view === 'table' ? '' : 'none';
+  document.getElementById('cards-view').style.display = view === 'cards' ? 'grid' : 'none';
+  document.getElementById('view-table-btn').classList.toggle('active', view === 'table');
+  document.getElementById('view-cards-btn').classList.toggle('active', view === 'cards');
 }
 
 function renderArchiveSection() {
