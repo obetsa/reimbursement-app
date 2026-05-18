@@ -2,7 +2,8 @@ from flask import Flask, request, jsonify, send_from_directory, session as flask
 from flask_cors import CORS
 from dotenv import load_dotenv
 import requests as http_requests
-import sqlite3
+import psycopg2
+import psycopg2.extras
 import uuid
 import os
 import re
@@ -26,181 +27,53 @@ GOOGLE_CLIENT_ID     = os.environ.get('GOOGLE_CLIENT_ID')
 GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET')
 REDIRECT_URI         = os.environ.get('REDIRECT_URI', 'http://localhost:5500/auth/callback')
 
-DB_PATH = os.path.join('data', 'local.db')
+DATABASE_URL = os.environ.get('DATABASE_URL')
+DB_PATH = os.path.join('data', 'local.db')  # kept for backup/restore routes
 UPLOAD_FOLDER = os.path.join('data', 'uploads')
 DRIVE_ROOT = 'ReceiptsManager'
+DRIVE_ENABLED = False  # disabled until Drive sync is rebuilt
 
 # ══════════════════════════════════════════
 # DATABASE INIT
 # ══════════════════════════════════════════
+class _PGConn:
+    """Thin wrapper so conn.execute/fetchone/fetchall/commit/close work like SQLite."""
+    def __init__(self):
+        self._conn = psycopg2.connect(DATABASE_URL)
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(sql, params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        self.close()
+
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    return conn
+    return _PGConn()
 
 def init_db():
+    # Tables are created via schema_pg.sql — here we only ensure defaults exist
     conn = get_db()
-    c = conn.cursor()
-
-    c.execute('''
-        create table if not exists users (
-            id text primary key,
-            email text unique not null,
-            password_hash text not null,
-            full_name text,
-            created_at text default (datetime('now'))
-        )
-    ''')
-
-    c.execute('''
-        create table if not exists companies (
-            id text primary key,
-            user_id text not null,
-            name text not null,
-            is_shared integer default 0,
-            is_active integer default 1,
-            sort_order integer default 0,
-            created_at text default (datetime('now'))
-        )
-    ''')
-
-    c.execute('''
-        create table if not exists payment_instruments (
-            id text primary key,
-            user_id text not null,
-            name text not null,
-            type text not null,
-            is_active integer default 1,
-            sort_order integer default 0,
-            created_at text default (datetime('now'))
-        )
-    ''')
-
-    c.execute('''
-        create table if not exists records (
-            id text primary key,
-            user_id text not null,
-            title text not null,
-            note text,
-            date text not null,
-            created_at text default (datetime('now')),
-            amount real not null,
-            currency text default 'EUR',
-            pay_type text not null,
-            pay_method text not null,
-            card_id text,
-            company_id text,
-            status text default 'waiting',
-            to_return real default 0,
-            returned real default 0,
-            remainder real default 0,
-            is_archived integer default 0,
-            is_deleted integer default 0,
-            deleted_at text
-        )
-    ''')
-
-    c.execute('''
-        create table if not exists return_events (
-            id text primary key,
-            record_id text not null,
-            amount real not null,
-            date text not null,
-            method text,
-            created_at text default (datetime('now')),
-            foreign key (record_id) references records(id) on delete cascade
-        )
-    ''')
-
-    c.execute('''
-        create table if not exists attachments (
-            id text primary key,
-            record_id text not null,
-            file_name text not null,
-            file_type text,
-            file_url text,
-            created_at text default (datetime('now')),
-            foreign key (record_id) references records(id) on delete cascade
-        )
-    ''')
-
-    # Create default admin user if not exists
-    existing = c.execute("select id from users where email='admin@local.app'").fetchone()
+    existing = conn.execute("select id from users where email='admin@local.app'").fetchone()
     if not existing:
-        import hashlib
         pwd_hash = hashlib.sha256('admin123'.encode()).hexdigest()
         admin_id = str(uuid.uuid4())
-        c.execute("insert into users (id, email, password_hash, full_name) values (?,?,?,?)",
-                  (admin_id, 'admin@local.app', pwd_hash, 'Admin'))
-
-    # Migrate companies: add soft-delete columns if missing
-    try:
-        c.execute("alter table companies add column is_deleted integer default 0")
-    except Exception:
-        pass
-    try:
-        c.execute("alter table companies add column deleted_at text")
-    except Exception:
-        pass
-
-    # Migrate payment_instruments: add soft-delete columns if missing
-    try:
-        c.execute("alter table payment_instruments add column is_deleted integer default 0")
-    except Exception:
-        pass
-    try:
-        c.execute("alter table payment_instruments add column deleted_at text")
-    except Exception:
-        pass
-
-    # Migrate records: add previous_status if missing
-    try:
-        c.execute("alter table records add column previous_status text")
-    except Exception:
-        pass
-
-    # Migrate attachments: add storage_type, file_path, drive_id if missing
-    try:
-        c.execute("alter table attachments add column storage_type text default 'local'")
-    except Exception:
-        pass
-    try:
-        c.execute("alter table attachments add column file_path text")
-    except Exception:
-        pass
-    try:
-        c.execute("alter table attachments add column drive_id text")
-    except Exception:
-        pass
-
-    # Migrate users: add refresh_token if missing
-    try:
-        c.execute("alter table users add column refresh_token text")
-    except Exception:
-        pass
-
-    # Migrate unprocessed_imports: add drive_folder if missing
-    try:
-        c.execute("alter table unprocessed_imports add column drive_folder text default ''")
-    except Exception:
-        pass
-
-    # Unprocessed imports from Drive
-    c.execute('''
-        create table if not exists unprocessed_imports (
-            id text primary key,
-            user_id text not null,
-            drive_id text not null,
-            file_name text not null,
-            mime_type text,
-            synced_at text default (datetime('now'))
+        conn.execute(
+            "insert into users (id, email, password_hash, full_name) values (%s,%s,%s,%s)",
+            (admin_id, 'admin@local.app', pwd_hash, 'Admin')
         )
-    ''')
-
-    conn.commit()
+        conn.commit()
     conn.close()
-
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     print("✅ Database initialized")
 
@@ -264,16 +137,16 @@ def auth_callback():
     full_name = user_info.get('name', '')
 
     conn = get_db()
-    user = conn.execute("select id from users where email=?", (email,)).fetchone()
+    user = conn.execute("select id from users where email=%s", (email,)).fetchone()
     if user:
         user_id = user['id']
         if refresh_token:
-            conn.execute("update users set refresh_token=? where id=?", (refresh_token, user_id))
+            conn.execute("update users set refresh_token=%s where id=%s", (refresh_token, user_id))
             conn.commit()
     else:
         user_id = str(uuid.uuid4())
         conn.execute(
-            "insert into users (id, email, password_hash, full_name, refresh_token) values (?,?,?,?,?)",
+            "insert into users (id, email, password_hash, full_name, refresh_token) values (%s,%s,%s,%s,%s)",
             (user_id, email, 'GOOGLE_AUTH', full_name, refresh_token)
         )
         conn.commit()
@@ -285,6 +158,67 @@ def auth_callback():
     flask_session.permanent    = True
 
     return redirect('/')
+
+
+@app.route('/auth/register', methods=['POST'])
+def auth_register():
+    data      = request.json or {}
+    email     = (data.get('email') or '').strip().lower()
+    password  = data.get('password') or ''
+    full_name = (data.get('full_name') or '').strip()
+
+    if not email or not password:
+        return jsonify({'error': 'email_and_password_required'}), 400
+    if len(password) < 6:
+        return jsonify({'error': 'password_too_short'}), 400
+
+    conn = get_db()
+    existing = conn.execute("select id from users where email=%s", (email,)).fetchone()
+    if existing:
+        conn.close()
+        return jsonify({'error': 'email_taken'}), 409
+
+    user_id   = str(uuid.uuid4())
+    pwd_hash  = hashlib.sha256(password.encode()).hexdigest()
+    conn.execute(
+        "insert into users (id, email, password_hash, full_name) values (%s,%s,%s,%s)",
+        (user_id, email, pwd_hash, full_name)
+    )
+    conn.commit()
+    conn.close()
+
+    flask_session['user_id']   = user_id
+    flask_session['email']     = email
+    flask_session['full_name'] = full_name
+    flask_session.permanent    = True
+    return jsonify({'ok': True})
+
+
+@app.route('/auth/login', methods=['POST'])
+def auth_login():
+    data     = request.json or {}
+    email    = (data.get('email') or '').strip().lower()
+    password = data.get('password') or ''
+
+    if not email or not password:
+        return jsonify({'error': 'email_and_password_required'}), 400
+
+    pwd_hash = hashlib.sha256(password.encode()).hexdigest()
+    conn     = get_db()
+    user     = conn.execute(
+        "select id, full_name from users where email=%s and password_hash=%s",
+        (email, pwd_hash)
+    ).fetchone()
+    conn.close()
+
+    if not user:
+        return jsonify({'error': 'invalid_credentials'}), 401
+
+    flask_session['user_id']   = user['id']
+    flask_session['email']     = email
+    flask_session['full_name'] = user['full_name'] or ''
+    flask_session.permanent    = True
+    return jsonify({'ok': True})
 
 
 @app.route('/auth/logout', methods=['POST'])
@@ -304,18 +238,307 @@ def me():
     })
 
 # ══════════════════════════════════════════
+# ORG API
+# ══════════════════════════════════════════
+@app.route('/org/me', methods=['GET'])
+def org_me():
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    row = conn.execute(
+        "SELECT o.id, o.name, o.invite_code, m.role "
+        "FROM org_members m JOIN organizations o ON m.org_id=o.id "
+        "WHERE m.user_id=%s LIMIT 1",
+        (user_id,)
+    ).fetchone()
+    conn.close()
+    if not row: return jsonify({'error': 'no_org'}), 404
+    return jsonify(dict(row))
+
+
+@app.route('/org/create', methods=['POST'])
+def org_create():
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    data = request.json or {}
+    name = (data.get('name') or '').strip()
+    if not name: return jsonify({'error': 'name_required'}), 400
+
+    conn = get_db()
+    existing = conn.execute("SELECT id FROM org_members WHERE user_id=%s", (user_id,)).fetchone()
+    if existing:
+        conn.close()
+        return jsonify({'error': 'already_in_org'}), 409
+
+    import secrets as _secrets
+    org_id      = str(uuid.uuid4())
+    invite_code = _secrets.token_hex(4).upper()
+    pwd_hash    = hashlib.sha256(invite_code.encode()).hexdigest()
+
+    conn.execute(
+        "INSERT INTO organizations (id, name, invite_code, password_hash, owner_id) VALUES (%s,%s,%s,%s,%s)",
+        (org_id, name, invite_code, pwd_hash, user_id)
+    )
+    conn.execute(
+        "INSERT INTO org_members (id, org_id, user_id, role) VALUES (%s,%s,%s,'admin')",
+        (str(uuid.uuid4()), org_id, user_id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True, 'org_id': org_id, 'invite_code': invite_code})
+
+
+@app.route('/org/invite/generate', methods=['POST'])
+def org_invite_generate():
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='admin')
+    if err: conn.close(); return err
+
+    import secrets as _secrets
+    token      = _secrets.token_hex(16)
+    expires_at = datetime.utcnow().replace(microsecond=0) + __import__('datetime').timedelta(hours=24)
+
+    # Delete previous invites for this org
+    conn.execute("DELETE FROM org_invites WHERE org_id=%s", (org_id,))
+    conn.execute(
+        "INSERT INTO org_invites (id, org_id, token, expires_at, created_by) VALUES (%s,%s,%s,%s,%s)",
+        (str(uuid.uuid4()), org_id, token, expires_at, user_id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True, 'token': token, 'expires_at': expires_at.isoformat()})
+
+
+@app.route('/org/invite/current', methods=['GET'])
+def org_invite_current():
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='admin')
+    if err: conn.close(); return err
+
+    row = conn.execute(
+        "SELECT token, expires_at FROM org_invites WHERE org_id=%s AND expires_at > now() ORDER BY expires_at DESC LIMIT 1",
+        (org_id,)
+    ).fetchone()
+    conn.close()
+    if not row: return jsonify({'token': None})
+    return jsonify({'token': row['token'], 'expires_at': row['expires_at'].isoformat()})
+
+
+@app.route('/org/members', methods=['GET'])
+def org_members():
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='admin')
+    if err: conn.close(); return err
+    rows = conn.execute(
+        "SELECT m.id as member_id, m.user_id, m.role, m.joined_at, "
+        "u.email, u.full_name "
+        "FROM org_members m JOIN users u ON m.user_id=u.id "
+        "WHERE m.org_id=%s ORDER BY m.joined_at",
+        (org_id,)
+    ).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route('/org/members/<member_user_id>/role', methods=['PUT'])
+def org_member_set_role(member_user_id):
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='admin')
+    if err: conn.close(); return err
+    if member_user_id == user_id:
+        conn.close()
+        return jsonify({'error': 'cannot_change_own_role'}), 400
+    new_role = (request.json or {}).get('role')
+    if new_role not in ('manager', 'user'):
+        conn.close()
+        return jsonify({'error': 'invalid_role'}), 400
+    conn.execute(
+        "UPDATE org_members SET role=%s WHERE org_id=%s AND user_id=%s",
+        (new_role, org_id, member_user_id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+@app.route('/org/members/<member_user_id>', methods=['DELETE'])
+def org_member_remove(member_user_id):
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='admin')
+    if err: conn.close(); return err
+    if member_user_id == user_id:
+        conn.close()
+        return jsonify({'error': 'cannot_remove_self'}), 400
+    conn.execute(
+        "DELETE FROM org_members WHERE org_id=%s AND user_id=%s",
+        (org_id, member_user_id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+@app.route('/org/members/<member_user_id>/companies', methods=['GET'])
+def org_member_get_companies(member_user_id):
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='admin')
+    if err: conn.close(); return err
+    rows = conn.execute(
+        "SELECT company_id FROM org_member_companies WHERE user_id=%s AND org_id=%s",
+        (member_user_id, org_id)
+    ).fetchall()
+    conn.close()
+    return jsonify([r['company_id'] for r in rows])
+
+
+@app.route('/org/members/<member_user_id>/companies/<company_id>', methods=['PUT'])
+def org_member_grant_company(member_user_id, company_id):
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='admin')
+    if err: conn.close(); return err
+    existing = conn.execute(
+        "SELECT id FROM org_member_companies WHERE user_id=%s AND company_id=%s",
+        (member_user_id, company_id)
+    ).fetchone()
+    if not existing:
+        conn.execute(
+            "INSERT INTO org_member_companies (id, org_id, user_id, company_id, granted_by) VALUES (%s,%s,%s,%s,%s)",
+            (str(uuid.uuid4()), org_id, member_user_id, company_id, user_id)
+        )
+        conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+@app.route('/org/members/<member_user_id>/companies/<company_id>', methods=['DELETE'])
+def org_member_revoke_company(member_user_id, company_id):
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='admin')
+    if err: conn.close(); return err
+    conn.execute(
+        "DELETE FROM org_member_companies WHERE user_id=%s AND company_id=%s AND org_id=%s",
+        (member_user_id, company_id, org_id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+def get_accessible_companies(user_id, org_id, role, conn):
+    """For admin → None (no filter). For others → list of company_ids."""
+    if role == 'admin':
+        return None
+    rows = conn.execute(
+        "SELECT company_id FROM org_member_companies WHERE user_id=%s AND org_id=%s",
+        (user_id, org_id)
+    ).fetchall()
+    return [r['company_id'] for r in rows]
+
+
+@app.route('/org/join', methods=['POST'])
+def org_join():
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    data     = request.json or {}
+    org_name = (data.get('org_name') or '').strip()
+    token    = (data.get('token') or '').strip()
+    if not org_name or not token:
+        return jsonify({'error': 'org_name_and_token_required'}), 400
+
+    conn = get_db()
+    existing = conn.execute("SELECT id FROM org_members WHERE user_id=%s", (user_id,)).fetchone()
+    if existing:
+        conn.close()
+        return jsonify({'error': 'already_in_org'}), 409
+
+    invite = conn.execute(
+        "SELECT i.org_id FROM org_invites i "
+        "JOIN organizations o ON i.org_id=o.id "
+        "WHERE i.token=%s AND i.expires_at > now() AND lower(o.name)=lower(%s)",
+        (token, org_name)
+    ).fetchone()
+    if not invite:
+        conn.close()
+        return jsonify({'error': 'invalid_token_or_name'}), 401
+
+    conn.execute(
+        "INSERT INTO org_members (id, org_id, user_id, role) VALUES (%s,%s,%s,'user')",
+        (str(uuid.uuid4()), invite['org_id'], user_id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+# ══════════════════════════════════════════
+# ORG HELPERS
+# ══════════════════════════════════════════
+def get_user_org(user_id, conn=None):
+    """Return (org_id, role) for user, or (None, None) if not in any org."""
+    close = conn is None
+    if close:
+        conn = get_db()
+    row = conn.execute(
+        "SELECT m.org_id, m.role FROM org_members m WHERE m.user_id=%s LIMIT 1",
+        (user_id,)
+    ).fetchone()
+    if close:
+        conn.close()
+    if not row:
+        return None, None
+    return row['org_id'], row['role']
+
+def require_org(user_id, conn, min_role='user'):
+    """Return (org_id, role, error_response).
+    error_response is None if access granted, or a Flask response to return immediately."""
+    org_id, role = get_user_org(user_id, conn)
+    if not org_id:
+        return None, None, (jsonify({'error': 'no_org'}), 403)
+    order = {'user': 0, 'manager': 1, 'admin': 2}
+    if order.get(role, -1) < order.get(min_role, 0):
+        return org_id, role, (jsonify({'error': 'forbidden'}), 403)
+    return org_id, role, None
+
+# ══════════════════════════════════════════
 # COMPANIES
 # ══════════════════════════════════════════
 @app.route('/companies', methods=['GET'])
 def get_companies():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-
     conn = get_db()
-    rows = conn.execute(
-        "select * from companies where user_id=? and (is_deleted=0 or is_deleted is null) order by sort_order, name",
-        (user_id,)
-    ).fetchall()
+    org_id, role, err = require_org(user_id, conn)
+    if err: conn.close(); return err
+    accessible = get_accessible_companies(user_id, org_id, role, conn)
+    if accessible is None:
+        rows = conn.execute(
+            "select * from companies where org_id=%s and (is_deleted=0 or is_deleted is null) order by sort_order, name",
+            (org_id,)
+        ).fetchall()
+    elif not accessible:
+        rows = []
+    else:
+        placeholders = ','.join(['%s'] * len(accessible))
+        rows = conn.execute(
+            f"select * from companies where org_id=%s and id IN ({placeholders}) and (is_deleted=0 or is_deleted is null) order by sort_order, name",
+            [org_id] + accessible
+        ).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
 
@@ -323,16 +546,17 @@ def get_companies():
 def create_company():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    if err: conn.close(); return err
     data = request.json
     company_id = str(uuid.uuid4())
-    conn = get_db()
     conn.execute(
-        "insert into companies (id, user_id, name, is_shared, is_active, sort_order) values (?,?,?,?,1,?)",
-        (company_id, user_id, data['name'], 1 if data.get('is_shared') else 0, data.get('sort_order', 0))
+        "insert into companies (id, user_id, org_id, name, is_shared, is_active, sort_order) values (%s,%s,%s,%s,%s,1,%s)",
+        (company_id, user_id, org_id, data['name'], 1 if data.get('is_shared') else 0, data.get('sort_order', 0))
     )
     conn.commit()
-    row = conn.execute("select * from companies where id=?", (company_id,)).fetchone()
+    row = conn.execute("select * from companies where id=%s", (company_id,)).fetchone()
     conn.close()
     return jsonify(dict(row)), 201
 
@@ -340,22 +564,23 @@ def create_company():
 def update_company(company_id):
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-
-    data = request.json
     conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    if err: conn.close(); return err
+    data = request.json
 
     old_row = conn.execute(
-        "select name from companies where id=? and user_id=?", (company_id, user_id)
+        "select name from companies where id=%s and org_id=%s", (company_id, org_id)
     ).fetchone()
 
     fields = []
     values = []
     for key in ['name', 'is_shared', 'is_active', 'sort_order']:
         if key in data:
-            fields.append(f"{key}=?")
+            fields.append(f"{key}=%s")
             values.append(1 if data[key] is True else (0 if data[key] is False else data[key]))
     values.append(company_id)
-    conn.execute(f"update companies set {', '.join(fields)} where id=?", values)
+    conn.execute(f"update companies set {', '.join(fields)} where id=%s", values)
     conn.commit()
 
     if old_row and 'name' in data and data['name'] != old_row['name']:
@@ -366,8 +591,8 @@ def update_company(company_id):
             atts = conn.execute(
                 "select a.id, a.file_path, a.drive_id from attachments a "
                 "join records r on a.record_id=r.id "
-                "where r.company_id=? and r.user_id=? and a.file_path is not null",
-                (company_id, user_id)
+                "where r.company_id=%s and r.org_id=%s and a.file_path is not null",
+                (company_id, org_id)
             ).fetchall()
 
             old_dirs = set()
@@ -393,35 +618,9 @@ def update_company(company_id):
                 parts = att['file_path'].replace('\\', '/').split('/')
                 if len(parts) >= 4 and parts[3] == old_safe:
                     parts[3] = new_safe
-                    conn.execute("update attachments set file_path=? where id=?",
+                    conn.execute("update attachments set file_path=%s where id=%s",
                                  ('/'.join(parts), att['id']))
             conn.commit()
-
-            access_token = get_drive_token(user_id)
-            if access_token:
-                for old_dir in old_dirs:
-                    dir_parts = old_dir.split('/')
-                    year, month = dir_parts[1], dir_parts[2]
-                    try:
-                        parent_id = drive_ensure_folder_path(access_token, [DRIVE_ROOT, year, month])
-                        escaped = old_safe.replace("'", "\\'")
-                        resp = http_requests.get(
-                            'https://www.googleapis.com/drive/v3/files',
-                            headers={'Authorization': f'Bearer {access_token}'},
-                            params={
-                                'q': f"name='{escaped}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '{parent_id}' in parents",
-                                'fields': 'files(id)',
-                                'spaces': 'drive'
-                            }
-                        ).json()
-                        for folder in resp.get('files', []):
-                            http_requests.patch(
-                                f'https://www.googleapis.com/drive/v3/files/{folder["id"]}',
-                                headers={'Authorization': f'Bearer {access_token}'},
-                                json={'name': new_safe}
-                            )
-                    except Exception:
-                        pass
 
     conn.close()
     return jsonify({'ok': True})
@@ -430,11 +629,12 @@ def update_company(company_id):
 def delete_company(company_id):
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-
     conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    if err: conn.close(); return err
     conn.execute(
-        "update companies set is_deleted=1, deleted_at=? where id=? and user_id=?",
-        (datetime.utcnow().isoformat(), company_id, user_id)
+        "update companies set is_deleted=1, deleted_at=%s where id=%s and org_id=%s",
+        (datetime.utcnow().isoformat(), company_id, org_id)
     )
     conn.commit()
     conn.close()
@@ -444,11 +644,12 @@ def delete_company(company_id):
 def get_companies_trash():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-
     conn = get_db()
+    org_id, role, err = require_org(user_id, conn)
+    if err: conn.close(); return err
     rows = conn.execute(
-        "select * from companies where user_id=? and is_deleted=1 order by deleted_at desc",
-        (user_id,)
+        "select * from companies where org_id=%s and is_deleted=1 order by deleted_at desc",
+        (org_id,)
     ).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
@@ -457,11 +658,12 @@ def get_companies_trash():
 def restore_company(company_id):
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-
     conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    if err: conn.close(); return err
     conn.execute(
-        "update companies set is_deleted=0, deleted_at=null where id=? and user_id=?",
-        (company_id, user_id)
+        "update companies set is_deleted=0, deleted_at=null where id=%s and org_id=%s",
+        (company_id, org_id)
     )
     conn.commit()
     conn.close()
@@ -471,9 +673,10 @@ def restore_company(company_id):
 def permanent_delete_company(company_id):
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-
     conn = get_db()
-    conn.execute("delete from companies where id=? and user_id=?", (company_id, user_id))
+    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    if err: conn.close(); return err
+    conn.execute("delete from companies where id=%s and org_id=%s", (company_id, org_id))
     conn.commit()
     conn.close()
     return jsonify({'ok': True})
@@ -485,11 +688,12 @@ def permanent_delete_company(company_id):
 def get_instruments():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-
     conn = get_db()
+    org_id, role, err = require_org(user_id, conn)
+    if err: conn.close(); return err
     rows = conn.execute(
-        "select * from payment_instruments where user_id=? and (is_deleted=0 or is_deleted is null) order by sort_order, name",
-        (user_id,)
+        "select * from payment_instruments where org_id=%s and (is_deleted=0 or is_deleted is null) order by sort_order, name",
+        (org_id,)
     ).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
@@ -498,16 +702,17 @@ def get_instruments():
 def create_instrument():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    if err: conn.close(); return err
     data = request.json
     inst_id = str(uuid.uuid4())
-    conn = get_db()
     conn.execute(
-        "insert into payment_instruments (id, user_id, name, type, is_active, sort_order) values (?,?,?,?,1,?)",
-        (inst_id, user_id, data['name'], data['type'], data.get('sort_order', 0))
+        "insert into payment_instruments (id, user_id, org_id, name, type, is_active, sort_order) values (%s,%s,%s,%s,%s,1,%s)",
+        (inst_id, user_id, org_id, data['name'], data['type'], data.get('sort_order', 0))
     )
     conn.commit()
-    row = conn.execute("select * from payment_instruments where id=?", (inst_id,)).fetchone()
+    row = conn.execute("select * from payment_instruments where id=%s", (inst_id,)).fetchone()
     conn.close()
     return jsonify(dict(row)), 201
 
@@ -515,17 +720,18 @@ def create_instrument():
 def update_instrument(inst_id):
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-
-    data = request.json
     conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    if err: conn.close(); return err
+    data = request.json
     fields = []
     values = []
     for key in ['name', 'type', 'is_active', 'sort_order']:
         if key in data:
-            fields.append(f"{key}=?")
+            fields.append(f"{key}=%s")
             values.append(1 if data[key] is True else (0 if data[key] is False else data[key]))
     values.append(inst_id)
-    conn.execute(f"update payment_instruments set {', '.join(fields)} where id=?", values)
+    conn.execute(f"update payment_instruments set {', '.join(fields)} where id=%s", values)
     conn.commit()
     conn.close()
     return jsonify({'ok': True})
@@ -534,11 +740,12 @@ def update_instrument(inst_id):
 def delete_instrument(inst_id):
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-
     conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    if err: conn.close(); return err
     conn.execute(
-        "update payment_instruments set is_deleted=1, deleted_at=? where id=? and user_id=?",
-        (datetime.utcnow().isoformat(), inst_id, user_id)
+        "update payment_instruments set is_deleted=1, deleted_at=%s where id=%s and org_id=%s",
+        (datetime.utcnow().isoformat(), inst_id, org_id)
     )
     conn.commit()
     conn.close()
@@ -548,11 +755,12 @@ def delete_instrument(inst_id):
 def get_instruments_trash():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-
     conn = get_db()
+    org_id, role, err = require_org(user_id, conn)
+    if err: conn.close(); return err
     rows = conn.execute(
-        "select * from payment_instruments where user_id=? and is_deleted=1 order by deleted_at desc",
-        (user_id,)
+        "select * from payment_instruments where org_id=%s and is_deleted=1 order by deleted_at desc",
+        (org_id,)
     ).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
@@ -561,11 +769,12 @@ def get_instruments_trash():
 def restore_instrument(inst_id):
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-
     conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    if err: conn.close(); return err
     conn.execute(
-        "update payment_instruments set is_deleted=0, deleted_at=null where id=? and user_id=?",
-        (inst_id, user_id)
+        "update payment_instruments set is_deleted=0, deleted_at=null where id=%s and org_id=%s",
+        (inst_id, org_id)
     )
     conn.commit()
     conn.close()
@@ -575,9 +784,10 @@ def restore_instrument(inst_id):
 def permanent_delete_instrument(inst_id):
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-
     conn = get_db()
-    conn.execute("delete from payment_instruments where id=? and user_id=?", (inst_id, user_id))
+    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    if err: conn.close(); return err
+    conn.execute("delete from payment_instruments where id=%s and org_id=%s", (inst_id, org_id))
     conn.commit()
     conn.close()
     return jsonify({'ok': True})
@@ -602,14 +812,28 @@ def get_records():
     include_deleted = request.args.get('deleted') == '1'
 
     conn = get_db()
+    org_id, role, err = require_org(user_id, conn)
+    if err: conn.close(); return err
+
+    accessible = get_accessible_companies(user_id, org_id, role, conn)
+
+    if accessible is not None and not accessible:
+        conn.close()
+        return jsonify([])
+
     query = '''
         select r.*, c.name as company_name, p.name as card_name
         from records r
         left join companies c on r.company_id = c.id
         left join payment_instruments p on r.card_id = p.id
-        where r.user_id=?
+        where r.org_id=%s
     '''
-    params = [user_id]
+    params = [org_id]
+
+    if accessible is not None:
+        placeholders = ','.join(['%s'] * len(accessible))
+        query += f" and r.company_id IN ({placeholders})"
+        params += accessible
 
     if not include_deleted:
         query += " and r.is_deleted=0"
@@ -624,11 +848,11 @@ def get_records():
     for row in rows:
         d = dict(row)
         events = conn.execute(
-            "select * from return_events where record_id=? order by date",
+            "select * from return_events where record_id=%s order by date",
             (d['id'],)
         ).fetchall()
         atts = conn.execute(
-            "select * from attachments where record_id=?",
+            "select * from attachments where record_id=%s",
             (d['id'],)
         ).fetchall()
         d['return_events'] = [dict(e) for e in events]
@@ -644,17 +868,19 @@ def get_records():
 def create_record():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    if err: conn.close(); return err
 
     data = request.json
     record_id = str(uuid.uuid4())
-    conn = get_db()
     conn.execute('''
         insert into records
-        (id, user_id, title, note, date, amount, currency, pay_type, pay_method,
+        (id, user_id, org_id, title, note, date, amount, currency, pay_type, pay_method,
          card_id, company_id, status, to_return, returned, remainder)
-        values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
     ''', (
-        record_id, user_id,
+        record_id, user_id, org_id,
         data['title'], data.get('note', ''),
         data['date'], data['amount'],
         data.get('currency', 'EUR'),
@@ -672,7 +898,7 @@ def create_record():
         from records r
         left join companies c on r.company_id = c.id
         left join payment_instruments p on r.card_id = p.id
-        where r.id=?
+        where r.id=%s
     ''', (record_id,)).fetchone()
     conn.close()
 
@@ -687,16 +913,18 @@ def create_record():
 def update_record(record_id):
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    if err: conn.close(); return err
 
     data = request.json
-    conn = get_db()
 
     # Snapshot before update to detect date/company changes
     old = conn.execute(
         "select r.date, r.company_id, c.name as company_name "
         "from records r left join companies c on r.company_id=c.id "
-        "where r.id=? and r.user_id=?",
-        (record_id, user_id)
+        "where r.id=%s and r.org_id=%s",
+        (record_id, org_id)
     ).fetchone()
 
     fields = []
@@ -706,13 +934,13 @@ def update_record(record_id):
                'remainder', 'is_archived', 'is_deleted', 'deleted_at']
     for key in allowed:
         if key in data:
-            fields.append(f"{key}=?")
+            fields.append(f"{key}=%s")
             val = data[key]
             if isinstance(val, bool):
                 val = 1 if val else 0
             values.append(val)
     values.append(record_id)
-    conn.execute(f"update records set {', '.join(fields)} where id=?", values)
+    conn.execute(f"update records set {', '.join(fields)} where id=%s", values)
     conn.commit()
 
     # Move files if date or company changed
@@ -724,7 +952,7 @@ def update_record(record_id):
 
         if (date_changed or company_changed) and new_date:
             new_company_row = conn.execute(
-                "select name from companies where id=?", (new_company_id,)
+                "select name from companies where id=%s", (new_company_id,)
             ).fetchone() if new_company_id else None
             new_company_name = (new_company_row['name'] if new_company_row else None) or 'Unassigned'
             new_safe = re.sub(r'[^\w\s\-]', '', new_company_name).strip().replace(' ', '_') or 'Unassigned'
@@ -733,12 +961,12 @@ def update_record(record_id):
             new_folder = '/'.join([DRIVE_ROOT, new_year, new_month, new_safe])
 
             atts = conn.execute(
-                "select * from attachments where record_id=? and file_path is not null",
+                "select * from attachments where record_id=%s and file_path is not null",
                 (record_id,)
             ).fetchall()
 
             access_token = None
-            if any(a['drive_id'] for a in atts):
+            if DRIVE_ENABLED and any(a['drive_id'] for a in atts):
                 try:
                     access_token = get_drive_token(user_id)
                 except Exception:
@@ -763,7 +991,7 @@ def update_record(record_id):
                         pass
 
                 # Update DB path
-                conn.execute("update attachments set file_path=? where id=?", (new_path, att['id']))
+                conn.execute("update attachments set file_path=%s where id=%s", (new_path, att['id']))
 
                 # Move on Drive
                 if att['drive_id'] and access_token:
@@ -812,32 +1040,24 @@ def update_record(record_id):
 def delete_record_permanent(record_id):
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-
     conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    if err: conn.close(); return err
+
     atts = conn.execute(
         "select a.* from attachments a join records r on a.record_id=r.id "
-        "where a.record_id=? and r.user_id=?",
-        (record_id, user_id)
+        "where a.record_id=%s and r.org_id=%s",
+        (record_id, org_id)
     ).fetchall()
 
-    access_token = get_drive_token(user_id)
     for att in atts:
         if att['file_path']:
             try:
                 os.remove(os.path.join(UPLOAD_FOLDER, att['file_path'].replace('/', os.sep)))
             except OSError:
                 pass
-        if att['drive_id'] and access_token:
-            try:
-                http_requests.delete(
-                    f'https://www.googleapis.com/drive/v3/files/{att["drive_id"]}',
-                    headers={'Authorization': f'Bearer {access_token}'}
-                )
-            except Exception:
-                pass
 
-    conn.execute("PRAGMA foreign_keys=ON")
-    conn.execute("delete from records where id=? and user_id=?", (record_id, user_id))
+    conn.execute("delete from records where id=%s and org_id=%s", (record_id, org_id))
     conn.commit()
     conn.close()
     return jsonify({'ok': True})
@@ -854,18 +1074,18 @@ def add_return(record_id):
     event_id = str(uuid.uuid4())
     conn = get_db()
     conn.execute(
-        "insert into return_events (id, record_id, amount, date, method) values (?,?,?,?,?)",
+        "insert into return_events (id, record_id, amount, date, method) values (%s,%s,%s,%s,%s)",
         (event_id, record_id, data['amount'], data['date'], data.get('method'))
     )
 
     # Recalculate totals
     events = conn.execute(
-        "select sum(amount) as total from return_events where record_id=?",
+        "select sum(amount) as total from return_events where record_id=%s",
         (record_id,)
     ).fetchone()
     total_returned = events['total'] or 0
 
-    record = conn.execute("select amount from records where id=?", (record_id,)).fetchone()
+    record = conn.execute("select amount from records where id=%s", (record_id,)).fetchone()
     if record:
         remainder = max(0, record['amount'] - total_returned)
         if total_returned <= 0:
@@ -875,12 +1095,12 @@ def add_return(record_id):
         else:
             status = 'done'
         conn.execute(
-            "update records set returned=?, remainder=?, status=? where id=?",
+            "update records set returned=%s, remainder=%s, status=%s where id=%s",
             (total_returned, remainder, status, record_id)
         )
 
     conn.commit()
-    row = conn.execute("select * from return_events where id=?", (event_id,)).fetchone()
+    row = conn.execute("select * from return_events where id=%s", (event_id,)).fetchone()
     conn.close()
     return jsonify(dict(row)), 201
 
@@ -890,18 +1110,18 @@ def delete_return(event_id):
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
 
     conn = get_db()
-    event = conn.execute("select * from return_events where id=?", (event_id,)).fetchone()
+    event = conn.execute("select * from return_events where id=%s", (event_id,)).fetchone()
     if event:
         record_id = event['record_id']
-        conn.execute("delete from return_events where id=?", (event_id,))
+        conn.execute("delete from return_events where id=%s", (event_id,))
 
         events = conn.execute(
-            "select sum(amount) as total from return_events where record_id=?",
+            "select sum(amount) as total from return_events where record_id=%s",
             (record_id,)
         ).fetchone()
         total_returned = events['total'] or 0
 
-        record = conn.execute("select amount from records where id=?", (record_id,)).fetchone()
+        record = conn.execute("select amount from records where id=%s", (record_id,)).fetchone()
         if record:
             remainder = max(0, record['amount'] - total_returned)
             if total_returned <= 0:
@@ -911,7 +1131,7 @@ def delete_return(event_id):
             else:
                 status = 'done'
             conn.execute(
-                "update records set returned=?, remainder=?, status=? where id=?",
+                "update records set returned=%s, remainder=%s, status=%s where id=%s",
                 (total_returned, remainder, status, record_id)
             )
 
@@ -934,11 +1154,13 @@ def upload_attachment(record_id):
         return jsonify({'error': 'Empty filename'}), 400
 
     conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    if err: conn.close(); return err
     rec = conn.execute(
         "select r.date, c.name as company_name from records r "
         "left join companies c on r.company_id=c.id "
-        "where r.id=? and r.user_id=?",
-        (record_id, user_id)
+        "where r.id=%s and r.org_id=%s",
+        (record_id, org_id)
     ).fetchone()
     if not rec:
         conn.close()
@@ -964,20 +1186,20 @@ def upload_attachment(record_id):
 
     file_type = file.content_type or 'application/octet-stream'
 
-    # Try Drive upload immediately
     drive_id = None
-    access_token = get_drive_token(user_id)
-    if access_token:
-        try:
-            folder_id = drive_ensure_folder_path(access_token, [DRIVE_ROOT, year, month, safe_company])
-            with open(os.path.join(abs_folder, stored_name), 'rb') as f:
-                drive_id = drive_upload_file(access_token, folder_id, orig_name, f.read(), file_type)
-        except Exception:
-            pass
+    if DRIVE_ENABLED:
+        access_token = get_drive_token(user_id)
+        if access_token:
+            try:
+                folder_id = drive_ensure_folder_path(access_token, [DRIVE_ROOT, year, month, safe_company])
+                with open(os.path.join(abs_folder, stored_name), 'rb') as f:
+                    drive_id = drive_upload_file(access_token, folder_id, orig_name, f.read(), file_type)
+            except Exception:
+                pass
 
     storage = 'drive' if drive_id else 'local'
     conn.execute(
-        "insert into attachments (id, record_id, file_name, file_type, file_path, storage_type, drive_id) values (?,?,?,?,?,?,?)",
+        "insert into attachments (id, record_id, file_name, file_type, file_path, storage_type, drive_id) values (%s,%s,%s,%s,%s,%s,%s)",
         (att_id, record_id, orig_name, file_type, file_path, storage, drive_id)
     )
     conn.commit()
@@ -991,9 +1213,11 @@ def serve_attachment(att_id):
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
 
     conn = get_db()
+    org_id, role, err = require_org(user_id, conn)
+    if err: conn.close(); return err
     att = conn.execute(
-        "select a.* from attachments a join records r on a.record_id=r.id where a.id=? and r.user_id=?",
-        (att_id, user_id)
+        "select a.* from attachments a join records r on a.record_id=r.id where a.id=%s and r.org_id=%s",
+        (att_id, org_id)
     ).fetchone()
     conn.close()
 
@@ -1008,16 +1232,18 @@ def delete_attachment(att_id):
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
 
     conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    if err: conn.close(); return err
     att = conn.execute(
-        "select a.* from attachments a join records r on a.record_id=r.id where a.id=? and r.user_id=?",
-        (att_id, user_id)
+        "select a.* from attachments a join records r on a.record_id=r.id where a.id=%s and r.org_id=%s",
+        (att_id, org_id)
     ).fetchone()
     if not att:
         conn.close()
         return jsonify({'error': 'Not found'}), 404
 
     drive_warning = None
-    if att['drive_id']:
+    if DRIVE_ENABLED and att['drive_id']:
         access_token = get_drive_token(user_id)
         if access_token:
             try:
@@ -1038,7 +1264,7 @@ def delete_attachment(att_id):
         except Exception:
             pass
 
-    conn.execute("delete from attachments where id=?", (att_id,))
+    conn.execute("delete from attachments where id=%s", (att_id,))
     conn.commit()
     conn.close()
 
@@ -1058,7 +1284,7 @@ def _drive_refresh_access_token(refresh_token):
 
 def get_drive_token(user_id):
     conn = get_db()
-    row = conn.execute("select refresh_token from users where id=?", (user_id,)).fetchone()
+    row = conn.execute("select refresh_token from users where id=%s", (user_id,)).fetchone()
     conn.close()
     if not row or not row['refresh_token']:
         return None
@@ -1097,7 +1323,7 @@ def drive_upload_file(access_token, folder_id, filename, file_bytes, mime_type):
     import json as _json
     meta = _json.dumps({'name': filename, 'parents': [folder_id] if folder_id else []})
     resp = http_requests.post(
-        'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+        'https://www.googleapis.com/upload/drive/v3/files%suploadType=multipart',
         headers={'Authorization': f'Bearer {access_token}'},
         files={
             'metadata': ('metadata', meta, 'application/json; charset=UTF-8'),
@@ -1174,13 +1400,14 @@ def drive_download_file(access_token, file_id):
 def sync_diagnose():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    if not DRIVE_ENABLED: return jsonify({'error': 'drive_disabled'}), 503
 
     conn = get_db()
     all_atts = conn.execute(
         "select a.id, a.file_name, a.file_path, a.drive_id, a.storage_type, "
         "r.is_deleted, r.is_archived "
         "from attachments a join records r on a.record_id=r.id "
-        "where r.user_id=?",
+        "where r.user_id=%s",
         (user_id,)
     ).fetchall()
     conn.close()
@@ -1252,6 +1479,7 @@ def sync_diagnose():
 def sync_preview():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    if not DRIVE_ENABLED: return jsonify({'error': 'drive_disabled'}), 503
 
     if not get_drive_token(user_id):
         return jsonify({'error': 'no_drive_token'}), 403
@@ -1259,7 +1487,7 @@ def sync_preview():
     conn = get_db()
     to_upload_rows = conn.execute(
         "select a.file_name from attachments a join records r on a.record_id=r.id "
-        "where r.user_id=? and r.is_deleted=0 and a.file_path is not null "
+        "where r.user_id=%s and r.is_deleted=0 and a.file_path is not null "
         "and (a.drive_id is null or a.storage_type='local')",
         (user_id,)
     ).fetchall()
@@ -1272,6 +1500,7 @@ def sync_preview():
 def sync_drive():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    if not DRIVE_ENABLED: return jsonify({'error': 'drive_disabled'}), 503
 
     access_token = get_drive_token(user_id)
     if not access_token:
@@ -1283,7 +1512,7 @@ def sync_drive():
     # ── Push: local → Drive ──
     unsynced = conn.execute(
         "select a.* from attachments a join records r on a.record_id=r.id "
-        "where r.user_id=? and r.is_deleted=0 and a.file_path is not null "
+        "where r.user_id=%s and r.is_deleted=0 and a.file_path is not null "
         "and (a.drive_id is null or a.storage_type='local')",
         (user_id,)
     ).fetchall()
@@ -1297,7 +1526,7 @@ def sync_drive():
             with open(abs_path, 'rb') as f:
                 drive_id = drive_upload_file(access_token, folder_id, att['file_name'], f.read(), att['file_type'] or 'application/octet-stream')
             if drive_id:
-                conn.execute("update attachments set drive_id=?, storage_type='drive' where id=?", (drive_id, att['id']))
+                conn.execute("update attachments set drive_id=%s, storage_type='drive' where id=%s", (drive_id, att['id']))
                 uploaded += 1
         except Exception:
             pass
@@ -1311,6 +1540,7 @@ def sync_drive():
 def sync_verify_drive():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    if not DRIVE_ENABLED: return jsonify({'error': 'drive_disabled'}), 503
 
     access_token = get_drive_token(user_id)
     if not access_token:
@@ -1319,7 +1549,7 @@ def sync_verify_drive():
     conn = get_db()
     atts = conn.execute(
         "select a.id, a.drive_id from attachments a join records r on a.record_id=r.id "
-        "where r.user_id=? and a.drive_id is not null",
+        "where r.user_id=%s and a.drive_id is not null",
         (user_id,)
     ).fetchall()
 
@@ -1333,7 +1563,7 @@ def sync_verify_drive():
             )
             if resp.status_code == 404:
                 conn.execute(
-                    "update attachments set drive_id=null, storage_type='local' where id=?",
+                    "update attachments set drive_id=null, storage_type='local' where id=%s",
                     (att['id'],)
                 )
                 fixed += 1
@@ -1349,6 +1579,7 @@ def sync_verify_drive():
 def drive_cleanup():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    if not DRIVE_ENABLED: return jsonify({'error': 'drive_disabled'}), 503
 
     access_token = get_drive_token(user_id)
     if not access_token:
@@ -1357,10 +1588,10 @@ def drive_cleanup():
     conn = get_db()
     known_ids = {r['drive_id'] for r in conn.execute(
         "select a.drive_id from attachments a join records r on a.record_id=r.id "
-        "where r.user_id=? and a.drive_id is not null", (user_id,)
+        "where r.user_id=%s and a.drive_id is not null", (user_id,)
     ).fetchall()}
     known_ids |= {r['drive_id'] for r in conn.execute(
-        "select drive_id from unprocessed_imports where user_id=?", (user_id,)
+        "select drive_id from unprocessed_imports where user_id=%s", (user_id,)
     ).fetchall()}
     conn.close()
 
@@ -1436,6 +1667,7 @@ def drive_cleanup():
 def import_from_drive():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    if not DRIVE_ENABLED: return jsonify({'error': 'drive_disabled'}), 503
 
     access_token = get_drive_token(user_id)
     if not access_token:
@@ -1444,10 +1676,10 @@ def import_from_drive():
     conn = get_db()
     known_ids = {r['drive_id'] for r in conn.execute(
         "select a.drive_id from attachments a join records r on a.record_id=r.id "
-        "where r.user_id=? and a.drive_id is not null", (user_id,)
+        "where r.user_id=%s and a.drive_id is not null", (user_id,)
     ).fetchall()}
     known_ids |= {r['drive_id'] for r in conn.execute(
-        "select drive_id from unprocessed_imports where user_id=?", (user_id,)
+        "select drive_id from unprocessed_imports where user_id=%s", (user_id,)
     ).fetchall()}
 
     imported = 0
@@ -1461,18 +1693,18 @@ def import_from_drive():
         for f in drive_files:
             if f['id'] not in known_ids:
                 conn.execute(
-                    "insert into unprocessed_imports (id, user_id, drive_id, file_name, mime_type, drive_folder) values (?,?,?,?,?,?)",
+                    "insert into unprocessed_imports (id, user_id, drive_id, file_name, mime_type, drive_folder) values (%s,%s,%s,%s,%s,%s)",
                     (str(uuid.uuid4()), user_id, f['id'], f['name'], f.get('mimeType', ''), f.get('folder_path', ''))
                 )
                 imported += 1
 
         # Remove stale unprocessed entries whose file no longer exists on Drive
         existing = conn.execute(
-            "select id, drive_id from unprocessed_imports where user_id=?", (user_id,)
+            "select id, drive_id from unprocessed_imports where user_id=%s", (user_id,)
         ).fetchall()
         for row in existing:
             if row['drive_id'] not in drive_ids_on_drive:
-                conn.execute("delete from unprocessed_imports where id=?", (row['id'],))
+                conn.execute("delete from unprocessed_imports where id=%s", (row['id'],))
                 cleaned += 1
 
     except Exception as e:
@@ -1488,8 +1720,9 @@ def import_from_drive():
 def get_gallery():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-
     conn = get_db()
+    org_id, role, err = require_org(user_id, conn)
+    if err: conn.close(); return err
     att_rows = conn.execute('''
         select
             a.id, a.file_name, a.file_type, a.file_path, a.drive_id,
@@ -1504,10 +1737,9 @@ def get_gallery():
         join records r on a.record_id = r.id
         left join companies c on r.company_id = c.id
         left join payment_instruments p on r.card_id = p.id
-        where r.user_id = ? and r.is_deleted = 0 and a.file_path is not null
+        where r.org_id = %s and r.is_deleted = 0 and a.file_path is not null
         order by r.date desc, a.created_at desc
-    ''', (user_id,)).fetchall()
-
+    ''', (org_id,)).fetchall()
     conn.close()
     return jsonify([dict(r) for r in att_rows])
 
@@ -1515,9 +1747,10 @@ def get_gallery():
 def get_unprocessed():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    if not DRIVE_ENABLED: return jsonify([])
     conn = get_db()
     rows = conn.execute(
-        "select * from unprocessed_imports where user_id=? order by synced_at desc",
+        "select * from unprocessed_imports where user_id=%s order by synced_at desc",
         (user_id,)
     ).fetchall()
     conn.close()
@@ -1527,6 +1760,7 @@ def get_unprocessed():
 def assign_unprocessed(imp_id):
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    if not DRIVE_ENABLED: return jsonify({'error': 'drive_disabled'}), 503
 
     data = request.json or {}
     record_id = data.get('record_id')
@@ -1535,7 +1769,7 @@ def assign_unprocessed(imp_id):
 
     conn = get_db()
     exists = conn.execute(
-        "select id from unprocessed_imports where id=? and user_id=?", (imp_id, user_id)
+        "select id from unprocessed_imports where id=%s and user_id=%s", (imp_id, user_id)
     ).fetchone()
     conn.close()
     if not exists:
@@ -1548,11 +1782,12 @@ def assign_unprocessed(imp_id):
 def unprocessed_new_record(imp_id):
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    if not DRIVE_ENABLED: return jsonify({'error': 'drive_disabled'}), 503
 
     data = request.json or {}
     conn = get_db()
     imp = conn.execute(
-        "select * from unprocessed_imports where id=? and user_id=?", (imp_id, user_id)
+        "select * from unprocessed_imports where id=%s and user_id=%s", (imp_id, user_id)
     ).fetchone()
     if not imp:
         conn.close()
@@ -1563,7 +1798,7 @@ def unprocessed_new_record(imp_id):
         insert into records
         (id, user_id, title, note, date, amount, currency, pay_type, pay_method,
          card_id, company_id, status, to_return, returned, remainder)
-        values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
     ''', (
         record_id, user_id,
         data.get('title', imp['file_name']),
@@ -1586,7 +1821,7 @@ def unprocessed_new_record(imp_id):
 def _do_assign(imp_id, record_id, user_id):
     conn = get_db()
     imp = conn.execute(
-        "select * from unprocessed_imports where id=? and user_id=?", (imp_id, user_id)
+        "select * from unprocessed_imports where id=%s and user_id=%s", (imp_id, user_id)
     ).fetchone()
     if not imp:
         conn.close()
@@ -1594,7 +1829,7 @@ def _do_assign(imp_id, record_id, user_id):
 
     rec = conn.execute(
         "select r.date, c.name as company_name from records r "
-        "left join companies c on r.company_id=c.id where r.id=? and r.user_id=?",
+        "left join companies c on r.company_id=c.id where r.id=%s and r.user_id=%s",
         (record_id, user_id)
     ).fetchone()
     if not rec:
@@ -1633,10 +1868,10 @@ def _do_assign(imp_id, record_id, user_id):
         open(os.path.join(abs_folder, stored_name), 'wb').close()
 
     conn.execute(
-        "insert into attachments (id, record_id, file_name, file_type, file_path, storage_type, drive_id) values (?,?,?,?,?,?,?)",
+        "insert into attachments (id, record_id, file_name, file_type, file_path, storage_type, drive_id) values (%s,%s,%s,%s,%s,%s,%s)",
         (att_id, record_id, orig_name, mime_type, file_path, 'local', None)
     )
-    conn.execute("delete from unprocessed_imports where id=?", (imp_id,))
+    conn.execute("delete from unprocessed_imports where id=%s", (imp_id,))
     conn.commit()
     conn.close()
     return True
@@ -1673,6 +1908,7 @@ def backup_download():
 def backup_list():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    if not DRIVE_ENABLED: return jsonify({'error': 'drive_disabled'}), 503
 
     access_token = get_drive_token(user_id)
     if not access_token:
@@ -1701,6 +1937,7 @@ def backup_list():
 def backup_restore_from_drive():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    if not DRIVE_ENABLED: return jsonify({'error': 'drive_disabled'}), 503
 
     drive_id = (request.json or {}).get('drive_id')
     if not drive_id:
@@ -1775,6 +2012,7 @@ def backup_restore():
 def backup():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    if not DRIVE_ENABLED: return jsonify({'error': 'drive_disabled'}), 503
 
     access_token = get_drive_token(user_id)
     if not access_token:
@@ -1814,7 +2052,7 @@ def get_profile():
 
     conn = get_db()
     row = conn.execute(
-        "select email, full_name, refresh_token from users where id=?", (user_id,)
+        "select email, full_name, refresh_token from users where id=%s", (user_id,)
     ).fetchone()
     conn.close()
     if not row: return jsonify({'error': 'Not found'}), 404
@@ -1822,7 +2060,7 @@ def get_profile():
     return jsonify({
         'email':        row['email'] or '',
         'full_name':    row['full_name'] or '',
-        'drive_connected': bool(row['refresh_token']),
+        'drive_connected': DRIVE_ENABLED and bool(row['refresh_token']),
     })
 
 
@@ -1836,10 +2074,12 @@ def storage_cleanup():
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
 
     conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='admin')
+    if err: conn.close(); return err
     db_atts = conn.execute(
         "select a.file_path from attachments a join records r on a.record_id=r.id "
-        "where r.user_id=? and a.file_path is not null",
-        (user_id,)
+        "where r.org_id=%s and a.file_path is not null",
+        (org_id,)
     ).fetchall()
     conn.close()
     db_paths = {row['file_path'] for row in db_atts}
@@ -1957,32 +2197,38 @@ def records_stats():
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
 
     conn = get_db()
-    rec_total    = conn.execute("SELECT COUNT(*) FROM records WHERE user_id=?", (user_id,)).fetchone()[0]
-    rec_active   = conn.execute("SELECT COUNT(*) FROM records WHERE user_id=? AND is_deleted=0 AND is_archived=0", (user_id,)).fetchone()[0]
-    rec_archived = conn.execute("SELECT COUNT(*) FROM records WHERE user_id=? AND is_archived=1 AND is_deleted=0", (user_id,)).fetchone()[0]
-    rec_deleted  = conn.execute("SELECT COUNT(*) FROM records WHERE user_id=? AND is_deleted=1", (user_id,)).fetchone()[0]
-    att_total   = conn.execute("SELECT COUNT(*) FROM attachments a JOIN records r ON a.record_id=r.id WHERE r.user_id=?", (user_id,)).fetchone()[0]
+    org_id, role, err = require_org(user_id, conn)
+    if err: conn.close(); return err
+
+    rec_total    = conn.execute("SELECT COUNT(*) FROM records WHERE org_id=%s", (org_id,)).fetchone()['count']
+    rec_active   = conn.execute("SELECT COUNT(*) FROM records WHERE org_id=%s AND is_deleted=0 AND is_archived=0", (org_id,)).fetchone()['count']
+    rec_archived = conn.execute("SELECT COUNT(*) FROM records WHERE org_id=%s AND is_archived=1 AND is_deleted=0", (org_id,)).fetchone()['count']
+    rec_deleted  = conn.execute("SELECT COUNT(*) FROM records WHERE org_id=%s AND is_deleted=1", (org_id,)).fetchone()['count']
+    att_total   = conn.execute("SELECT COUNT(*) FROM attachments a JOIN records r ON a.record_id=r.id WHERE r.org_id=%s", (org_id,)).fetchone()['count']
     att_local   = conn.execute(
         "SELECT COUNT(*) FROM attachments a JOIN records r ON a.record_id=r.id "
-        "WHERE r.user_id=? AND a.file_path IS NOT NULL",
-        (user_id,)).fetchone()[0]
+        "WHERE r.org_id=%s AND a.file_path IS NOT NULL",
+        (org_id,)).fetchone()['count']
     att_drive   = conn.execute(
         "SELECT COUNT(*) FROM attachments a JOIN records r ON a.record_id=r.id "
-        "WHERE r.user_id=? AND a.drive_id IS NOT NULL AND a.storage_type='drive'",
-        (user_id,)).fetchone()[0]
-    unprocessed = conn.execute("SELECT COUNT(*) FROM unprocessed_imports WHERE user_id=?", (user_id,)).fetchone()[0]
+        "WHERE r.org_id=%s AND a.drive_id IS NOT NULL AND a.storage_type='drive'",
+        (org_id,)).fetchone()['count']
+    unprocessed = conn.execute("SELECT COUNT(*) FROM unprocessed_imports WHERE user_id=%s", (user_id,)).fetchone()['count']
     conn.close()
 
     drive_real = None
     drive_error = None
-    access_token = get_drive_token(user_id)
-    if not access_token:
-        drive_error = 'no_token'
+    if not DRIVE_ENABLED:
+        drive_error = 'drive_disabled'
     else:
-        try:
-            drive_real = _drive_count_files(access_token, DRIVE_ROOT, skip={'Backup'})
-        except Exception as e:
-            drive_error = str(e)
+        access_token = get_drive_token(user_id)
+        if not access_token:
+            drive_error = 'no_token'
+        else:
+            try:
+                drive_real = _drive_count_files(access_token, DRIVE_ROOT, skip={'Backup'})
+            except Exception as e:
+                drive_error = str(e)
 
     return jsonify({
         'records':     {'total': rec_total, 'active': rec_active, 'archived': rec_archived, 'deleted': rec_deleted},
@@ -1997,6 +2243,7 @@ def records_stats():
 def list_drive_files():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    if not DRIVE_ENABLED: return jsonify({'error': 'drive_disabled'}), 503
 
     access_token = get_drive_token(user_id)
     if not access_token:
@@ -2026,6 +2273,7 @@ def list_drive_files():
 def attach_from_drive(record_id):
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    if not DRIVE_ENABLED: return jsonify({'error': 'drive_disabled'}), 503
 
     data = request.json or {}
     drive_id  = data.get('drive_id')
@@ -2039,7 +2287,7 @@ def attach_from_drive(record_id):
     rec = conn.execute(
         "select r.date, c.name as company_name from records r "
         "left join companies c on r.company_id=c.id "
-        "where r.id=? and r.user_id=?",
+        "where r.id=%s and r.user_id=%s",
         (record_id, user_id)
     ).fetchone()
     if not rec:
@@ -2078,7 +2326,7 @@ def attach_from_drive(record_id):
 
     conn.execute(
         "insert into attachments (id, record_id, file_name, file_type, file_path, storage_type, drive_id) "
-        "values (?,?,?,?,?,?,?)",
+        "values (%s,%s,%s,%s,%s,%s,%s)",
         (att_id, record_id, file_name, mime_type, file_path, storage, drive_id)
     )
     conn.commit()

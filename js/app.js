@@ -1,6 +1,22 @@
+const DRIVE_ENABLED = false;
+
+function _errMsg(e) {
+  const m = (e && e.message) || '';
+  if(m.includes('forbidden') || m.includes('no_org')) return t('toast.forbidden');
+  return t('toast.error');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  if(!DRIVE_ENABLED) {
+    document.querySelectorAll('.drive-only').forEach(el => el.style.display = 'none');
+  }
+});
+
 // ══════════════════════════════════════════
 // INIT APP
 // ══════════════════════════════════════════
+let currentOrg = null;
+
 async function initApp(user) {
   currentUser = user;
 
@@ -10,6 +26,20 @@ async function initApp(user) {
   const sidebarAvatar = document.getElementById('sidebar-avatar');
   if(sidebarEmail) sidebarEmail.textContent = email;
   if(sidebarAvatar) sidebarAvatar.textContent = email[0].toUpperCase();
+
+  // Load org info
+  try {
+    const orgRes = await fetch('/org/me', { credentials: 'include' });
+    if(orgRes.ok) {
+      currentOrg = await orgRes.json();
+      const orgEl = document.getElementById('sidebar-org-name');
+      if(orgEl) orgEl.textContent = currentOrg.name;
+      if(currentOrg.role === 'admin') {
+        const navEl = document.getElementById('nav-org-members');
+        if(navEl) navEl.style.display = '';
+      }
+    }
+  } catch { }
 
   // Load data
   try {
@@ -252,14 +282,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const user = await authGetCurrentUser();
   if(user) {
-    document.getElementById('page-dashboard').style.display = '';
-    document.getElementById('page-dashboard').classList.add('active');
-    await initApp(user);
-    const savedPage = localStorage.getItem('currentPage');
-    if(savedPage && savedPage !== 'dashboard') {
-      const navEl = document.querySelector(`[onclick*="${savedPage}"]`);
-      if(savedPage === 'documents') showPageDocuments(navEl);
-      else showPage(savedPage, navEl);
+    const orgRes = await fetch('/org/me', { credentials: 'include' });
+    if(orgRes.status === 404) {
+      showOnboarding();
+    } else {
+      document.getElementById('page-dashboard').style.display = '';
+      document.getElementById('page-dashboard').classList.add('active');
+      await initApp(user);
+      const savedPage = localStorage.getItem('currentPage');
+      if(savedPage && savedPage !== 'dashboard') {
+        const navEl = document.querySelector(`[onclick*="${savedPage}"]`);
+        if(savedPage === 'documents') showPageDocuments(navEl);
+        else showPage(savedPage, navEl);
+      }
     }
   } else {
     showAuthScreen();
@@ -277,37 +312,165 @@ function showSettingsTab(name, el) {
   if(name === 'companies') loadAndRenderCompanies();
   if(name === 'storage') loadStorageInfo();
   if(name === 'profile') loadProfile();
+  if(name === 'org-members') loadOrgMembers();
 }
 
 async function loadProfile() {
   const container = document.getElementById('profile-content');
   if(!container) return;
   try {
-    const res  = await fetch('/profile', { credentials: 'include' });
+    const [res, orgRes] = await Promise.all([
+      fetch('/profile', { credentials: 'include' }),
+      fetch('/org/me',  { credentials: 'include' }),
+    ]);
     const data = await res.json();
     if(!res.ok) return;
+    const org = orgRes.ok ? await orgRes.json() : null;
 
-    const driveStatus = data.drive_connected
-      ? `<span style="color:var(--green,#4caf50);font-weight:600">● ${t('profile.drive_connected')}</span>`
-      : `<span style="color:var(--red,#e05555);font-weight:600">● ${t('profile.drive_disconnected')}</span>`;
+    const roleLabel = { admin: 'Адміністратор', manager: 'Менеджер', user: 'Користувач' };
 
     container.innerHTML = `
       <div class="profile-row">
-        <div class="profile-label" data-i18n="settings.name">${t('settings.name')}</div>
+        <div class="profile-label">${t('settings.name')}</div>
         <div class="profile-value">${data.full_name || '—'}</div>
       </div>
       <div class="profile-row">
-        <div class="profile-label" data-i18n="settings.email">${t('settings.email')}</div>
+        <div class="profile-label">${t('settings.email')}</div>
         <div class="profile-value">${data.email || '—'}</div>
       </div>
+      ${org ? `
       <div class="profile-row">
-        <div class="profile-label">Google Drive</div>
-        <div class="profile-value">${driveStatus}</div>
+        <div class="profile-label">${t('org.label')}</div>
+        <div class="profile-value">${org.name}</div>
       </div>
+      <div class="profile-row">
+        <div class="profile-label">${t('org.role_label')}</div>
+        <div class="profile-value">${roleLabel[org.role] || org.role}</div>
+      </div>
+      ${org.role === 'admin' ? `
+      <div class="profile-row" style="flex-direction:column;align-items:flex-start;gap:8px">
+        <div class="profile-label">${t('org.invite_label')}</div>
+        <div id="invite-token-block" style="width:100%"></div>
+        <button onclick="generateInvite()" class="btn btn-ghost" style="font-size:12px">${t('org.invite_generate_btn')}</button>
+      </div>` : ''}` : ''}
     `;
+    if(org && org.role === 'admin') _loadCurrentInvite();
   } catch {
     if(container) container.innerHTML = '';
   }
+}
+
+async function loadOrgMembers() {
+  const container = document.getElementById('org-members-list');
+  if(!container) return;
+  try {
+    const [membersRes, companiesRes] = await Promise.all([
+      fetch('/org/members',  { credentials: 'include' }),
+      fetch('/companies',    { credentials: 'include' }),
+    ]);
+    const members   = await membersRes.json();
+    const companies = companiesRes.ok ? await companiesRes.json() : [];
+    if(!membersRes.ok) { container.innerHTML = ''; return; }
+
+    const roleLabel = { admin: t('org.role_admin'), manager: t('org.role_manager'), user: t('org.role_user') };
+
+    const memberCompanies = {};
+    await Promise.all(members.filter(m => m.role !== 'admin').map(async m => {
+      const r = await fetch(`/org/members/${m.user_id}/companies`, { credentials: 'include' });
+      memberCompanies[m.user_id] = r.ok ? await r.json() : [];
+    }));
+
+    container.innerHTML = members.map(m => {
+      const granted = memberCompanies[m.user_id] || [];
+      const companiesHtml = m.role !== 'admin' && companies.length ? `
+        <div style="margin-top:8px;padding-left:46px">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${t('org.companies_label')}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            ${companies.map(c => `
+              <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
+                <input type="checkbox" ${granted.includes(c.id) ? 'checked' : ''}
+                  onchange="orgToggleCompany('${m.user_id}','${c.id}',this.checked)"
+                  style="cursor:pointer">
+                ${c.name}
+              </label>`).join('')}
+          </div>
+        </div>` : '';
+
+      return `
+        <div style="padding:10px 0;border-bottom:1px solid var(--border)">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:36px;height:36px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px;flex-shrink:0">
+              ${(m.full_name || m.email || '?')[0].toUpperCase()}
+            </div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:500;color:var(--text1)">${m.full_name || m.email}</div>
+              <div style="font-size:11px;color:var(--text3)">${m.email}</div>
+            </div>
+            ${m.role !== 'admin' ? `
+            <select onchange="orgMemberSetRole('${m.user_id}', this.value)"
+              style="font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text1);cursor:pointer">
+              <option value="manager" ${m.role==='manager' ? 'selected' : ''}>Менеджер</option>
+              <option value="user"    ${m.role==='user'    ? 'selected' : ''}>Користувач</option>
+            </select>
+            <button onclick="orgMemberRemove('${m.user_id}','${(m.full_name||m.email).replace(/'/g,"\\'")}') "
+              style="background:none;border:none;color:var(--red,#e05555);font-size:18px;cursor:pointer;padding:0 4px">✕</button>
+            ` : `<span style="font-size:12px;color:var(--text3);padding:4px 8px">${roleLabel[m.role]}</span>`}
+          </div>
+          ${companiesHtml}
+        </div>`;
+    }).join('');
+  } catch {
+    container.innerHTML = '';
+  }
+}
+
+async function orgToggleCompany(userId, companyId, granted) {
+  const method = granted ? 'PUT' : 'DELETE';
+  await fetch(`/org/members/${userId}/companies/${companyId}`, { method, credentials: 'include' });
+}
+
+async function orgMemberSetRole(userId, newRole) {
+  const res = await fetch(`/org/members/${userId}/role`, {
+    method: 'PUT', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role: newRole }),
+  });
+  if(!res.ok) { showToast('Помилка зміни ролі', 'error'); loadOrgMembers(); }
+}
+
+async function orgMemberRemove(userId, name) {
+  if(!confirm(`Видалити ${name} з організації?`)) return;
+  const res = await fetch(`/org/members/${userId}`, { method: 'DELETE', credentials: 'include' });
+  if(res.ok) loadOrgMembers();
+  else showToast('Помилка видалення', 'error');
+}
+
+function _renderInviteToken(data) {
+  const el = document.getElementById('invite-token-block');
+  if(!el) return;
+  if(!data || !data.token) {
+    el.innerHTML = `<span style="font-size:12px;color:var(--text3)">${t('org.invite_no_token')}</span>`;
+    return;
+  }
+  const expires = new Date(data.expires_at + 'Z');
+  const diff    = Math.max(0, Math.round((expires - Date.now()) / 3600000));
+  el.innerHTML = `
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px">
+      <div style="font-family:monospace;font-size:13px;font-weight:600;word-break:break-all;margin-bottom:4px">${data.token}</div>
+      <div style="font-size:11px;color:var(--text3)">${t('org.invite_expires').replace('{h}', diff)}</div>
+    </div>`;
+}
+
+async function generateInvite() {
+  const res  = await fetch('/org/invite/generate', { method: 'POST', credentials: 'include' });
+  const data = await res.json();
+  if(data.ok) _renderInviteToken(data);
+  else showToast('Помилка генерації токену', 'error');
+}
+
+async function _loadCurrentInvite() {
+  const res = await fetch('/org/invite/current', { credentials: 'include' });
+  if(res.ok) _renderInviteToken(await res.json());
 }
 
 function restoreSettingsTab() {
@@ -724,7 +887,7 @@ async function saveRecord() {
     closeModal();
   } catch(e) {
     console.error('saveRecord error', e);
-    showToast(t('toast.save_error') + ': ' + e.message, 'error');
+    showToast(_errMsg(e), 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = origText;
@@ -1036,6 +1199,7 @@ function userCardClick() {
 
 // ── SYNC ──
 function syncNow() {
+  if(!DRIVE_ENABLED) return;
   confirmSync();
 }
 
@@ -1044,6 +1208,7 @@ function closeSyncPreview() {
 }
 
 async function confirmSync() {
+  if(!DRIVE_ENABLED) return;
   setBusy(true, 'sync.busy');
   try {
     const res  = await fetch('/sync', { method: 'POST', credentials: 'include' });
@@ -1066,6 +1231,7 @@ async function confirmSync() {
 }
 
 async function runDriveCleanup() {
+  if(!DRIVE_ENABLED) return;
   setBusy(true, 'sync.drive_cleanup_busy');
   try {
     const res  = await fetch('/drive-cleanup', { method: 'POST', credentials: 'include' });
@@ -1089,6 +1255,7 @@ async function runDriveCleanup() {
 }
 
 async function importFromDrive() {
+  if(!DRIVE_ENABLED) return;
   setBusy(true, 'sync.importing');
   try {
     const res  = await fetch('/import-from-drive', { method: 'POST', credentials: 'include' });
@@ -1655,7 +1822,7 @@ async function archiveRecord() {
     closeDetail();
     showToast(t('toast.archived'), 'success');
   } catch(e) {
-    showToast(t('toast.error') + ': ' + e.message, 'error');
+    showToast(_errMsg(e), 'error');
   }
 }
 
@@ -1671,7 +1838,7 @@ async function deleteRecord() {
     closeDetail();
     showToast(t('toast.deleted'), 'success');
   } catch(e) {
-    showToast(t('toast.error') + ': ' + e.message, 'error');
+    showToast(_errMsg(e), 'error');
   }
 }
 
@@ -1692,7 +1859,7 @@ async function archiveRecordById(id) {
     updateBadges();
     showToast(t('toast.archived'), 'success');
   } catch(e) {
-    showToast(t('toast.error') + ': ' + e.message, 'error');
+    showToast(_errMsg(e), 'error');
   }
 }
 
@@ -1707,7 +1874,7 @@ async function trashRecordById(id) {
     updateBadges();
     showToast(t('toast.deleted'), 'success');
   } catch(e) {
-    showToast(t('toast.error') + ': ' + e.message, 'error');
+    showToast(_errMsg(e), 'error');
   }
 }
 
@@ -1744,7 +1911,7 @@ async function saveReturn() {
     document.getElementById('add-return-form').classList.remove('open');
     showToast(t('toast.return_saved'), 'success');
   } catch(e) {
-    showToast(t('toast.error') + ': ' + e.message, 'error');
+    showToast(_errMsg(e), 'error');
   }
 }
 
@@ -1759,7 +1926,7 @@ async function deleteReturnEvent(eventId) {
     updateDashboard();
     showToast(t('toast.return_deleted'), 'success');
   } catch(e) {
-    showToast(t('toast.error') + ': ' + e.message, 'error');
+    showToast(_errMsg(e), 'error');
   }
 }
 
@@ -1782,7 +1949,11 @@ async function unarchiveRecord(id) {
     updateDashboard();
     updateBadges();
     showToast(t('toast.unarchived'), 'success');
-  } catch(e) { showToast(t('toast.error'), 'error'); }
+  } catch(e) {
+    const msg = e.message || '';
+    if(msg.includes('forbidden') || msg.includes('no_org')) showToast('Недостатньо прав для цієї дії', 'error');
+    else showToast(t('toast.error'), 'error');
+  }
 }
 
 async function deleteFromArchive(id) {
@@ -1794,7 +1965,7 @@ async function deleteFromArchive(id) {
     renderArchiveSection();
     updateBadges();
     showToast(t('toast.deleted'), 'success');
-  } catch(e) { showToast(t('toast.error'), 'error'); }
+  } catch(e) { showToast(_errMsg(e), 'error'); }
 }
 
 // ── TRASH PAGE ──
@@ -1874,7 +2045,11 @@ async function restoreRecord(id, status) {
     renderDocs();
     updateDashboard();
     updateBadges();
-  } catch(e) { showToast(t('toast.error'), 'error'); }
+  } catch(e) {
+    const msg = e.message || '';
+    if(msg.includes('forbidden') || msg.includes('no_org')) showToast('Недостатньо прав для цієї дії', 'error');
+    else showToast(t('toast.error'), 'error');
+  }
 }
 
 async function permanentDelete(id) {
@@ -1885,7 +2060,7 @@ async function permanentDelete(id) {
     showToast(t('toast.perm_deleted'), 'success');
     loadAndRenderTrash();
     updateBadges();
-  } catch(e) { showToast(t('toast.error'), 'error'); }
+  } catch(e) { showToast(_errMsg(e), 'error'); }
 }
 
 async function emptyTrash() {
@@ -2094,7 +2269,7 @@ async function saveCompanyModal() {
     const companies = await loadCompanies();
     populateCompanyDropdowns(companies);
   } catch(e) {
-    showToast(t('toast.error') + ': ' + e.message, 'error');
+    showToast(_errMsg(e), 'error');
   }
 }
 
@@ -2118,7 +2293,7 @@ async function deleteCompany(id, name) {
     showToast(t('toast.deleted'), 'success');
     updateBadges();
   } catch(e) {
-    showToast(t('toast.error') + ': ' + e.message, 'error');
+    showToast(_errMsg(e), 'error');
   }
 }
 
@@ -2131,7 +2306,7 @@ async function restoreCompany(id) {
     showToast(t('toast.company_restored'), 'success');
     loadAndRenderTrash();
     updateBadges();
-  } catch(e) { showToast(t('toast.error'), 'error'); }
+  } catch(e) { showToast(_errMsg(e), 'error'); }
 }
 
 async function permanentDeleteCompany(id) {
@@ -2140,7 +2315,7 @@ async function permanentDeleteCompany(id) {
     showToast(t('toast.company_perm_deleted'), 'success');
     loadAndRenderTrash();
     updateBadges();
-  } catch(e) { showToast(t('toast.error'), 'error'); }
+  } catch(e) { showToast(_errMsg(e), 'error'); }
 }
 
 // ══════════════════════════════════════════
@@ -2244,7 +2419,7 @@ async function saveInstrumentModal() {
     const instruments = await loadInstruments();
     populateInstrumentDropdowns(instruments);
   } catch(e) {
-    showToast(t('toast.error') + ': ' + e.message, 'error');
+    showToast(_errMsg(e), 'error');
   }
 }
 
@@ -2268,7 +2443,7 @@ async function deleteInstrument(id, name) {
     showToast(t('toast.deleted'), 'success');
     updateBadges();
   } catch(e) {
-    showToast(t('toast.error') + ': ' + e.message, 'error');
+    showToast(_errMsg(e), 'error');
   }
 }
 
@@ -2281,7 +2456,7 @@ async function restoreInstrument(id) {
     showToast(t('toast.instrument_restored'), 'success');
     loadAndRenderTrash();
     updateBadges();
-  } catch(e) { showToast(t('toast.error'), 'error'); }
+  } catch(e) { showToast(_errMsg(e), 'error'); }
 }
 
 async function permanentDeleteInstrument(id) {
@@ -2290,7 +2465,7 @@ async function permanentDeleteInstrument(id) {
     showToast(t('toast.instrument_perm_deleted'), 'success');
     loadAndRenderTrash();
     updateBadges();
-  } catch(e) { showToast(t('toast.error'), 'error'); }
+  } catch(e) { showToast(_errMsg(e), 'error'); }
 }
 
 // ══════════════════════════════════════════
@@ -2442,6 +2617,7 @@ let _unprocessedItems = [];
 let _currentImportId = null;
 
 async function loadUnprocessed() {
+  if(!DRIVE_ENABLED) return;
   try {
     const res = await fetch('/unprocessed', { credentials: 'include' });
     _unprocessedItems = await res.json();
@@ -2565,7 +2741,7 @@ async function assignToRecord(recordId) {
     } else {
       showToast(t('toast.error'), 'error');
     }
-  } catch { showToast(t('toast.error'), 'error'); }
+  } catch(e) { showToast(_errMsg(e), 'error'); }
   finally { setBusy(false); }
 }
 
@@ -2596,7 +2772,7 @@ async function createNewRecordFromImport() {
     } else {
       showToast(t('toast.error'), 'error');
     }
-  } catch { showToast(t('toast.error'), 'error'); }
+  } catch(e) { showToast(_errMsg(e), 'error'); }
   finally { setBusy(false); }
 }
 
@@ -2612,6 +2788,7 @@ function _formatBytes(bytes) {
 }
 
 async function loadBackupList() {
+  if(!DRIVE_ENABLED) return;
   const btn  = document.getElementById('backup-list-btn');
   const list = document.getElementById('backup-drive-list');
   if(btn) { btn.disabled = true; btn.textContent = t('loading.text'); }
@@ -2646,6 +2823,7 @@ async function loadBackupList() {
 }
 
 async function restoreFromDrive(driveId, name) {
+  if(!DRIVE_ENABLED) return;
   if(!confirm(t('settings.restore_confirm').replace('{f}', name))) return;
   setBusy(true, 'loading.text');
   try {
@@ -2797,6 +2975,7 @@ function closeStatsModal() {
 }
 
 async function runVerifyDrive() {
+  if(!DRIVE_ENABLED) return;
   const btn = document.getElementById('verify-drive-btn');
   if(btn) { btn.disabled = true; btn.textContent = 'Перевірка...'; }
   try {
@@ -2838,6 +3017,7 @@ let _drivePickerContext = null;
 let _drivePickerTimer   = null;
 
 function openDrivePicker(context) {
+  if(!DRIVE_ENABLED) return;
   _drivePickerContext = context;
   document.getElementById('drive-picker-search').value = '';
   document.getElementById('drive-picker-overlay').classList.add('open');
