@@ -42,7 +42,11 @@ async function authSubmit() {
     });
     const data = await res.json();
     if(data.ok) {
-      window.location.reload();
+      if(_authMode === 'register' && data.verify_email) {
+        showVerifyEmailScreen(email);
+      } else {
+        window.location.reload();
+      }
     } else {
       const msgs = {
         email_taken: t('auth.err_email_taken'),
@@ -151,5 +155,90 @@ async function obSubmit() {
   } catch {
     errEl.textContent = t('onboarding.err_connection');
     errEl.style.display = '';
+  }
+}
+
+// ── VERIFY EMAIL SCREEN ──
+function showVerifyEmailScreen(email) {
+  document.getElementById('loading-overlay').classList.add('hidden');
+  document.getElementById('auth-screen').classList.add('hidden');
+  const desc = document.getElementById('verify-email-desc');
+  if(desc) desc.textContent = t('verify.desc').replace('{email}', email);
+  document.getElementById('verify-email-screen').classList.remove('hidden');
+}
+
+async function resendVerification() {
+  const btn = document.getElementById('verify-resend-btn');
+  const msg = document.getElementById('verify-msg');
+  if(btn) btn.disabled = true;
+  try {
+    const res  = await fetch('/auth/resend-verification', { method: 'POST', credentials: 'include' });
+    const data = await res.json();
+    if(msg) {
+      if(data.ok) {
+        msg.style.background = 'var(--green-bg)';
+        msg.style.color      = 'var(--green)';
+        msg.textContent      = t('verify.resent');
+      } else {
+        msg.style.background = 'var(--red-bg, rgba(247,111,111,0.1))';
+        msg.style.color      = 'var(--red)';
+        msg.textContent      = t('auth.err_generic');
+      }
+      msg.style.display = '';
+      setTimeout(() => { msg.style.display = 'none'; }, 4000);
+    }
+  } finally {
+    if(btn) btn.disabled = false;
+  }
+}
+
+function verifySkip() {
+  document.getElementById('verify-email-screen').classList.add('hidden');
+  window.location.reload();
+}
+
+// ── ACTIVATE ACCOUNT ──
+let _activateToken = null;
+
+function showActivateScreen(token) {
+  _activateToken = token;
+  document.getElementById('loading-overlay').classList.add('hidden');
+  document.getElementById('auth-screen').classList.add('hidden');
+  const screen = document.getElementById('activate-screen');
+  if(screen) screen.classList.remove('hidden');
+  applyTranslations();
+  const p1 = document.getElementById('activate-password');
+  const p2 = document.getElementById('activate-password2');
+  if(p1) p1.placeholder = t('activate.password_placeholder');
+  if(p2) p2.placeholder = t('activate.password2_placeholder');
+}
+
+async function activateSubmit() {
+  const pwd  = (document.getElementById('activate-password').value  || '');
+  const pwd2 = (document.getElementById('activate-password2').value || '');
+  const err  = document.getElementById('activate-error');
+  const btn  = document.getElementById('activate-submit-btn');
+  err.style.display = 'none';
+  if(pwd.length < 6)  { err.textContent = t('auth.err_password_too_short'); err.style.display=''; return; }
+  if(pwd !== pwd2)    { err.textContent = t('activate.err_mismatch');        err.style.display=''; return; }
+  btn.disabled = true;
+  try {
+    const res  = await fetch('/auth/activate', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: _activateToken, password: pwd }),
+    });
+    const data = await res.json();
+    if(data.ok) {
+      window.location.reload();
+    } else {
+      err.textContent = t('activate.err_invalid_token');
+      err.style.display = '';
+    }
+  } catch {
+    err.textContent = t('auth.err_connection');
+    err.style.display = '';
+  } finally {
+    btn.disabled = false;
   }
 }

@@ -39,9 +39,9 @@
     </div>
 
     <!-- Email/password form -->
-    <div id="auth-tabs" style="display:flex;gap:0;margin-bottom:16px;border-radius:var(--radius-sm);overflow:hidden;border:1px solid var(--border)">
-      <button id="tab-login" onclick="authShowTab('login')" style="flex:1;padding:8px;border:none;background:var(--accent);color:#fff;font-size:13px;font-weight:600;cursor:pointer" data-i18n="auth.tab_login">Вхід</button>
-      <button id="tab-register" onclick="authShowTab('register')" style="flex:1;padding:8px;border:none;background:var(--bg2);color:var(--text2);font-size:13px;cursor:pointer" data-i18n="auth.tab_register">Реєстрація</button>
+    <div id="auth-tabs" style="display:none">
+      <button id="tab-login" onclick="authShowTab('login')"></button>
+      <button id="tab-register" onclick="authShowTab('register')"></button>
     </div>
 
     <div id="auth-name-group" style="display:none;margin-bottom:10px">
@@ -138,6 +138,58 @@
     <div style="margin-top:16px;text-align:center">
       <button onclick="signOut()" style="background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer" data-i18n="onboarding.logout">Вийти з акаунту</button>
     </div>
+  </div>
+</div>
+
+<!-- ── VERIFY EMAIL ── -->
+<div class="auth-screen hidden" id="verify-email-screen">
+  <div class="auth-box" style="text-align:center">
+    <div class="auth-logo" style="justify-content:center;margin-bottom:24px">
+      <div class="auth-logo-icon">💳</div>
+      <div>
+        <div class="auth-logo-text" data-i18n="auth.app_name">Reimbursement App</div>
+        <div class="auth-logo-sub" data-i18n="auth.app_sub">Управління витратами</div>
+      </div>
+    </div>
+    <div style="font-size:40px;margin-bottom:14px">📧</div>
+    <div style="font-size:16px;font-weight:600;color:var(--text1);margin-bottom:10px" data-i18n="verify.title">Перевір пошту</div>
+    <div id="verify-email-desc" style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:24px"></div>
+    <div id="verify-msg" style="display:none;font-size:12px;margin-bottom:12px;padding:8px 12px;border-radius:var(--radius-sm)"></div>
+    <button onclick="resendVerification()" id="verify-resend-btn"
+      style="width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);font-size:14px;font-weight:600;cursor:pointer;margin-bottom:10px"
+      data-i18n="verify.resend_btn">📨 Надіслати повторно</button>
+    <button onclick="verifySkip()"
+      style="width:100%;padding:8px;background:transparent;color:var(--text3);border:none;font-size:12px;cursor:pointer"
+      data-i18n="verify.skip">Продовжити без підтвердження →</button>
+  </div>
+</div>
+
+<!-- ── ACTIVATE ACCOUNT ── -->
+<div class="auth-screen hidden" id="activate-screen">
+  <div class="auth-box">
+    <div class="auth-logo">
+      <div class="auth-logo-icon">💳</div>
+      <div>
+        <div class="auth-logo-text" data-i18n="auth.app_name">Reimbursement App</div>
+        <div class="auth-logo-sub" data-i18n="auth.app_sub">Управління витратами</div>
+      </div>
+    </div>
+    <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:6px" data-i18n="activate.title">Встанови пароль</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:20px" data-i18n="activate.subtitle">Для активації акаунту встанови пароль:</div>
+    <div style="margin-bottom:10px">
+      <input id="activate-password" type="password" autocomplete="new-password"
+        style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text1);font-size:14px;box-sizing:border-box"
+        onkeydown="if(event.key==='Enter')activateSubmit()" data-i18n-placeholder="activate.password_placeholder">
+    </div>
+    <div style="margin-bottom:14px">
+      <input id="activate-password2" type="password" autocomplete="new-password"
+        style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text1);font-size:14px;box-sizing:border-box"
+        onkeydown="if(event.key==='Enter')activateSubmit()" data-i18n-placeholder="activate.password2_placeholder">
+    </div>
+    <div id="activate-error" style="display:none;color:var(--red);font-size:12px;margin-bottom:10px;text-align:center"></div>
+    <button onclick="activateSubmit()" id="activate-submit-btn"
+      style="width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);font-size:14px;font-weight:600;cursor:pointer"
+      data-i18n="activate.submit_btn">Активувати акаунт</button>
   </div>
 </div>
 
@@ -734,6 +786,7 @@
             <div class="settings-section">
               <div class="settings-section-header">
                 <div class="settings-section-title" data-i18n="org.members_title">👥 Члени організації</div>
+                <button onclick="openInviteUserModal()" class="btn btn-ghost" style="font-size:12px" data-i18n="invite.add_btn">+ Додати</button>
               </div>
               <div id="org-members-list" style="padding:0 18px 18px;display:flex;flex-direction:column;gap:8px">
                 <div style="text-align:center;padding:20px;color:var(--text3);font-size:13px">Завантаження...</div>

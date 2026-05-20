@@ -268,6 +268,15 @@
   .company-access-chip.granted { background: var(--green-bg); color: var(--green); border-color: transparent; }
   .company-access-chip.granted:hover { opacity: 0.8; }
 
+  /* ── VERIFY EMAIL BANNER ── */
+  .verify-banner {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 10px 16px; margin-bottom: 16px;
+    background: var(--yellow-bg); color: var(--yellow);
+    border: 1px solid rgba(245,166,35,0.3);
+    border-radius: var(--radius-sm); font-size: 13px;
+  }
+
   /* ── BUSY OVERLAY ── */
   .busy-overlay {
     position: fixed;

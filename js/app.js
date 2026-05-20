@@ -92,6 +92,25 @@ function applyRoleRestrictions() {
   if(dangerActions) dangerActions.style.display = w ? '' : 'none';
 }
 
+function _showVerifyBanner() {
+  if(document.getElementById('verify-banner')) return;
+  const banner = document.createElement('div');
+  banner.id        = 'verify-banner';
+  banner.className = 'verify-banner';
+  banner.innerHTML = `<span>${t('verify.banner')} — <a href="#" onclick="event.preventDefault();resendVerificationFromApp(this)" style="color:var(--accent);text-decoration:underline">${t('verify.banner_resend')}</a></span>
+    <button onclick="this.parentElement.remove()" style="background:none;border:none;color:var(--yellow);cursor:pointer;font-size:18px;line-height:1;padding:0 2px">✕</button>`;
+  const content = document.querySelector('#page-dashboard .content');
+  if(content) content.prepend(banner);
+}
+
+async function resendVerificationFromApp(linkEl) {
+  if(linkEl) { linkEl.textContent = t('verify.sending'); linkEl.style.pointerEvents = 'none'; }
+  const res = await fetch('/auth/resend-verification', { method: 'POST', credentials: 'include' });
+  if(res.ok) showToast(t('verify.resent'), 'success');
+  else       showToast(t('auth.err_generic'), 'error');
+  if(linkEl) { linkEl.textContent = t('verify.banner_resend'); linkEl.style.pointerEvents = ''; }
+}
+
 function populateCompanyDropdowns(companies) {
   // Form dropdown (uses id)
   const formEl = document.getElementById('field-company');
@@ -286,6 +305,25 @@ function showPage(name, el) {
 
 // ── INIT ──
 document.addEventListener('DOMContentLoaded', async () => {
+  const _vp = new URLSearchParams(window.location.search);
+  if(_vp.get('activate_token')) {
+    history.replaceState(null, '', '/');
+    showActivateScreen(_vp.get('activate_token'));
+    return;
+  }
+  if(_vp.get('activate_error') === '1') {
+    history.replaceState(null, '', '/');
+    sessionStorage.setItem('_activate_error', '1');
+  }
+  if(_vp.get('email_verified') === '1') {
+    history.replaceState(null, '', '/');
+    sessionStorage.setItem('_email_just_verified', '1');
+  }
+  if(_vp.get('verify_error') === '1') {
+    history.replaceState(null, '', '/');
+    sessionStorage.setItem('_verify_error', '1');
+  }
+
   const dateEl = document.getElementById('field-date');
   if(dateEl) dateEl.value = new Date().toISOString().split('T')[0];
 
@@ -307,6 +345,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       document.getElementById('page-dashboard').style.display = '';
       document.getElementById('page-dashboard').classList.add('active');
       await initApp(user);
+      if(sessionStorage.getItem('_activate_error')) {
+        sessionStorage.removeItem('_activate_error');
+        showToast(t('activate.err_invalid_token'), 'error');
+      } else if(sessionStorage.getItem('_email_just_verified')) {
+        sessionStorage.removeItem('_email_just_verified');
+        showToast(t('verify.success_toast'), 'success');
+      } else if(sessionStorage.getItem('_verify_error')) {
+        sessionStorage.removeItem('_verify_error');
+        showToast(t('verify.error_toast'), 'error');
+      } else if(user.email_verified === false) {
+        _showVerifyBanner();
+      }
       const savedPage = localStorage.getItem('currentPage');
       if(savedPage && savedPage !== 'dashboard') {
         const navEl = document.querySelector(`[onclick*="${savedPage}"]`);
@@ -406,15 +456,25 @@ async function loadOrgMembers() {
 
     const roleLabel = { admin: t('org.role_admin'), manager: t('org.role_manager'), user: t('org.role_user') };
 
+    const activeMembers   = members.filter(m => !m.left_at);
+    const excludedMembers = members.filter(m =>  m.left_at);
+
     const memberCompanies = {};
-    await Promise.all(members.filter(m => m.role !== 'admin').map(async m => {
+    await Promise.all(activeMembers.filter(m => m.role !== 'admin').map(async m => {
       const r = await fetch(`/org/members/${m.user_id}/companies`, { credentials: 'include' });
       memberCompanies[m.user_id] = r.ok ? await r.json() : [];
     }));
 
-    container.innerHTML = members.map(m => {
-      const granted = memberCompanies[m.user_id] || [];
-      const companiesHtml = m.role !== 'admin' && companies.length ? `
+    const renderMember = m => {
+      const isExcluded = !!m.left_at;
+      const granted    = memberCompanies[m.user_id] || [];
+      const avatarBg   = isExcluded ? 'var(--bg4)' : 'var(--accent)';
+      const avatarColor= isExcluded ? 'var(--text3)' : '#fff';
+      const nameColor  = isExcluded ? 'var(--text3)' : 'var(--text1)';
+      const safeEmail  = (m.email || '').replace(/'/g, "\\'");
+      const safeName   = (m.full_name || m.email || '').replace(/'/g, "\\'");
+
+      const companiesHtml = !isExcluded && m.role !== 'admin' && companies.length ? `
         <div style="margin-top:8px;padding-left:46px">
           <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${t('org.companies_label')}</div>
           <div style="display:flex;flex-wrap:wrap;gap:6px">
@@ -426,29 +486,56 @@ async function loadOrgMembers() {
           </div>
         </div>` : '';
 
+      const controls = isExcluded ? `
+        <button onclick="orgMemberRestore('${m.user_id}')"
+          class="btn btn-ghost" style="font-size:11px;padding:3px 8px;color:var(--green);border-color:var(--green)">
+          ${t('org.restore_btn')}
+        </button>
+        <button onclick="orgMemberDeletePermanent('${m.user_id}','${safeEmail}','${safeName}')"
+          class="btn btn-danger" style="font-size:11px;padding:3px 8px">
+          ${t('org.delete_permanent_btn')}
+        </button>` : m.is_pending ? `
+        <span style="font-size:11px;color:var(--yellow);margin-right:4px">⏳ ${t('invite.pending_label')}</span>
+        <button onclick="orgMemberResendInvite('${m.user_id}')"
+          class="btn btn-ghost" style="font-size:11px;padding:3px 8px">
+          ${t('invite.resend_btn')}
+        </button>
+        <button onclick="orgMemberExclude('${m.user_id}')"
+          title="${t('org.exclude_tooltip')}"
+          style="background:none;border:none;color:var(--red,#e05555);font-size:18px;cursor:pointer;padding:0 4px">✕</button>
+        ` : m.role !== 'admin' ? `
+        <select onchange="orgMemberSetRole('${m.user_id}', this.value)"
+          style="font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text1);cursor:pointer">
+          <option value="manager" ${m.role==='manager' ? 'selected' : ''}>${t('org.role_manager')}</option>
+          <option value="user"    ${m.role==='user'    ? 'selected' : ''}>${t('org.role_user')}</option>
+        </select>
+        <button onclick="orgMemberExclude('${m.user_id}')"
+          title="${t('org.exclude_tooltip')}"
+          style="background:none;border:none;color:var(--red,#e05555);font-size:18px;cursor:pointer;padding:0 4px">✕</button>
+        ` : `<span style="font-size:12px;color:var(--text3);padding:4px 8px">${roleLabel[m.role]}</span>`;
+
       return `
-        <div style="padding:10px 0;border-bottom:1px solid var(--border)">
+        <div style="padding:10px 0;border-bottom:1px solid var(--border);${isExcluded ? 'opacity:0.55' : ''}">
           <div style="display:flex;align-items:center;gap:10px">
-            <div style="width:36px;height:36px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px;flex-shrink:0">
+            <div style="width:36px;height:36px;border-radius:50%;background:${avatarBg};color:${avatarColor};display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px;flex-shrink:0">
               ${(m.full_name || m.email || '?')[0].toUpperCase()}
             </div>
             <div style="flex:1;min-width:0">
-              <div style="font-size:13px;font-weight:500;color:var(--text1)">${m.full_name || m.email}</div>
-              <div style="font-size:11px;color:var(--text3)">${m.email}</div>
+              <div style="font-size:13px;font-weight:500;color:${nameColor}">${m.full_name || m.email}</div>
+              <div style="font-size:11px;color:var(--text3)">${m.email}${isExcluded ? ` · <span style="color:var(--red)">${t('org.excluded_label')}</span>` : ''}</div>
             </div>
-            ${m.role !== 'admin' ? `
-            <select onchange="orgMemberSetRole('${m.user_id}', this.value)"
-              style="font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text1);cursor:pointer">
-              <option value="manager" ${m.role==='manager' ? 'selected' : ''}>Менеджер</option>
-              <option value="user"    ${m.role==='user'    ? 'selected' : ''}>Користувач</option>
-            </select>
-            <button onclick="orgMemberRemove('${m.user_id}','${(m.full_name||m.email).replace(/'/g,"\\'")}') "
-              style="background:none;border:none;color:var(--red,#e05555);font-size:18px;cursor:pointer;padding:0 4px">✕</button>
-            ` : `<span style="font-size:12px;color:var(--text3);padding:4px 8px">${roleLabel[m.role]}</span>`}
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+              ${controls}
+            </div>
           </div>
           ${companiesHtml}
         </div>`;
-    }).join('');
+    };
+
+    container.innerHTML = [
+      ...activeMembers.map(renderMember),
+      ...excludedMembers.map(renderMember),
+    ].join('');
   } catch {
     container.innerHTML = '';
   }
@@ -474,11 +561,134 @@ async function orgMemberSetRole(userId, newRole) {
   if(!res.ok) { showToast('Помилка зміни ролі', 'error'); loadOrgMembers(); }
 }
 
-async function orgMemberRemove(userId, name) {
-  if(!confirm(`Видалити ${name} з організації?`)) return;
+async function orgMemberExclude(userId) {
   const res = await fetch(`/org/members/${userId}`, { method: 'DELETE', credentials: 'include' });
   if(res.ok) loadOrgMembers();
-  else showToast('Помилка видалення', 'error');
+  else showToast(t('toast.error'), 'error');
+}
+
+async function orgMemberRestore(userId) {
+  const res = await fetch(`/org/members/${userId}/restore`, { method: 'PUT', credentials: 'include' });
+  if(res.ok) loadOrgMembers();
+  else showToast(t('toast.error'), 'error');
+}
+
+function orgMemberDeletePermanent(userId, email, name) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:380px;width:100%">
+      <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:8px">${t('org.delete_permanent_title')}</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:4px">${name}</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:16px">${t('org.delete_permanent_desc')}</div>
+      <input id="_del_confirm_input" type="email" autocomplete="off" placeholder="${email}"
+        style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box;margin-bottom:16px">
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="_del_cancel_btn" class="btn btn-ghost">${t('org.delete_permanent_cancel')}</button>
+        <button id="_del_confirm_btn" class="btn btn-danger" disabled style="opacity:0.4">${t('org.delete_permanent_confirm')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const input   = overlay.querySelector('#_del_confirm_input');
+  const confirmBtn = overlay.querySelector('#_del_confirm_btn');
+  const cancelBtn  = overlay.querySelector('#_del_cancel_btn');
+
+  input.addEventListener('input', () => {
+    const match = input.value.trim() === email;
+    confirmBtn.disabled = !match;
+    confirmBtn.style.opacity = match ? '1' : '0.4';
+  });
+
+  cancelBtn.onclick = () => overlay.remove();
+  overlay.addEventListener('click', e => { if(e.target === overlay) overlay.remove(); });
+
+  confirmBtn.onclick = async () => {
+    confirmBtn.disabled = true;
+    const res = await fetch(`/org/members/${userId}/permanent`, { method: 'DELETE', credentials: 'include' });
+    overlay.remove();
+    if(res.ok) { showToast(t('toast.deleted'), 'success'); loadOrgMembers(); }
+    else showToast(t('toast.error'), 'error');
+  };
+
+  setTimeout(() => input.focus(), 50);
+}
+
+async function orgMemberResendInvite(userId) {
+  const res = await fetch(`/org/members/${userId}/resend-invite`, { method: 'POST', credentials: 'include' });
+  if(res.ok) showToast(t('invite.resent_toast'), 'success');
+  else       showToast(t('toast.error'), 'error');
+}
+
+function openInviteUserModal() {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:380px;width:100%">
+      <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:20px">${t('invite.modal_title')}</div>
+      <div style="margin-bottom:10px">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">${t('invite.email_label')} *</div>
+        <input id="_inv_email" type="email" placeholder="email@example.com"
+          style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:10px">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">${t('invite.name_label')}</div>
+        <input id="_inv_name" type="text" placeholder="${t('invite.name_placeholder')}"
+          style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:20px">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">${t('invite.role_label')}</div>
+        <select id="_inv_role"
+          style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px">
+          <option value="user">${t('org.role_user')}</option>
+          <option value="manager">${t('org.role_manager')}</option>
+        </select>
+      </div>
+      <div id="_inv_error" style="display:none;color:var(--red);font-size:12px;margin-bottom:10px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="_inv_cancel" class="btn btn-ghost">${t('org.delete_permanent_cancel')}</button>
+        <button id="_inv_submit" class="btn btn-primary">${t('invite.send_btn')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const emailInput = overlay.querySelector('#_inv_email');
+  const nameInput  = overlay.querySelector('#_inv_name');
+  const roleSelect = overlay.querySelector('#_inv_role');
+  const errEl      = overlay.querySelector('#_inv_error');
+  const submitBtn  = overlay.querySelector('#_inv_submit');
+  const cancelBtn  = overlay.querySelector('#_inv_cancel');
+
+  cancelBtn.onclick = () => overlay.remove();
+  overlay.addEventListener('click', e => { if(e.target === overlay) overlay.remove(); });
+
+  submitBtn.onclick = async () => {
+    const email     = emailInput.value.trim();
+    const full_name = nameInput.value.trim();
+    const role      = roleSelect.value;
+    if(!email) { errEl.textContent = t('invite.err_email_required'); errEl.style.display=''; return; }
+    submitBtn.disabled = true;
+    try {
+      const res  = await fetch('/org/members/invite', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, full_name, role }),
+      });
+      const data = await res.json();
+      if(data.ok) {
+        overlay.remove();
+        showToast(data.existing_user ? t('invite.added_existing_toast') : t('invite.sent_toast'), 'success');
+        loadOrgMembers();
+      } else {
+        const msgs = { already_in_org: t('onboarding.err_already_in_org'), email_required: t('invite.err_email_required') };
+        errEl.textContent = msgs[data.error] || t('toast.error');
+        errEl.style.display = '';
+      }
+    } catch { errEl.textContent = t('auth.err_connection'); errEl.style.display=''; }
+    finally  { submitBtn.disabled = false; }
+  };
+
+  setTimeout(() => emailInput.focus(), 50);
 }
 
 function _renderInviteToken(data) {

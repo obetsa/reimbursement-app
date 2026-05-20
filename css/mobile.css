@@ -170,6 +170,7 @@
   .settings-nav-item.active { border-color: var(--accent); }
   .btn-invite-generate { font-size: 14px; padding: 9px 16px; }
   .company-access-chip { font-size: 12px; padding: 6px 12px; }
+  .verify-banner { font-size: 12px; padding: 10px 12px; }
 
   /* settings-item → картка на мобільному */
   #companies-list, #instruments-list { padding: 14px; display: flex; flex-direction: column; gap: 6px; }

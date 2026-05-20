@@ -14,6 +14,9 @@ from datetime import datetime
 import shutil
 import zipfile
 import io
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 load_dotenv()
 
@@ -28,6 +31,57 @@ GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET')
 REDIRECT_URI         = os.environ.get('REDIRECT_URI', 'http://localhost:5500/auth/callback')
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
+
+SMTP_HOST = os.environ.get('SMTP_HOST', 'smtp.gmail.com')
+SMTP_PORT = int(os.environ.get('SMTP_PORT', '587'))
+SMTP_USER = os.environ.get('SMTP_USER', '')
+SMTP_PASS = os.environ.get('SMTP_PASS', '')
+SMTP_FROM = os.environ.get('SMTP_FROM', SMTP_USER)
+
+
+def send_verification_email(to_email, verify_url):
+    if not SMTP_USER or not SMTP_PASS:
+        print('[SMTP] credentials not configured')
+        return False
+    try:
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = 'Підтвердження email — Reimbursement App'
+        msg['From']    = SMTP_FROM
+        msg['To']      = to_email
+        html = f"""<div style="font-family:sans-serif;max-width:480px;margin:40px auto;padding:32px;
+background:#16213e;border:1px solid #2d2d4e;border-radius:14px">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:28px">
+    <div style="width:44px;height:44px;background:#6c63ff;border-radius:10px;
+display:flex;align-items:center;justify-content:center;font-size:22px">💳</div>
+    <div>
+      <div style="color:#fff;font-size:17px;font-weight:600">Reimbursement App</div>
+      <div style="color:#888;font-size:11px">Управління витратами</div>
+    </div>
+  </div>
+  <p style="color:#ccc;font-size:14px;margin:0 0 8px">Привіт!</p>
+  <p style="color:#ccc;font-size:14px;margin:0 0 24px">
+    Натисни кнопку нижче щоб підтвердити свій email і активувати акаунт:
+  </p>
+  <a href="{verify_url}"
+    style="display:inline-block;padding:12px 28px;background:#6c63ff;color:#fff;
+border-radius:8px;text-decoration:none;font-size:14px;font-weight:600">
+    Підтвердити email
+  </a>
+  <p style="color:#555;font-size:11px;margin-top:24px">
+    Посилання дійсне 24 години.<br>
+    Якщо ти не реєструвався — проігноруй цей лист.
+  </p>
+</div>"""
+        msg.attach(MIMEText(html, 'html', 'utf-8'))
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as s:
+            s.ehlo()
+            s.starttls()
+            s.login(SMTP_USER, SMTP_PASS)
+            s.sendmail(SMTP_FROM, to_email, msg.as_string())
+        return True
+    except Exception as e:
+        print(f'[SMTP] {e}')
+        return False
 DB_PATH = os.path.join('data', 'local.db')  # kept for backup/restore routes
 UPLOAD_FOLDER = os.path.join('data', 'uploads')
 DRIVE_ROOT = 'ReceiptsManager'
@@ -146,7 +200,7 @@ def auth_callback():
     else:
         user_id = str(uuid.uuid4())
         conn.execute(
-            "insert into users (id, email, password_hash, full_name, refresh_token) values (%s,%s,%s,%s,%s)",
+            "insert into users (id, email, password_hash, full_name, refresh_token, email_verified) values (%s,%s,%s,%s,%s,TRUE)",
             (user_id, email, 'GOOGLE_AUTH', full_name, refresh_token)
         )
         conn.commit()
@@ -160,8 +214,54 @@ def auth_callback():
     return redirect('/')
 
 
+def send_activation_email(to_email, full_name, org_name, activate_url):
+    if not SMTP_USER or not SMTP_PASS:
+        print('[SMTP] credentials not configured')
+        return False
+    try:
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = f'Запрошення в {org_name} — Reimbursement App'
+        msg['From']    = SMTP_FROM
+        msg['To']      = to_email
+        name_str = full_name or to_email
+        html = f"""<div style="font-family:sans-serif;max-width:480px;margin:40px auto;padding:32px;
+background:#16213e;border:1px solid #2d2d4e;border-radius:14px">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:28px">
+    <div style="width:44px;height:44px;background:#6c63ff;border-radius:10px;
+display:flex;align-items:center;justify-content:center;font-size:22px">💳</div>
+    <div>
+      <div style="color:#fff;font-size:17px;font-weight:600">Reimbursement App</div>
+      <div style="color:#888;font-size:11px">Управління витратами</div>
+    </div>
+  </div>
+  <p style="color:#ccc;font-size:14px;margin:0 0 8px">Привіт, {name_str}!</p>
+  <p style="color:#ccc;font-size:14px;margin:0 0 24px">
+    Тебе запросили в організацію <strong style="color:#fff">{org_name}</strong>.<br>
+    Натисни кнопку нижче щоб встановити пароль і активувати акаунт:
+  </p>
+  <a href="{activate_url}"
+    style="display:inline-block;padding:12px 28px;background:#6c63ff;color:#fff;
+border-radius:8px;text-decoration:none;font-size:14px;font-weight:600">
+    Встановити пароль
+  </a>
+  <p style="color:#555;font-size:11px;margin-top:24px">
+    Посилання дійсне 48 годин.<br>
+    Якщо ти не очікував цього листа — проігноруй його.
+  </p>
+</div>"""
+        msg.attach(MIMEText(html, 'html', 'utf-8'))
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as s:
+            s.ehlo(); s.starttls(); s.login(SMTP_USER, SMTP_PASS)
+            s.sendmail(SMTP_FROM, to_email, msg.as_string())
+        return True
+    except Exception as e:
+        print(f'[SMTP] {e}')
+        return False
+
+
 @app.route('/auth/register', methods=['POST'])
 def auth_register():
+    return jsonify({'error': 'registration_closed'}), 403
     data      = request.json or {}
     email     = (data.get('email') or '').strip().lower()
     password  = data.get('password') or ''
@@ -184,14 +284,23 @@ def auth_register():
         "insert into users (id, email, password_hash, full_name) values (%s,%s,%s,%s)",
         (user_id, email, pwd_hash, full_name)
     )
+    token      = secrets.token_urlsafe(32)
+    expires_at = datetime.utcnow() + __import__('datetime').timedelta(hours=24)
+    conn.execute(
+        "INSERT INTO email_verifications (id, user_id, token, expires_at) VALUES (%s,%s,%s,%s)",
+        (str(uuid.uuid4()), user_id, token, expires_at)
+    )
     conn.commit()
     conn.close()
+
+    verify_url = request.host_url.rstrip('/') + f'/auth/verify-email?token={token}'
+    send_verification_email(email, verify_url)
 
     flask_session['user_id']   = user_id
     flask_session['email']     = email
     flask_session['full_name'] = full_name
     flask_session.permanent    = True
-    return jsonify({'ok': True})
+    return jsonify({'ok': True, 'verify_email': True})
 
 
 @app.route('/auth/login', methods=['POST'])
@@ -231,11 +340,98 @@ def me():
     user_id = flask_session.get('user_id')
     if not user_id:
         return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    row  = conn.execute("SELECT email_verified FROM users WHERE id=%s", (user_id,)).fetchone()
+    conn.close()
     return jsonify({
-        'id':        user_id,
-        'email':     flask_session.get('email', ''),
-        'full_name': flask_session.get('full_name', '')
+        'id':             user_id,
+        'email':          flask_session.get('email', ''),
+        'full_name':      flask_session.get('full_name', ''),
+        'email_verified': bool(row['email_verified']) if row else False,
     })
+
+
+@app.route('/auth/verify-email', methods=['GET'])
+def auth_verify_email():
+    token = request.args.get('token', '').strip()
+    if not token:
+        return redirect('/?verify_error=1')
+    conn = get_db()
+    row  = conn.execute(
+        "SELECT user_id FROM email_verifications WHERE token=%s AND expires_at > now()",
+        (token,)
+    ).fetchone()
+    if not row:
+        conn.close()
+        return redirect('/?verify_error=1')
+    conn.execute("UPDATE users SET email_verified=TRUE WHERE id=%s", (row['user_id'],))
+    conn.execute("DELETE FROM email_verifications WHERE token=%s", (token,))
+    conn.commit()
+    conn.close()
+    return redirect('/?email_verified=1')
+
+
+@app.route('/auth/resend-verification', methods=['POST'])
+def auth_resend_verification():
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    user = conn.execute("SELECT email, email_verified FROM users WHERE id=%s", (user_id,)).fetchone()
+    if not user or user['email_verified']:
+        conn.close()
+        return jsonify({'error': 'already_verified'}), 400
+    token      = secrets.token_urlsafe(32)
+    expires_at = datetime.utcnow() + __import__('datetime').timedelta(hours=24)
+    conn.execute("DELETE FROM email_verifications WHERE user_id=%s", (user_id,))
+    conn.execute(
+        "INSERT INTO email_verifications (id, user_id, token, expires_at) VALUES (%s,%s,%s,%s)",
+        (str(uuid.uuid4()), user_id, token, expires_at)
+    )
+    conn.commit()
+    conn.close()
+    verify_url = request.host_url.rstrip('/') + f'/auth/verify-email?token={token}'
+    send_verification_email(user['email'], verify_url)
+    return jsonify({'ok': True})
+
+
+@app.route('/auth/activate', methods=['GET'])
+def auth_activate_get():
+    token = request.args.get('token', '').strip()
+    if not token:
+        return redirect('/?activate_error=1')
+    return redirect(f'/?activate_token={token}')
+
+
+@app.route('/auth/activate', methods=['POST'])
+def auth_activate_post():
+    data     = request.json or {}
+    token    = (data.get('token') or '').strip()
+    password = data.get('password') or ''
+    if not token or len(password) < 6:
+        return jsonify({'error': 'invalid_input'}), 400
+    conn = get_db()
+    row  = conn.execute(
+        "SELECT ev.user_id, u.email, u.full_name "
+        "FROM email_verifications ev JOIN users u ON ev.user_id=u.id "
+        "WHERE ev.token=%s AND ev.expires_at > now() AND u.password_hash='PENDING'",
+        (token,)
+    ).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'invalid_or_expired_token'}), 400
+    pwd_hash = hashlib.sha256(password.encode()).hexdigest()
+    conn.execute(
+        "UPDATE users SET password_hash=%s, email_verified=TRUE WHERE id=%s",
+        (pwd_hash, row['user_id'])
+    )
+    conn.execute("DELETE FROM email_verifications WHERE token=%s", (token,))
+    conn.commit()
+    conn.close()
+    flask_session['user_id']   = row['user_id']
+    flask_session['email']     = row['email']
+    flask_session['full_name'] = row['full_name']
+    flask_session.permanent    = True
+    return jsonify({'ok': True})
 
 # ══════════════════════════════════════════
 # ORG API
@@ -336,14 +532,113 @@ def org_members():
     org_id, role, err = require_org(user_id, conn, min_role='admin')
     if err: conn.close(); return err
     rows = conn.execute(
-        "SELECT m.id as member_id, m.user_id, m.role, m.joined_at, "
-        "u.email, u.full_name "
+        "SELECT m.id as member_id, m.user_id, m.role, m.joined_at, m.left_at, "
+        "u.email, u.full_name, (u.password_hash='PENDING') as is_pending "
         "FROM org_members m JOIN users u ON m.user_id=u.id "
-        "WHERE m.org_id=%s AND m.left_at IS NULL ORDER BY m.joined_at",
+        "WHERE m.org_id=%s ORDER BY m.left_at NULLS FIRST, m.joined_at",
         (org_id,)
     ).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
+
+
+@app.route('/org/members/invite', methods=['POST'])
+def org_member_invite():
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    data      = request.json or {}
+    email     = (data.get('email') or '').strip().lower()
+    full_name = (data.get('full_name') or '').strip()
+    role      = data.get('role', 'user')
+    if not email:
+        return jsonify({'error': 'email_required'}), 400
+    if role not in ('manager', 'user'):
+        return jsonify({'error': 'invalid_role'}), 400
+    conn = get_db()
+    org_id, admin_role, err = require_org(user_id, conn, min_role='admin')
+    if err: conn.close(); return err
+    org      = conn.execute("SELECT name FROM organizations WHERE id=%s", (org_id,)).fetchone()
+    org_name = org['name'] if org else ''
+    existing = conn.execute("SELECT id, password_hash FROM users WHERE email=%s", (email,)).fetchone()
+    if existing:
+        new_user_id  = existing['id']
+        active_m = conn.execute(
+            "SELECT id FROM org_members WHERE user_id=%s AND org_id=%s AND left_at IS NULL",
+            (new_user_id, org_id)
+        ).fetchone()
+        if active_m:
+            conn.close()
+            return jsonify({'error': 'already_in_org'}), 409
+        left_m = conn.execute(
+            "SELECT id FROM org_members WHERE user_id=%s AND org_id=%s AND left_at IS NOT NULL",
+            (new_user_id, org_id)
+        ).fetchone()
+        if left_m:
+            conn.execute(
+                "UPDATE org_members SET left_at=NULL, role=%s WHERE user_id=%s AND org_id=%s",
+                (role, new_user_id, org_id)
+            )
+        else:
+            conn.execute(
+                "INSERT INTO org_members (id, org_id, user_id, role) VALUES (%s,%s,%s,%s)",
+                (str(uuid.uuid4()), org_id, new_user_id, role)
+            )
+        conn.commit()
+        conn.close()
+        return jsonify({'ok': True, 'existing_user': True})
+    else:
+        new_user_id = str(uuid.uuid4())
+        conn.execute(
+            "INSERT INTO users (id, email, password_hash, full_name) VALUES (%s,%s,'PENDING',%s)",
+            (new_user_id, email, full_name)
+        )
+        conn.execute(
+            "INSERT INTO org_members (id, org_id, user_id, role) VALUES (%s,%s,%s,%s)",
+            (str(uuid.uuid4()), org_id, new_user_id, role)
+        )
+        token      = secrets.token_urlsafe(32)
+        expires_at = datetime.utcnow() + __import__('datetime').timedelta(hours=48)
+        conn.execute("DELETE FROM email_verifications WHERE user_id=%s", (new_user_id,))
+        conn.execute(
+            "INSERT INTO email_verifications (id, user_id, token, expires_at) VALUES (%s,%s,%s,%s)",
+            (str(uuid.uuid4()), new_user_id, token, expires_at)
+        )
+        conn.commit()
+        conn.close()
+        activate_url = request.host_url.rstrip('/') + f'/auth/activate?token={token}'
+        send_activation_email(email, full_name, org_name, activate_url)
+        return jsonify({'ok': True, 'existing_user': False})
+
+
+@app.route('/org/members/<member_user_id>/resend-invite', methods=['POST'])
+def org_member_resend_invite(member_user_id):
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='admin')
+    if err: conn.close(); return err
+    org  = conn.execute("SELECT name FROM organizations WHERE id=%s", (org_id,)).fetchone()
+    org_name = org['name'] if org else ''
+    row  = conn.execute(
+        "SELECT u.email, u.full_name FROM users u JOIN org_members m ON m.user_id=u.id "
+        "WHERE u.id=%s AND u.password_hash='PENDING' AND m.org_id=%s",
+        (member_user_id, org_id)
+    ).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'user_not_pending'}), 400
+    token      = secrets.token_urlsafe(32)
+    expires_at = datetime.utcnow() + __import__('datetime').timedelta(hours=48)
+    conn.execute("DELETE FROM email_verifications WHERE user_id=%s", (member_user_id,))
+    conn.execute(
+        "INSERT INTO email_verifications (id, user_id, token, expires_at) VALUES (%s,%s,%s,%s)",
+        (str(uuid.uuid4()), member_user_id, token, expires_at)
+    )
+    conn.commit()
+    conn.close()
+    activate_url = request.host_url.rstrip('/') + f'/auth/activate?token={token}'
+    send_activation_email(row['email'], row['full_name'], org_name, activate_url)
+    return jsonify({'ok': True})
 
 
 @app.route('/org/members/<member_user_id>/role', methods=['PUT'])
@@ -380,9 +675,42 @@ def org_member_remove(member_user_id):
         conn.close()
         return jsonify({'error': 'cannot_remove_self'}), 400
     conn.execute(
-        "DELETE FROM org_members WHERE org_id=%s AND user_id=%s",
+        "UPDATE org_members SET left_at=now() WHERE org_id=%s AND user_id=%s AND left_at IS NULL",
         (org_id, member_user_id)
     )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+@app.route('/org/members/<member_user_id>/restore', methods=['PUT'])
+def org_member_restore(member_user_id):
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='admin')
+    if err: conn.close(); return err
+    conn.execute(
+        "UPDATE org_members SET left_at=NULL WHERE org_id=%s AND user_id=%s",
+        (org_id, member_user_id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+@app.route('/org/members/<member_user_id>/permanent', methods=['DELETE'])
+def org_member_delete_permanent(member_user_id):
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='admin')
+    if err: conn.close(); return err
+    if member_user_id == user_id:
+        conn.close()
+        return jsonify({'error': 'cannot_remove_self'}), 400
+    conn.execute("DELETE FROM org_member_companies WHERE user_id=%s AND org_id=%s", (member_user_id, org_id))
+    conn.execute("DELETE FROM org_members WHERE org_id=%s AND user_id=%s", (org_id, member_user_id))
     conn.commit()
     conn.close()
     return jsonify({'ok': True})
