@@ -24,40 +24,78 @@ PostgreSQL має бути запущений локально. `DATABASE_URL` �
 ## Структура файлів
 
 ```
-api.py                          # весь backend (~2000+ рядків)
-index.html                      # SPA, один файл
+api.py                             # весь backend (~3000+ рядків)
+index.html                         # SPA, один файл
 js/
-  app.js                        # весь frontend JS
-  auth.js                       # авторизація (login/register/OAuth)
-  config.js                     # конфіг (DRIVE_ENABLED тощо)
-  i18n.js                       # переклади UA/DE/EN
-  db.js                         # DB helpers (frontend)
+  app.js                           # весь frontend JS
+  auth.js                          # авторизація (login/activate/OAuth)
+  config.js                        # конфіг (DRIVE_ENABLED тощо)
+  i18n.js                          # переклади UA/DE/EN
+  db.js                            # DB helpers (frontend)
 css/
-  style.css                     # основні стилі
-  components.css                # компоненти
-  mobile.css                    # мобільна адаптація
-schema_pg.sql                   # схема PostgreSQL (всі таблиці)
-migrate_001_org_hierarchy.sql   # міграція: organizations, org_members
-migrate_002_seed_orgs.py        # seed: 3 org для існуючих юзерів
-test_api.py                     # API тести
-test_hierarchy.py               # тести ієрархії org
+  style.css                        # основні стилі
+  components.css                   # компоненти
+  mobile.css                       # мобільна адаптація
+schema_pg.sql                      # базова схема PostgreSQL
+migrate_001_org_hierarchy.sql      # organizations, org_members, org_id
+migrate_002_leave_org.sql          # org_members.left_at (soft exclude)
+migrate_003_email_verification.sql # users.email_verified, email_verifications
+test_api.py                        # базові API тести (16/16)
+test_hierarchy.py                  # тести ієрархії org (22/24)
+test_members.py                    # тести member management (47/47)
 requirements.txt
 Dockerfile
 docker-compose.yaml
-docs/                           # нотатки, план, story.md (.gitignore)
+docs/                              # нотатки, план, story.md (.gitignore)
 ```
 
-## Таблиці БД
+## Ієрархія БД (зверху вниз)
 
-- `users` — юзери (email, password_hash, google_id)
-- `organizations` — org (name, invite_code, owner_id)
-- `org_members` — членство (org_id, user_id, role: admin/manager/user)
-- `org_member_companies` — доступ юзера до компаній в межах org
-- `companies` — компанії (org_id)
-- `payment_instruments` — картки/рахунки (org_id)
-- `records` — записи витрат (org_id, user_id)
-- `attachments` — вкладення до записів
-- `return_events` — події повернення коштів
+```
+users                         — акаунти (email+password або Google OAuth)
+├── email_verified BOOLEAN
+└── password_hash = 'PENDING' — юзер запрошений але не активований
+
+email_verifications           — токени активації / email верифікації
+└── → users.id
+
+organizations                 — верхній рівень, org належить owner_id
+└── → users.id (owner_id)
+
+org_invites                   — токени запрошення (10 хв)
+└── → organizations.id
+
+org_members                   — членство юзера в org
+├── → organizations.id
+├── → users.id
+├── role: admin | manager | user
+└── left_at TIMESTAMP         — NULL = активний, NOT NULL = виключений (soft)
+
+org_member_companies          — які компанії доступні конкретному члену
+├── → org_members (user_id + org_id)
+└── → companies.id
+
+companies                     — компанії в межах org
+└── → organizations.id
+
+payment_instruments           — картки / рахунки в межах org
+└── → organizations.id
+
+records                       — записи витрат
+├── → organizations.id
+├── → users.id
+├── → companies.id
+└── → payment_instruments.id (card_id)
+
+attachments                   — файли до запису
+└── → records.id
+
+return_events                 — події повернення коштів
+└── → records.id
+
+unprocessed_imports           — необроблені файли з Drive
+└── → users.id
+```
 
 ## Ролі в організації
 
@@ -67,7 +105,7 @@ docs/                           # нотатки, план, story.md (.gitignore
 | `manager` | свої записи + компанії, які має доступ       |
 | `user`    | тільки перегляд (viewer)                     |
 
-## Поточний стан (станом на 20.05.2026)
+## Поточний стан (станом на 21.05.2026)
 
 **Гілка `feature/org-roles`** — активна розробка.
 
@@ -75,19 +113,25 @@ docs/                           # нотатки, план, story.md (.gitignore
 - SQLite → PostgreSQL (psycopg2, `schema_pg.sql`)
 - Реєстрація/логін (email+password + Google OAuth)
 - Ієрархія org: organizations, org_members
-- Onboarding: створити/приєднатись до org (invite token 24год)
-- Сторінка членів org (тільки для admin): ролі, company access
+- Onboarding: створити/приєднатись до org (invite token 10 хв)
+- Сторінка членів org (тільки для admin): ролі, company access chips
 - API оновлено під org_id: всі ендпоінти фільтрують по org
-- Ролі: user → manager, viewer → user
+- Ролі: admin / manager / user (viewer прибрано)
 - Company access: org_member_companies, фільтрація по юзеру
-- i18n для auth/onboarding/org (uk/de/en)
-- Тести: 16/16 ✅
+- i18n для auth/onboarding/org/verify/activate/invite (uk/de/en)
+- Вихід з org: м'яке виключення (left_at), повернення зберігає id
+- User role restrictions: hide write buttons у frontend
+- Адмін запрошує юзерів через email (activation link, 48г)
+- Реєстрація закрита (POST /auth/register → 403)
+- Soft exclude / restore / permanent delete (з підтвердженням email)
+- Email верифікація: SMTP Gmail, verify + activate flow
+- Pending статус для незактивованих юзерів
+- Тести: test_api 16/16 ✅, test_hierarchy 22/24, test_members 47/47 ✅
 
 Відкладено / наступне:
 - Supabase cloud (КРОК 13)
-- Вихід з організації
-- Email верифікація
 - Фінальні тести перед деплоєм
+- Перехід на Google OAuth як основний метод входу
 
 ## Важливі правила
 
