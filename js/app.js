@@ -66,12 +66,30 @@ async function initApp(user) {
     updateDashboard();
     await updateBadges();
     loadUnprocessed();
+    applyRoleRestrictions();
     showApp();
   } catch(e) {
     console.error('initApp error', e);
     showApp();
     showToast(t('toast.load_error'), 'error');
   }
+}
+
+function canWrite() {
+  return currentOrg && currentOrg.role !== 'user';
+}
+
+function applyRoleRestrictions() {
+  const w = canWrite();
+  document.querySelectorAll('[onclick="openModal()"]').forEach(el => el.style.display = w ? '' : 'none');
+  const addComp = document.querySelector('[onclick="openCompanyModal()"]');
+  if(addComp) addComp.style.display = w ? '' : 'none';
+  const addInstr = document.querySelector('[onclick="openInstrumentModal()"]');
+  if(addInstr) addInstr.style.display = w ? '' : 'none';
+  const detailEditBtn = document.querySelector('.detail-header-actions .btn');
+  if(detailEditBtn) detailEditBtn.style.display = w ? '' : 'none';
+  const dangerActions = document.querySelector('.danger-actions');
+  if(dangerActions) dangerActions.style.display = w ? '' : 'none';
 }
 
 function populateCompanyDropdowns(companies) {
@@ -347,14 +365,11 @@ async function loadProfile() {
         <div class="profile-label">${t('org.role_label')}</div>
         <div class="profile-value">${roleLabel[org.role] || org.role}</div>
       </div>
-      ${org.role === 'admin' ? `
-      <div class="profile-row" style="flex-direction:column;align-items:flex-start;gap:8px">
-        <div class="profile-label">${t('org.invite_label')}</div>
-        <div id="invite-token-block" style="width:100%"></div>
-        <button onclick="generateInvite()" class="btn btn-ghost" style="font-size:12px">${t('org.invite_generate_btn')}</button>
+      ${org.role !== 'admin' ? `
+      <div class="profile-row" style="padding-top:8px">
+        <button onclick="leaveOrg()" class="btn btn-danger" style="font-size:13px;width:100%">${t('org.leave_btn')}</button>
       </div>` : ''}` : ''}
     `;
-    if(org && org.role === 'admin') _loadCurrentInvite();
   } catch {
     if(container) container.innerHTML = '';
   }
@@ -362,15 +377,32 @@ async function loadProfile() {
 
 async function loadOrgMembers() {
   const container = document.getElementById('org-members-list');
+  const orgInfoEl = document.getElementById('org-info-content');
   if(!container) return;
   try {
-    const [membersRes, companiesRes] = await Promise.all([
+    const [membersRes, companiesRes, orgRes] = await Promise.all([
       fetch('/org/members',  { credentials: 'include' }),
       fetch('/companies',    { credentials: 'include' }),
+      fetch('/org/me',       { credentials: 'include' }),
     ]);
     const members   = await membersRes.json();
     const companies = companiesRes.ok ? await companiesRes.json() : [];
+    const orgData   = orgRes.ok ? await orgRes.json() : null;
     if(!membersRes.ok) { container.innerHTML = ''; return; }
+
+    if(orgInfoEl && orgData) {
+      orgInfoEl.innerHTML = `
+        <div class="profile-row">
+          <div class="profile-label">${t('org.label')}</div>
+          <div class="profile-value" style="font-weight:500">${orgData.name}</div>
+        </div>
+        <div class="profile-row" style="flex-direction:column;align-items:flex-start;gap:8px">
+          <div class="profile-label">${t('org.invite_label')}</div>
+          <div id="invite-token-block" style="width:100%"></div>
+          <button onclick="generateInvite()" class="btn btn-ghost btn-invite-generate">${t('org.invite_generate_btn')}</button>
+        </div>`;
+      _loadCurrentInvite();
+    }
 
     const roleLabel = { admin: t('org.role_admin'), manager: t('org.role_manager'), user: t('org.role_user') };
 
@@ -387,12 +419,10 @@ async function loadOrgMembers() {
           <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${t('org.companies_label')}</div>
           <div style="display:flex;flex-wrap:wrap;gap:6px">
             ${companies.map(c => `
-              <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
-                <input type="checkbox" ${granted.includes(c.id) ? 'checked' : ''}
-                  onchange="orgToggleCompany('${m.user_id}','${c.id}',this.checked)"
-                  style="cursor:pointer">
+              <span class="company-access-chip ${granted.includes(c.id) ? 'granted' : ''}"
+                onclick="orgChipToggle(this,'${m.user_id}','${c.id}')">
                 ${c.name}
-              </label>`).join('')}
+              </span>`).join('')}
           </div>
         </div>` : '';
 
@@ -429,6 +459,12 @@ async function orgToggleCompany(userId, companyId, granted) {
   await fetch(`/org/members/${userId}/companies/${companyId}`, { method, credentials: 'include' });
 }
 
+function orgChipToggle(el, userId, companyId) {
+  const nowGranted = !el.classList.contains('granted');
+  el.classList.toggle('granted');
+  orgToggleCompany(userId, companyId, nowGranted);
+}
+
 async function orgMemberSetRole(userId, newRole) {
   const res = await fetch(`/org/members/${userId}/role`, {
     method: 'PUT', credentials: 'include',
@@ -453,11 +489,11 @@ function _renderInviteToken(data) {
     return;
   }
   const expires = new Date(data.expires_at + 'Z');
-  const diff    = Math.max(0, Math.round((expires - Date.now()) / 3600000));
+  const diff    = Math.max(0, Math.round((expires - Date.now()) / 60000));
   el.innerHTML = `
     <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px">
       <div style="font-family:monospace;font-size:13px;font-weight:600;word-break:break-all;margin-bottom:4px">${data.token}</div>
-      <div style="font-size:11px;color:var(--text3)">${t('org.invite_expires').replace('{h}', diff)}</div>
+      <div style="font-size:11px;color:var(--text3)">${t('org.invite_expires').replace('{m}', diff)}</div>
     </div>`;
 }
 
@@ -471,6 +507,22 @@ async function generateInvite() {
 async function _loadCurrentInvite() {
   const res = await fetch('/org/invite/current', { credentials: 'include' });
   if(res.ok) _renderInviteToken(await res.json());
+}
+
+async function leaveOrg() {
+  if(!confirm(t('org.leave_confirm'))) return;
+  try {
+    const res = await fetch('/org/leave', { method: 'POST', credentials: 'include' });
+    if(!res.ok) {
+      const d = await res.json();
+      showToast(d.error === 'admin_cannot_leave' ? t('toast.forbidden') : t('toast.error'), 'error');
+      return;
+    }
+    showToast(t('org.leave_success'), 'success');
+    setTimeout(() => window.location.reload(), 800);
+  } catch {
+    showToast(t('toast.error'), 'error');
+  }
 }
 
 function restoreSettingsTab() {
@@ -928,10 +980,10 @@ function renderArchiveTable() {
       <td class="td-remainder">${d.remainder > 0 ? d.currency + d.remainder.toFixed(2) : '<span style="color:var(--text3)">—</span>'}</td>
       <td class="attachment-icon ${d.files > 0 ? 'has' : ''}">${d.files > 0 ? '📎' + (d.files > 1 ? d.files : '') : '—'}</td>
       <td onclick="event.stopPropagation()">
-        <div style="display:flex;gap:4px;align-items:center">
+        ${canWrite() ? `<div style="display:flex;gap:4px;align-items:center">
           <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" title="${t('archive.restore')}" onclick="unarchiveRecord('${d.id}')">↩</button>
           <button class="icon-btn danger" title="${t('btn.to_trash')}" onclick="deleteFromArchive('${d.id}')">🗑️</button>
-        </div>
+        </div>` : ''}
       </td>
     </tr>
   `).join('');
@@ -946,8 +998,8 @@ function renderArchiveCards() {
         <div class="doc-card-title">${d.title}</div>
         <div style="display:flex;align-items:center;gap:4px">
           ${d.files > 0 ? '<span class="attachment-icon has" style="font-size:15px">📎</span>' : ''}
-          <button class="btn btn-ghost" style="font-size:11px;padding:2px 6px" onclick="event.stopPropagation();unarchiveRecord('${d.id}')">↩</button>
-          <button class="icon-btn danger" title="${t('btn.to_trash')}" onclick="event.stopPropagation();deleteFromArchive('${d.id}')" style="width:24px;height:24px;font-size:11px">🗑️</button>
+          ${canWrite() ? `<button class="btn btn-ghost" style="font-size:11px;padding:2px 6px" onclick="event.stopPropagation();unarchiveRecord('${d.id}')">↩</button>
+          <button class="icon-btn danger" title="${t('btn.to_trash')}" onclick="event.stopPropagation();deleteFromArchive('${d.id}')" style="width:24px;height:24px;font-size:11px">🗑️</button>` : ''}
         </div>
       </div>
       <div class="doc-card-meta">
@@ -1006,11 +1058,11 @@ function renderTable() {
       <td class="td-remainder">${d.remainder > 0 ? d.currency + d.remainder.toFixed(2) : '<span style="color:var(--text3)">—</span>'}</td>
       <td class="attachment-icon ${d.files > 0 ? 'has' : ''}">${d.files > 0 ? '📎' + (d.files > 1 ? d.files : '') : '—'}</td>
       <td onclick="event.stopPropagation()">
-        <div style="display:flex;flex-direction:row;gap:4px;align-items:center">
+        ${canWrite() ? `<div style="display:flex;flex-direction:row;gap:4px;align-items:center">
           <button class="icon-btn" title="${t('detail.edit')}" onclick="openEditModal('${d.id}')" style="opacity:0.5" onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity=0.5">✏️</button>
           <button class="icon-btn" title="${t('detail.archive')}" onclick="archiveRecordById('${d.id}')" style="opacity:0.5" onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity=0.5">🗄️</button>
           <button class="icon-btn danger" title="${t('btn.to_trash')}" onclick="trashRecordById('${d.id}')">🗑️</button>
-        </div>
+        </div>` : ''}
       </td>
     </tr>
   `).join('');
@@ -1029,9 +1081,9 @@ function renderCards() {
         <div class="doc-card-title">${d.title}</div>
         <div style="display:flex;align-items:center;gap:4px">
           ${d.files > 0 ? '<span class="attachment-icon has" style="font-size:15px">📎</span>' : ''}
-          <button class="icon-btn" title="${t('detail.edit')}" onclick="event.stopPropagation();openEditModal('${d.id}')" style="width:24px;height:24px;font-size:11px">✏️</button>
+          ${canWrite() ? `<button class="icon-btn" title="${t('detail.edit')}" onclick="event.stopPropagation();openEditModal('${d.id}')" style="width:24px;height:24px;font-size:11px">✏️</button>
           <button class="icon-btn" title="${t('detail.archive')}" onclick="event.stopPropagation();archiveRecordById('${d.id}')" style="width:24px;height:24px;font-size:11px">🗄️</button>
-          <button class="icon-btn danger" title="${t('btn.to_trash')}" onclick="event.stopPropagation();trashRecordById('${d.id}')" style="width:24px;height:24px;font-size:11px">🗑️</button>
+          <button class="icon-btn danger" title="${t('btn.to_trash')}" onclick="event.stopPropagation();trashRecordById('${d.id}')" style="width:24px;height:24px;font-size:11px">🗑️</button>` : ''}
         </div>
       </div>
       <div class="doc-card-meta">
@@ -2206,12 +2258,12 @@ function renderCompaniesList() {
         <div class="settings-item-name">${c.name}</div>
       </div>
       <div class="settings-item-actions">
-        <button class="icon-btn" title="${t('detail.edit')}" onclick="openCompanyModal('${c.id}')">✏️</button>
+        ${canWrite() ? `<button class="icon-btn" title="${t('detail.edit')}" onclick="openCompanyModal('${c.id}')">✏️</button>
         <button class="icon-btn" title="${c.is_active ? t('btn.deactivate') : t('btn.activate')}"
           onclick="toggleCompanyActive('${c.id}', ${c.is_active})">
           ${c.is_active ? '⏸' : '▶'}
         </button>
-        <button class="icon-btn danger" title="${t('detail.delete')}" onclick="deleteCompany('${c.id}', '${c.name.replace(/'/g, "\\'")}')">🗑️</button>
+        <button class="icon-btn danger" title="${t('detail.delete')}" onclick="deleteCompany('${c.id}', '${c.name.replace(/'/g, "\\'")}')">🗑️</button>` : ''}
       </div>
     </div>
   `).join('');
@@ -2353,12 +2405,12 @@ function renderInstrumentsList() {
         </div>
       </div>
       <div class="settings-item-actions">
-        <button class="icon-btn" title="${t('detail.edit')}" onclick="openInstrumentModal('${i.id}')">✏️</button>
+        ${canWrite() ? `<button class="icon-btn" title="${t('detail.edit')}" onclick="openInstrumentModal('${i.id}')">✏️</button>
         <button class="icon-btn" title="${i.is_active ? t('btn.deactivate') : t('btn.activate')}"
           onclick="toggleInstrumentActive('${i.id}', ${i.is_active})">
           ${i.is_active ? '⏸' : '▶'}
         </button>
-        <button class="icon-btn danger" title="${t('detail.delete')}" onclick="deleteInstrument('${i.id}', '${i.name.replace(/'/g, "\\'")}')">🗑️</button>
+        <button class="icon-btn danger" title="${t('detail.delete')}" onclick="deleteInstrument('${i.id}', '${i.name.replace(/'/g, "\\'")}')">🗑️</button>` : ''}
       </div>
     </div>
   `).join('');

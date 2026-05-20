@@ -481,8 +481,8 @@
           <div class="settings-nav-item" onclick="showSettingsTab('language', this)"> <span data-i18n="settings.language">🌐 Мова</span></div>
           <div class="settings-nav-item" onclick="showSettingsTab('storage', this)"> <span data-i18n="settings.storage">💾 Пам'ять</span></div>
           <div class="settings-nav-item" onclick="showSettingsTab('backup', this)"> <span data-i18n="settings.backup">📦 Резервне копіювання</span></div>
-          <div class="settings-nav-item" onclick="showSettingsTab('profile', this)"> <span data-i18n="settings.profile">👤 Профіль</span></div>
           <div class="settings-nav-item" id="nav-org-members" onclick="showSettingsTab('org-members', this)" style="display:none"> <span data-i18n="org.nav_label">👥 Організація</span></div>
+          <div class="settings-nav-item" onclick="showSettingsTab('profile', this)"> <span data-i18n="settings.profile">👤 Профіль</span></div>
         </div>
 
         <div>
@@ -723,6 +723,14 @@
           <!-- BACKUP -->
           <!-- ── ORG MEMBERS ── -->
           <div id="settings-org-members" class="settings-content">
+            <div class="settings-section">
+              <div class="settings-section-header">
+                <div class="settings-section-title" data-i18n="org.nav_label">👥 Організація</div>
+              </div>
+              <div id="org-info-content" style="padding:18px;display:flex;flex-direction:column;gap:16px">
+                <div style="text-align:center;padding:20px;color:var(--text3);font-size:13px" data-i18n="loading.text">Завантаження...</div>
+              </div>
+            </div>
             <div class="settings-section">
               <div class="settings-section-header">
                 <div class="settings-section-title" data-i18n="org.members_title">👥 Члени організації</div>

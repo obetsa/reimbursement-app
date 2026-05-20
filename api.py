@@ -248,7 +248,7 @@ def org_me():
     row = conn.execute(
         "SELECT o.id, o.name, o.invite_code, m.role "
         "FROM org_members m JOIN organizations o ON m.org_id=o.id "
-        "WHERE m.user_id=%s LIMIT 1",
+        "WHERE m.user_id=%s AND m.left_at IS NULL LIMIT 1",
         (user_id,)
     ).fetchone()
     conn.close()
@@ -265,7 +265,7 @@ def org_create():
     if not name: return jsonify({'error': 'name_required'}), 400
 
     conn = get_db()
-    existing = conn.execute("SELECT id FROM org_members WHERE user_id=%s", (user_id,)).fetchone()
+    existing = conn.execute("SELECT id FROM org_members WHERE user_id=%s AND left_at IS NULL", (user_id,)).fetchone()
     if existing:
         conn.close()
         return jsonify({'error': 'already_in_org'}), 409
@@ -298,7 +298,7 @@ def org_invite_generate():
 
     import secrets as _secrets
     token      = _secrets.token_hex(16)
-    expires_at = datetime.utcnow().replace(microsecond=0) + __import__('datetime').timedelta(hours=24)
+    expires_at = datetime.utcnow().replace(microsecond=0) + __import__('datetime').timedelta(minutes=10)
 
     # Delete previous invites for this org
     conn.execute("DELETE FROM org_invites WHERE org_id=%s", (org_id,))
@@ -339,7 +339,7 @@ def org_members():
         "SELECT m.id as member_id, m.user_id, m.role, m.joined_at, "
         "u.email, u.full_name "
         "FROM org_members m JOIN users u ON m.user_id=u.id "
-        "WHERE m.org_id=%s ORDER BY m.joined_at",
+        "WHERE m.org_id=%s AND m.left_at IS NULL ORDER BY m.joined_at",
         (org_id,)
     ).fetchall()
     conn.close()
@@ -462,7 +462,7 @@ def org_join():
         return jsonify({'error': 'org_name_and_token_required'}), 400
 
     conn = get_db()
-    existing = conn.execute("SELECT id FROM org_members WHERE user_id=%s", (user_id,)).fetchone()
+    existing = conn.execute("SELECT id FROM org_members WHERE user_id=%s AND left_at IS NULL", (user_id,)).fetchone()
     if existing:
         conn.close()
         return jsonify({'error': 'already_in_org'}), 409
@@ -477,9 +477,38 @@ def org_join():
         conn.close()
         return jsonify({'error': 'invalid_token_or_name'}), 401
 
+    prev = conn.execute(
+        "SELECT id FROM org_members WHERE user_id=%s AND org_id=%s AND left_at IS NOT NULL",
+        (user_id, invite['org_id'])
+    ).fetchone()
+    if prev:
+        conn.execute(
+            "UPDATE org_members SET left_at=NULL, role='user' WHERE id=%s",
+            (prev['id'],)
+        )
+    else:
+        conn.execute(
+            "INSERT INTO org_members (id, org_id, user_id, role) VALUES (%s,%s,%s,'user')",
+            (str(uuid.uuid4()), invite['org_id'], user_id)
+        )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+@app.route('/org/leave', methods=['POST'])
+def org_leave():
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn)
+    if err: conn.close(); return err
+    if role == 'admin':
+        conn.close()
+        return jsonify({'error': 'admin_cannot_leave'}), 403
     conn.execute(
-        "INSERT INTO org_members (id, org_id, user_id, role) VALUES (%s,%s,%s,'user')",
-        (str(uuid.uuid4()), invite['org_id'], user_id)
+        "UPDATE org_members SET left_at=now() WHERE user_id=%s AND org_id=%s AND left_at IS NULL",
+        (user_id, org_id)
     )
     conn.commit()
     conn.close()
@@ -495,7 +524,7 @@ def get_user_org(user_id, conn=None):
     if close:
         conn = get_db()
     row = conn.execute(
-        "SELECT m.org_id, m.role FROM org_members m WHERE m.user_id=%s LIMIT 1",
+        "SELECT m.org_id, m.role FROM org_members m WHERE m.user_id=%s AND m.left_at IS NULL LIMIT 1",
         (user_id,)
     ).fetchone()
     if close:
