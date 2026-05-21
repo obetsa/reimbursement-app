@@ -279,6 +279,50 @@ else:
     check('File paths ізольовані по org_id (немає файлів — OK)', True)
 
 # ══════════════════════════════════════════
+print('\n── 0.4: org_member_companies очистка ──')
+# ══════════════════════════════════════════
+
+if company1_id:
+    # Спочатку надаємо доступ до company1 для user1 (щоб створити рядок)
+    conn_t = db(); cur_t = conn_t.cursor()
+    grant_id = str(uuid.uuid4())
+    cur_t.execute(
+        "INSERT INTO org_member_companies (id, org_id, user_id, company_id, granted_by) VALUES (%s,%s,%s,%s,%s)",
+        (grant_id, org1_id, u1_id, company1_id, u1_id)
+    )
+    conn_t.commit()
+
+    # Перевіряємо що запис є
+    cur_t.execute("SELECT id FROM org_member_companies WHERE company_id=%s", (company1_id,))
+    check('org_member_companies: запис є до видалення', cur_t.fetchone() is not None)
+    conn_t.close()
+
+    # Soft delete — доступи мають залишитись
+    r = post(s1, f'/companies/{company1_id}/delete' if False else '/companies/' + company1_id,
+             json={})
+    # Використовуємо DELETE endpoint
+    r = s1.delete(BASE + f'/companies/{company1_id}')
+    check('Soft delete company → 200', r.status_code == 200, f'status={r.status_code}')
+
+    conn_t = db(); cur_t = conn_t.cursor()
+    cur_t.execute("SELECT id FROM org_member_companies WHERE company_id=%s", (company1_id,))
+    check('Soft delete: org_member_companies збережено', cur_t.fetchone() is not None)
+    conn_t.close()
+
+    # Permanent delete — доступи мають видалитись
+    r = s1.delete(BASE + f'/companies/{company1_id}/permanent')
+    check('Permanent delete company → 200', r.status_code == 200, f'status={r.status_code}')
+
+    conn_t = db(); cur_t = conn_t.cursor()
+    cur_t.execute("SELECT id FROM org_member_companies WHERE company_id=%s", (company1_id,))
+    check('Permanent delete: org_member_companies очищено', cur_t.fetchone() is None)
+    cur_t.execute("SELECT id FROM companies WHERE id=%s", (company1_id,))
+    check('Permanent delete: компанія видалена з БД', cur_t.fetchone() is None)
+    conn_t.close()
+
+    company1_id = None  # вже видалена, не чіпати в cleanup
+
+# ══════════════════════════════════════════
 print('\n── Cleanup ──')
 # ══════════════════════════════════════════
 
@@ -286,7 +330,7 @@ conn3 = db(); cur3 = conn3.cursor()
 cur3.execute("DELETE FROM attachments WHERE record_id IN (SELECT id FROM records WHERE org_id IN (%s,%s))", (org1_id, org2_id))
 cur3.execute("DELETE FROM return_events WHERE record_id IN (SELECT id FROM records WHERE org_id IN (%s,%s))", (org1_id, org2_id))
 cur3.execute("DELETE FROM records WHERE org_id IN (%s,%s)", (org1_id, org2_id))
-cur3.execute("DELETE FROM org_member_companies WHERE org_id IN (%s,%s)", (org1_id, org2_id))
+cur3.execute("DELETE FROM org_member_companies WHERE org_id IN (%s,%s)", (org1_id, org2_id))  # залишки якщо є
 cur3.execute("DELETE FROM org_members WHERE org_id IN (%s,%s)", (org1_id, org2_id))
 cur3.execute("DELETE FROM email_verifications WHERE user_id IN (%s,%s)", (u1_id, u2_id))
 cur3.execute("DELETE FROM payment_instruments WHERE org_id IN (%s,%s)", (org1_id, org2_id))

@@ -1166,6 +1166,13 @@ def permanent_delete_company(company_id):
     conn = get_db()
     org_id, role, err = require_org(user_id, conn, min_role='manager')
     if err: conn.close(); return err
+    exists = conn.execute(
+        "select id from companies where id=%s and org_id=%s", (company_id, org_id)
+    ).fetchone()
+    if not exists:
+        conn.close()
+        return jsonify({'error': 'not_found'}), 404
+    conn.execute("delete from org_member_companies where company_id=%s and org_id=%s", (company_id, org_id))
     conn.execute("delete from companies where id=%s and org_id=%s", (company_id, org_id))
     conn.commit()
     conn.close()
