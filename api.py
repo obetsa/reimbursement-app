@@ -955,12 +955,12 @@ def update_company(company_id):
             old_dirs = set()
             for att in atts:
                 parts = att['file_path'].replace('\\', '/').split('/')
-                if len(parts) >= 4:
-                    old_dirs.add('/'.join(parts[:4]))
+                if len(parts) >= 5:
+                    old_dirs.add('/'.join(parts[:5]))
 
             for old_dir in old_dirs:
                 dir_parts = old_dir.split('/')
-                new_dir = '/'.join(dir_parts[:3] + [new_safe])
+                new_dir = '/'.join(dir_parts[:4] + [new_safe])
                 old_abs = os.path.join(UPLOAD_FOLDER, *dir_parts)
                 new_abs = os.path.join(UPLOAD_FOLDER, *new_dir.split('/'))
                 if os.path.exists(old_abs):
@@ -973,8 +973,8 @@ def update_company(company_id):
 
             for att in atts:
                 parts = att['file_path'].replace('\\', '/').split('/')
-                if len(parts) >= 4 and parts[3] == old_safe:
-                    parts[3] = new_safe
+                if len(parts) >= 5 and parts[4] == old_safe:
+                    parts[4] = new_safe
                     conn.execute("update attachments set file_path=%s where id=%s",
                                  ('/'.join(parts), att['id']))
             conn.commit()
@@ -1315,7 +1315,7 @@ def update_record(record_id):
             new_safe = re.sub(r'[^\w\s\-]', '', new_company_name).strip().replace(' ', '_') or 'Unassigned'
             new_year  = new_date[:4]
             new_month = new_date[5:7]
-            new_folder = '/'.join([DRIVE_ROOT, new_year, new_month, new_safe])
+            new_folder = '/'.join([DRIVE_ROOT, org_id, new_year, new_month, new_safe])
 
             atts = conn.execute(
                 "select * from attachments where record_id=%s and file_path is not null",
@@ -1523,15 +1523,15 @@ def upload_attachment(record_id):
         conn.close()
         return jsonify({'error': 'Not found'}), 404
 
-    # Build folder: ReceiptsManager/YYYY/MM/CompanyName
+    # Build folder: ReceiptsManager/org_id/YYYY/MM/CompanyName
     record_date = rec['date'] or datetime.utcnow().strftime('%Y-%m-%d')
     year  = record_date[:4]
     month = record_date[5:7]
     raw_company = rec['company_name'] or 'Unassigned'
     safe_company = re.sub(r'[^\w\s\-]', '', raw_company).strip().replace(' ', '_') or 'Unassigned'
 
-    rel_folder = '/'.join([DRIVE_ROOT, year, month, safe_company])
-    abs_folder = os.path.join(UPLOAD_FOLDER, DRIVE_ROOT, year, month, safe_company)
+    rel_folder = '/'.join([DRIVE_ROOT, org_id, year, month, safe_company])
+    abs_folder = os.path.join(UPLOAD_FOLDER, DRIVE_ROOT, org_id, year, month, safe_company)
     os.makedirs(abs_folder, exist_ok=True)
 
     att_id = str(uuid.uuid4())
@@ -2185,7 +2185,7 @@ def _do_assign(imp_id, record_id, user_id):
         return
 
     rec = conn.execute(
-        "select r.date, c.name as company_name from records r "
+        "select r.date, r.org_id, c.name as company_name from records r "
         "left join companies c on r.company_id=c.id where r.id=%s and r.user_id=%s",
         (record_id, user_id)
     ).fetchone()
@@ -2196,11 +2196,12 @@ def _do_assign(imp_id, record_id, user_id):
     record_date = rec['date'] or datetime.utcnow().strftime('%Y-%m-%d')
     year  = record_date[:4]
     month = record_date[5:7]
-    raw_company = rec['company_name'] or 'Unassigned'
+    rec_org_id   = rec['org_id'] or 'unknown'
+    raw_company  = rec['company_name'] or 'Unassigned'
     safe_company = re.sub(r'[^\w\s\-]', '', raw_company).strip().replace(' ', '_') or 'Unassigned'
 
-    rel_folder = '/'.join([DRIVE_ROOT, year, month, safe_company])
-    abs_folder = os.path.join(UPLOAD_FOLDER, DRIVE_ROOT, year, month, safe_company)
+    rel_folder = '/'.join([DRIVE_ROOT, rec_org_id, year, month, safe_company])
+    abs_folder = os.path.join(UPLOAD_FOLDER, DRIVE_ROOT, rec_org_id, year, month, safe_company)
     os.makedirs(abs_folder, exist_ok=True)
 
     att_id = str(uuid.uuid4())
