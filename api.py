@@ -771,6 +771,13 @@ def org_member_set_role(member_user_id):
     if new_role not in ('manager', 'user'):
         conn.close()
         return jsonify({'error': 'invalid_role'}), 400
+    member = conn.execute(
+        "SELECT id FROM org_members WHERE org_id=%s AND user_id=%s AND left_at IS NULL",
+        (org_id, member_user_id)
+    ).fetchone()
+    if not member:
+        conn.close()
+        return jsonify({'error': 'not_found'}), 404
     conn.execute(
         "UPDATE org_members SET role=%s WHERE org_id=%s AND user_id=%s",
         (new_role, org_id, member_user_id)
@@ -1045,6 +1052,9 @@ def update_company(company_id):
     old_row = conn.execute(
         "select name from companies where id=%s and org_id=%s", (company_id, org_id)
     ).fetchone()
+    if not old_row:
+        conn.close()
+        return jsonify({'error': 'not_found'}), 404
 
     fields = []
     values = []
@@ -1052,8 +1062,8 @@ def update_company(company_id):
         if key in data:
             fields.append(f"{key}=%s")
             values.append(1 if data[key] is True else (0 if data[key] is False else data[key]))
-    values.append(company_id)
-    conn.execute(f"update companies set {', '.join(fields)} where id=%s", values)
+    values.extend([company_id, org_id])
+    conn.execute(f"update companies set {', '.join(fields)} where id=%s AND org_id=%s", values)
     conn.commit()
 
     if old_row and 'name' in data and data['name'] != old_row['name']:
@@ -1196,6 +1206,12 @@ def update_instrument(inst_id):
     conn = get_db()
     org_id, role, err = require_org(user_id, conn, min_role='manager')
     if err: conn.close(); return err
+    exists = conn.execute(
+        "select id from payment_instruments where id=%s and org_id=%s", (inst_id, org_id)
+    ).fetchone()
+    if not exists:
+        conn.close()
+        return jsonify({'error': 'not_found'}), 404
     data = request.json
     fields = []
     values = []
@@ -1203,8 +1219,8 @@ def update_instrument(inst_id):
         if key in data:
             fields.append(f"{key}=%s")
             values.append(1 if data[key] is True else (0 if data[key] is False else data[key]))
-    values.append(inst_id)
-    conn.execute(f"update payment_instruments set {', '.join(fields)} where id=%s", values)
+    values.extend([inst_id, org_id])
+    conn.execute(f"update payment_instruments set {', '.join(fields)} where id=%s AND org_id=%s", values)
     conn.commit()
     conn.close()
     return jsonify({'ok': True})
@@ -1399,6 +1415,9 @@ def update_record(record_id):
         "where r.id=%s and r.org_id=%s",
         (record_id, org_id)
     ).fetchone()
+    if not old:
+        conn.close()
+        return jsonify({'error': 'not_found'}), 404
 
     fields = []
     values = []
@@ -1412,8 +1431,8 @@ def update_record(record_id):
             if isinstance(val, bool):
                 val = 1 if val else 0
             values.append(val)
-    values.append(record_id)
-    conn.execute(f"update records set {', '.join(fields)} where id=%s", values)
+    values.extend([record_id, org_id])
+    conn.execute(f"update records set {', '.join(fields)} where id=%s AND org_id=%s", values)
     conn.commit()
 
     # Move files if date or company changed
