@@ -126,7 +126,7 @@ unprocessed_imports           — необроблені файли з Drive
 - Soft exclude / restore / permanent delete (з підтвердженням email)
 - Email верифікація: SMTP Gmail, verify + activate flow
 - Pending статус для незактивованих юзерів
-- Тести: test_api 16/16 ✅, test_hierarchy 22/24, test_members 47/47 ✅
+- Тести: test_api 16/16 ✅, test_hierarchy 22/24, test_members 47/47 ✅, test_isolation 45/45 ✅
 
 Відкладено / наступне: див. Roadmap нижче.
 
@@ -138,11 +138,11 @@ unprocessed_imports           — необроблені файли з Drive
 
 | # | Задача | Чому критично |
 |---|--------|---------------|
-| 0.1 | `data/` ізоляція — додати `org_id` в шлях файлів | Два "Ромашка ТОВ" — файли в одній папці, rename/delete ламає чужу org |
-| 0.2 | Super admin — `is_superadmin` + панель | Реєстрація закрита, але немає кому створювати нові org та першого admin |
-| 0.3 | `test_isolation.py` — 2 org, перевірити ізоляцію | Знайти решту логічних дірок до Multi-org |
-| 0.4 | `org_member_companies` — очистити при delete company | Записи доступу до видаленої компанії залишаються в БД |
-| 0.5 | Cascade delete для org | Що відбувається якщо видалити org? companies/records/instruments? |
+| ✅ 0.1 | `data/` ізоляція — `org_id` в шляху файлів | Виправлено |
+| ✅ 0.2 | Super admin — `is_superadmin` + панель | Виправлено |
+| ✅ 0.3 | `test_isolation.py` — 45/45 | 5 IDOR вразливостей знайдено і виправлено |
+| ✅ 0.4 | `org_member_companies` — очистка при permanent delete | Виправлено |
+| ✅ 0.5 | Cascade delete org — `DELETE /superadmin/orgs/{id}` | Виправлено |
 
 ### Фаза 1 — Multi-org
 
