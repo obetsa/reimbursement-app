@@ -1115,6 +1115,13 @@ def delete_company(company_id):
     conn = get_db()
     org_id, role, err = require_org(user_id, conn, min_role='manager')
     if err: conn.close(); return err
+    exists = conn.execute(
+        "select id from companies where id=%s and org_id=%s and (is_deleted=0 or is_deleted is null)",
+        (company_id, org_id)
+    ).fetchone()
+    if not exists:
+        conn.close()
+        return jsonify({'error': 'not_found'}), 404
     conn.execute(
         "update companies set is_deleted=1, deleted_at=%s where id=%s and org_id=%s",
         (datetime.utcnow().isoformat(), company_id, org_id)
@@ -1535,6 +1542,14 @@ def delete_record_permanent(record_id):
     conn = get_db()
     org_id, role, err = require_org(user_id, conn, min_role='manager')
     if err: conn.close(); return err
+
+    exists = conn.execute(
+        "select id from records where id=%s and org_id=%s and (is_deleted=0 or is_deleted is null)",
+        (record_id, org_id)
+    ).fetchone()
+    if not exists:
+        conn.close()
+        return jsonify({'error': 'not_found'}), 404
 
     atts = conn.execute(
         "select a.* from attachments a join records r on a.record_id=r.id "
