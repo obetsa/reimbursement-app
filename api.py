@@ -475,6 +475,60 @@ def superadmin_list_orgs():
     return jsonify(result)
 
 
+@app.route('/superadmin/orgs/<org_id_to_delete>', methods=['DELETE'])
+def superadmin_delete_org(org_id_to_delete):
+    conn = get_db()
+    user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+
+    org = conn.execute(
+        "SELECT id, name FROM organizations WHERE id=%s", (org_id_to_delete,)
+    ).fetchone()
+    if not org:
+        conn.close()
+        return jsonify({'error': 'not_found'}), 404
+
+    # 1. Delete files from disk
+    org_folder = os.path.join(UPLOAD_FOLDER, DRIVE_ROOT, org_id_to_delete)
+    if os.path.exists(org_folder):
+        try:
+            shutil.rmtree(org_folder)
+        except Exception as e:
+            print(f'[delete_org] rmtree failed: {e}')
+
+    # 2. Collect PENDING users (only in this org) before deleting members
+    pending_users = conn.execute("""
+        SELECT u.id FROM users u
+        JOIN org_members m ON m.user_id = u.id
+        WHERE m.org_id=%s AND u.password_hash='PENDING'
+        AND NOT EXISTS (
+            SELECT 1 FROM org_members m2
+            WHERE m2.user_id=u.id AND m2.org_id<>%s AND m2.left_at IS NULL
+        )
+    """, (org_id_to_delete, org_id_to_delete)).fetchall()
+    pending_ids = [r['id'] for r in pending_users]
+
+    # 3. Clean up data tables (NO ACTION FKs must go first)
+    conn.execute("DELETE FROM unprocessed_imports WHERE org_id=%s", (org_id_to_delete,))
+    conn.execute("DELETE FROM return_events WHERE record_id IN (SELECT id FROM records WHERE org_id=%s)", (org_id_to_delete,))
+    conn.execute("DELETE FROM attachments  WHERE record_id IN (SELECT id FROM records WHERE org_id=%s)", (org_id_to_delete,))
+    conn.execute("DELETE FROM records             WHERE org_id=%s", (org_id_to_delete,))
+    conn.execute("DELETE FROM payment_instruments WHERE org_id=%s", (org_id_to_delete,))
+    conn.execute("DELETE FROM companies           WHERE org_id=%s", (org_id_to_delete,))
+
+    # 4. Delete PENDING users and their verification tokens
+    if pending_ids:
+        placeholders = ','.join(['%s'] * len(pending_ids))
+        conn.execute(f"DELETE FROM email_verifications WHERE user_id IN ({placeholders})", pending_ids)
+        conn.execute(f"DELETE FROM users WHERE id IN ({placeholders})", pending_ids)
+
+    # 5. Delete org (cascades: org_members, org_member_companies, org_invites)
+    conn.execute("DELETE FROM organizations WHERE id=%s", (org_id_to_delete,))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True, 'deleted_org': dict(org)})
+
+
 @app.route('/superadmin/orgs', methods=['POST'])
 def superadmin_create_org():
     conn = get_db()

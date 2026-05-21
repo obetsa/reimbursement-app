@@ -721,6 +721,7 @@ async function loadSuperadmin() {
             <th style="padding:10px 12px;text-align:center">${t('superadmin.col_members')}</th>
             <th style="padding:10px 12px;text-align:center">${t('superadmin.col_records')}</th>
             <th style="padding:10px 12px;text-align:left">${t('superadmin.col_created')}</th>
+            <th style="padding:10px 12px;text-align:center"></th>
           </tr>
         </thead>
         <tbody>
@@ -731,6 +732,11 @@ async function loadSuperadmin() {
               <td style="padding:10px 12px;text-align:center">${o.members_count}</td>
               <td style="padding:10px 12px;text-align:center">${o.records_count}</td>
               <td style="padding:10px 12px;color:var(--text3);font-size:11px">${o.created_at ? o.created_at.slice(0,10) : '—'}</td>
+              <td style="padding:6px 12px;text-align:center">
+                <button class="btn btn-danger" style="font-size:11px;padding:3px 8px"
+                  onclick="superadminDeleteOrg('${o.id}','${o.name.replace(/'/g,"\\'")}')"
+                  title="${t('superadmin.delete_org_btn')}">🗑</button>
+              </td>
             </tr>`).join('')}
         </tbody>
       </table>`;
@@ -812,6 +818,48 @@ function openCreateOrgModal() {
   };
 
   setTimeout(() => orgInput.focus(), 50);
+}
+
+function superadminDeleteOrg(orgId, orgName) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:400px;width:100%">
+      <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:8px">${t('superadmin.delete_org_title')}</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:16px">${t('superadmin.delete_org_desc').replace('{name}', orgName)}</div>
+      <input id="_sa_del_input" type="text" placeholder="${orgName}"
+        style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box;margin-bottom:16px">
+      <div id="_sa_del_error" style="display:none;color:var(--red);font-size:12px;margin-bottom:10px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="_sa_del_cancel" class="btn btn-ghost">${t('org.delete_permanent_cancel')}</button>
+        <button id="_sa_del_confirm" class="btn btn-danger" disabled style="opacity:0.4">${t('superadmin.delete_org_btn')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const input      = overlay.querySelector('#_sa_del_input');
+  const confirmBtn = overlay.querySelector('#_sa_del_confirm');
+  const cancelBtn  = overlay.querySelector('#_sa_del_cancel');
+  const errEl      = overlay.querySelector('#_sa_del_error');
+
+  input.addEventListener('input', () => {
+    const match = input.value.trim() === orgName;
+    confirmBtn.disabled = !match;
+    confirmBtn.style.opacity = match ? '1' : '0.4';
+  });
+
+  cancelBtn.onclick = () => overlay.remove();
+  overlay.addEventListener('click', e => { if(e.target === overlay) overlay.remove(); });
+
+  confirmBtn.onclick = async () => {
+    confirmBtn.disabled = true;
+    const res = await fetch(`/superadmin/orgs/${orgId}`, { method: 'DELETE', credentials: 'include' });
+    overlay.remove();
+    if(res.ok) { showToast(t('superadmin.delete_org_toast'), 'success'); loadSuperadmin(); }
+    else        showToast(t('toast.error'), 'error');
+  };
+
+  setTimeout(() => input.focus(), 50);
 }
 
 function _renderInviteToken(data) {

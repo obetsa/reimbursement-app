@@ -66,10 +66,12 @@ cur.execute("INSERT INTO users (id, email, password_hash, full_name, email_verif
 
 # Create orgs
 org1_id = str(uuid.uuid4()); org2_id = str(uuid.uuid4())
-cur.execute("INSERT INTO organizations (id, name, invite_code, password_hash, owner_id) VALUES (%s,%s,'TST1','x',%s)",
-            (org1_id, ORG1_NAME, u1_id))
-cur.execute("INSERT INTO organizations (id, name, invite_code, password_hash, owner_id) VALUES (%s,%s,'TST2','x',%s)",
-            (org2_id, ORG2_NAME, u2_id))
+inv1 = uuid.uuid4().hex[:8].upper()
+inv2 = uuid.uuid4().hex[:8].upper()
+cur.execute("INSERT INTO organizations (id, name, invite_code, password_hash, owner_id) VALUES (%s,%s,%s,'x',%s)",
+            (org1_id, ORG1_NAME, inv1, u1_id))
+cur.execute("INSERT INTO organizations (id, name, invite_code, password_hash, owner_id) VALUES (%s,%s,%s,'x',%s)",
+            (org2_id, ORG2_NAME, inv2, u2_id))
 
 # Add as admins
 cur.execute("INSERT INTO org_members (id, org_id, user_id, role) VALUES (%s,%s,%s,'admin')",
@@ -323,21 +325,78 @@ if company1_id:
     company1_id = None  # вже видалена, не чіпати в cleanup
 
 # ══════════════════════════════════════════
+print('\n── 0.5: Cascade delete org ──')
+# ══════════════════════════════════════════
+
+# Login as superadmin
+s_sa = make_session('obetsa@gmail.com', 'test')  # Google user — skip if no password
+if not s_sa:
+    # Try direct DB session cookie approach — use 1@1 if it has superadmin
+    s_sa = make_session('1@1', '123456')
+    conn_check = db(); cur_check = conn_check.cursor()
+    cur_check.execute("SELECT is_superadmin FROM users WHERE email='1@1'")
+    sa_row = cur_check.fetchone()
+    conn_check.close()
+    if not sa_row or not sa_row['is_superadmin']:
+        s_sa = None
+
+if s_sa:
+    # Use org2 for delete test (org1 data was used in 0.4)
+    r = s_sa.delete(BASE + f'/superadmin/orgs/{org2_id}')
+    check('DELETE /superadmin/orgs/{id} → 200', r.status_code == 200, f'status={r.status_code}')
+
+    conn_d = db(); cur_d = conn_d.cursor()
+    cur_d.execute("SELECT id FROM organizations WHERE id=%s", (org2_id,))
+    check('  organizations видалено',          cur_d.fetchone() is None)
+    cur_d.execute("SELECT id FROM org_members WHERE org_id=%s", (org2_id,))
+    check('  org_members видалено (cascade)',   cur_d.fetchone() is None)
+    cur_d.execute("SELECT id FROM records WHERE org_id=%s", (org2_id,))
+    check('  records видалено',                cur_d.fetchone() is None)
+    cur_d.execute("SELECT id FROM companies WHERE org_id=%s", (org2_id,))
+    check('  companies видалено',              cur_d.fetchone() is None)
+    cur_d.execute("SELECT id FROM payment_instruments WHERE org_id=%s", (org2_id,))
+    check('  payment_instruments видалено',    cur_d.fetchone() is None)
+    # org2's user is not PENDING so should still exist
+    cur_d.execute("SELECT id FROM users WHERE id=%s", (u2_id,))
+    check('  звичайний юзер org2 збережено',   cur_d.fetchone() is not None)
+    conn_d.close()
+
+    # Non-superadmin can't delete org
+    r2 = s1.delete(BASE + f'/superadmin/orgs/{org1_id}')
+    check('Non-superadmin DELETE /superadmin/orgs → 403', r2.status_code in (403, 404),
+          f'status={r2.status_code}')
+
+    # 404 for non-existent org
+    r3 = s_sa.delete(BASE + f'/superadmin/orgs/{org2_id}')
+    check('DELETE вже видаленої org → 404', r3.status_code == 404, f'status={r3.status_code}')
+
+    org2_id = None  # вже видалена
+    u2_id   = None  # cleanup не потрібен
+else:
+    warn('Superadmin login недоступний — пропускаємо 0.5 тест')
+
+# ══════════════════════════════════════════
 print('\n── Cleanup ──')
 # ══════════════════════════════════════════
 
 conn3 = db(); cur3 = conn3.cursor()
-cur3.execute("DELETE FROM attachments WHERE record_id IN (SELECT id FROM records WHERE org_id IN (%s,%s))", (org1_id, org2_id))
-cur3.execute("DELETE FROM return_events WHERE record_id IN (SELECT id FROM records WHERE org_id IN (%s,%s))", (org1_id, org2_id))
-cur3.execute("DELETE FROM records WHERE org_id IN (%s,%s)", (org1_id, org2_id))
-cur3.execute("DELETE FROM org_member_companies WHERE org_id IN (%s,%s)", (org1_id, org2_id))  # залишки якщо є
-cur3.execute("DELETE FROM org_members WHERE org_id IN (%s,%s)", (org1_id, org2_id))
-cur3.execute("DELETE FROM email_verifications WHERE user_id IN (%s,%s)", (u1_id, u2_id))
-cur3.execute("DELETE FROM payment_instruments WHERE org_id IN (%s,%s)", (org1_id, org2_id))
-cur3.execute("DELETE FROM companies WHERE org_id IN (%s,%s)", (org1_id, org2_id))
-cur3.execute("DELETE FROM org_invites WHERE org_id IN (%s,%s)", (org1_id, org2_id))
-cur3.execute("DELETE FROM organizations WHERE id IN (%s,%s)", (org1_id, org2_id))
-cur3.execute("DELETE FROM users WHERE id IN (%s,%s)", (u1_id, u2_id))
+active_orgs  = [o for o in [org1_id, org2_id] if o]
+active_users = [u for u in [u1_id, u2_id] if u]
+if active_orgs:
+    ph = ','.join(['%s'] * len(active_orgs))
+    cur3.execute(f"DELETE FROM attachments WHERE record_id IN (SELECT id FROM records WHERE org_id IN ({ph}))", active_orgs)
+    cur3.execute(f"DELETE FROM return_events WHERE record_id IN (SELECT id FROM records WHERE org_id IN ({ph}))", active_orgs)
+    cur3.execute(f"DELETE FROM records             WHERE org_id IN ({ph})", active_orgs)
+    cur3.execute(f"DELETE FROM org_member_companies WHERE org_id IN ({ph})", active_orgs)
+    cur3.execute(f"DELETE FROM org_members          WHERE org_id IN ({ph})", active_orgs)
+    cur3.execute(f"DELETE FROM payment_instruments  WHERE org_id IN ({ph})", active_orgs)
+    cur3.execute(f"DELETE FROM companies            WHERE org_id IN ({ph})", active_orgs)
+    cur3.execute(f"DELETE FROM org_invites          WHERE org_id IN ({ph})", active_orgs)
+    cur3.execute(f"DELETE FROM organizations        WHERE id IN ({ph})", active_orgs)
+if active_users:
+    ph = ','.join(['%s'] * len(active_users))
+    cur3.execute(f"DELETE FROM email_verifications WHERE user_id IN ({ph})", active_users)
+    cur3.execute(f"DELETE FROM users WHERE id IN ({ph})", active_users)
 conn3.commit(); conn3.close()
 check('Cleanup завершено', True)
 
