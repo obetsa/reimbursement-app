@@ -341,13 +341,14 @@ def me():
     if not user_id:
         return jsonify({'error': 'Unauthorized'}), 401
     conn = get_db()
-    row  = conn.execute("SELECT email_verified FROM users WHERE id=%s", (user_id,)).fetchone()
+    row  = conn.execute("SELECT email_verified, is_superadmin FROM users WHERE id=%s", (user_id,)).fetchone()
     conn.close()
     return jsonify({
         'id':             user_id,
         'email':          flask_session.get('email', ''),
         'full_name':      flask_session.get('full_name', ''),
-        'email_verified': bool(row['email_verified']) if row else False,
+        'email_verified': bool(row['email_verified'])  if row else False,
+        'is_superadmin':  bool(row['is_superadmin'])   if row else False,
     })
 
 
@@ -432,6 +433,121 @@ def auth_activate_post():
     flask_session['full_name'] = row['full_name']
     flask_session.permanent    = True
     return jsonify({'ok': True})
+
+# ══════════════════════════════════════════
+# SUPERADMIN API
+# ══════════════════════════════════════════
+
+def require_superadmin(request, conn):
+    user_id = get_user_from_token(request)
+    if not user_id:
+        return None, (jsonify({'error': 'Unauthorized'}), 401)
+    row = conn.execute("SELECT is_superadmin FROM users WHERE id=%s", (user_id,)).fetchone()
+    if not row or not row['is_superadmin']:
+        return None, (jsonify({'error': 'forbidden'}), 403)
+    return user_id, None
+
+
+@app.route('/superadmin/orgs', methods=['GET'])
+def superadmin_list_orgs():
+    conn = get_db()
+    user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+    rows = conn.execute("""
+        SELECT o.id, o.name, o.created_at,
+               u.email  AS owner_email,
+               u.full_name AS owner_name,
+               (SELECT COUNT(*) FROM org_members m
+                WHERE m.org_id=o.id AND m.left_at IS NULL)          AS members_count,
+               (SELECT COUNT(*) FROM records r
+                WHERE r.org_id=o.id AND (r.is_deleted=0 OR r.is_deleted IS NULL)) AS records_count
+        FROM organizations o
+        JOIN users u ON o.owner_id=u.id
+        ORDER BY o.created_at DESC
+    """).fetchall()
+    conn.close()
+    result = []
+    for r in rows:
+        d = dict(r)
+        if d.get('created_at'):
+            d['created_at'] = d['created_at'].isoformat()
+        result.append(d)
+    return jsonify(result)
+
+
+@app.route('/superadmin/orgs', methods=['POST'])
+def superadmin_create_org():
+    conn = get_db()
+    user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+    data       = request.json or {}
+    org_name   = (data.get('org_name')    or '').strip()
+    admin_email= (data.get('admin_email') or '').strip().lower()
+    admin_name = (data.get('admin_name')  or '').strip()
+    if not org_name or not admin_email:
+        conn.close()
+        return jsonify({'error': 'org_name_and_admin_email_required'}), 400
+
+    # Org name must be unique
+    existing_org = conn.execute(
+        "SELECT id FROM organizations WHERE lower(name)=lower(%s)", (org_name,)
+    ).fetchone()
+    if existing_org:
+        conn.close()
+        return jsonify({'error': 'org_name_taken'}), 409
+
+    # Create org
+    import secrets as _sec
+    org_id      = str(uuid.uuid4())
+    invite_code = _sec.token_hex(4).upper()
+    pwd_hash    = hashlib.sha256(invite_code.encode()).hexdigest()
+
+    # Check if admin user already exists
+    existing_user = conn.execute("SELECT id FROM users WHERE email=%s", (admin_email,)).fetchone()
+    if existing_user:
+        admin_id = existing_user['id']
+        # Check not already in an org
+        active_m = conn.execute(
+            "SELECT id FROM org_members WHERE user_id=%s AND left_at IS NULL", (admin_id,)
+        ).fetchone()
+        if active_m:
+            conn.close()
+            return jsonify({'error': 'admin_already_in_org'}), 409
+    else:
+        admin_id = str(uuid.uuid4())
+        conn.execute(
+            "INSERT INTO users (id, email, password_hash, full_name) VALUES (%s,%s,'PENDING',%s)",
+            (admin_id, admin_email, admin_name)
+        )
+
+    conn.execute(
+        "INSERT INTO organizations (id, name, invite_code, password_hash, owner_id) VALUES (%s,%s,%s,%s,%s)",
+        (org_id, org_name, invite_code, pwd_hash, admin_id)
+    )
+    conn.execute(
+        "INSERT INTO org_members (id, org_id, user_id, role) VALUES (%s,%s,%s,'admin')",
+        (str(uuid.uuid4()), org_id, admin_id)
+    )
+
+    # Activation token (only for PENDING users)
+    if not existing_user:
+        token      = secrets.token_urlsafe(32)
+        expires_at = datetime.utcnow() + __import__('datetime').timedelta(hours=48)
+        conn.execute("DELETE FROM email_verifications WHERE user_id=%s", (admin_id,))
+        conn.execute(
+            "INSERT INTO email_verifications (id, user_id, token, expires_at) VALUES (%s,%s,%s,%s)",
+            (str(uuid.uuid4()), admin_id, token, expires_at)
+        )
+        conn.commit()
+        conn.close()
+        activate_url = request.host_url.rstrip('/') + f'/auth/activate?token={token}'
+        send_activation_email(admin_email, admin_name, org_name, activate_url)
+    else:
+        conn.commit()
+        conn.close()
+
+    return jsonify({'ok': True, 'org_id': org_id, 'existing_user': bool(existing_user)})
+
 
 # ══════════════════════════════════════════
 # ORG API

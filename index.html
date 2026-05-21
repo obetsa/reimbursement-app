@@ -248,6 +248,10 @@
       <div class="nav-icon">⚙️</div>
       <span data-i18n="nav.settings">Налаштування</span>
     </div>
+    <div class="nav-item" id="nav-superadmin" onclick="showPage('superadmin', this)" style="display:none">
+      <div class="nav-icon">🔑</div>
+      <span data-i18n="superadmin.nav_label">Адмін панель</span>
+    </div>
   </nav>
 
   <div class="sidebar-bottom">
@@ -877,6 +881,21 @@
       <div id="stats-modal-body" class="stats-modal-body"></div>
     </div>
   </div>
+  <!-- ── SUPERADMIN ── -->
+  <div id="page-superadmin" style="display:none;flex:1;flex-direction:column;overflow:hidden">
+    <div class="topbar">
+      <div class="topbar-title" data-i18n="superadmin.title">🔑 Адмін панель</div>
+      <div class="topbar-actions">
+        <button class="btn btn-primary" onclick="openCreateOrgModal()" data-i18n="superadmin.create_org_btn">+ Нова організація</button>
+      </div>
+    </div>
+    <div class="content" style="overflow-y:auto">
+      <div id="superadmin-orgs-list">
+        <div style="text-align:center;padding:40px;color:var(--text3)" data-i18n="loading.text">Завантаження...</div>
+      </div>
+    </div>
+  </div>
+
 </main>
 
 <!-- ── MODAL: NEW RECORD ── -->

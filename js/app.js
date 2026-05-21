@@ -41,6 +41,11 @@ async function initApp(user) {
     }
   } catch { }
 
+  if(user.is_superadmin) {
+    const saNav = document.getElementById('nav-superadmin');
+    if(saNav) saNav.style.display = '';
+  }
+
   // Load data
   try {
     const [records, archived, companies, instruments] = await Promise.all([
@@ -299,6 +304,7 @@ function showPage(name, el) {
   if(name === 'settings') { restoreSettingsTab(); loadProfile(); }
   if(name === 'unprocessed') { applyTranslations(); loadUnprocessed(); }
   if(name === 'gallery') { applyTranslations(); loadGallery(); }
+  if(name === 'superadmin') loadSuperadmin();
 
   localStorage.setItem('currentPage', name);
 }
@@ -689,6 +695,123 @@ function openInviteUserModal() {
   };
 
   setTimeout(() => emailInput.focus(), 50);
+}
+
+// ══════════════════════════════════════════
+// SUPERADMIN
+// ══════════════════════════════════════════
+
+async function loadSuperadmin() {
+  const el = document.getElementById('superadmin-orgs-list');
+  if(!el) return;
+  try {
+    const res  = await fetch('/superadmin/orgs', { credentials: 'include' });
+    if(!res.ok) { el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--red)">${t('toast.forbidden')}</div>`; return; }
+    const orgs = await res.json();
+    if(!orgs.length) {
+      el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text3)">${t('superadmin.no_orgs')}</div>`;
+      return;
+    }
+    el.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="border-bottom:2px solid var(--border);color:var(--text3);font-size:11px;font-weight:600">
+            <th style="padding:10px 12px;text-align:left">${t('superadmin.col_name')}</th>
+            <th style="padding:10px 12px;text-align:left">${t('superadmin.col_admin')}</th>
+            <th style="padding:10px 12px;text-align:center">${t('superadmin.col_members')}</th>
+            <th style="padding:10px 12px;text-align:center">${t('superadmin.col_records')}</th>
+            <th style="padding:10px 12px;text-align:left">${t('superadmin.col_created')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${orgs.map(o => `
+            <tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:10px 12px;font-weight:500;color:var(--text1)">${o.name}</td>
+              <td style="padding:10px 12px;color:var(--text2)">${o.owner_email}</td>
+              <td style="padding:10px 12px;text-align:center">${o.members_count}</td>
+              <td style="padding:10px 12px;text-align:center">${o.records_count}</td>
+              <td style="padding:10px 12px;color:var(--text3);font-size:11px">${o.created_at ? o.created_at.slice(0,10) : '—'}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+  } catch { el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--red)">${t('toast.error')}</div>`; }
+}
+
+function openCreateOrgModal() {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:400px;width:100%">
+      <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:20px">${t('superadmin.create_org_title')}</div>
+      <div style="margin-bottom:10px">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">${t('superadmin.org_name_label')} *</div>
+        <input id="_sa_org_name" type="text" placeholder="${t('superadmin.org_name_placeholder')}"
+          style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:10px">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">${t('superadmin.admin_email_label')} *</div>
+        <input id="_sa_admin_email" type="email" placeholder="admin@example.com"
+          style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:20px">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">${t('superadmin.admin_name_label')}</div>
+        <input id="_sa_admin_name" type="text" placeholder="${t('invite.name_placeholder')}"
+          style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box">
+      </div>
+      <div id="_sa_error" style="display:none;color:var(--red);font-size:12px;margin-bottom:10px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="_sa_cancel" class="btn btn-ghost">${t('org.delete_permanent_cancel')}</button>
+        <button id="_sa_submit" class="btn btn-primary">${t('superadmin.create_btn')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const orgInput   = overlay.querySelector('#_sa_org_name');
+  const emailInput = overlay.querySelector('#_sa_admin_email');
+  const nameInput  = overlay.querySelector('#_sa_admin_name');
+  const errEl      = overlay.querySelector('#_sa_error');
+  const submitBtn  = overlay.querySelector('#_sa_submit');
+  const cancelBtn  = overlay.querySelector('#_sa_cancel');
+
+  cancelBtn.onclick = () => overlay.remove();
+  overlay.addEventListener('click', e => { if(e.target === overlay) overlay.remove(); });
+
+  submitBtn.onclick = async () => {
+    const org_name    = orgInput.value.trim();
+    const admin_email = emailInput.value.trim();
+    const admin_name  = nameInput.value.trim();
+    if(!org_name || !admin_email) {
+      errEl.textContent = t('superadmin.err_required');
+      errEl.style.display = '';
+      return;
+    }
+    submitBtn.disabled = true;
+    try {
+      const res  = await fetch('/superadmin/orgs', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ org_name, admin_email, admin_name }),
+      });
+      const data = await res.json();
+      if(data.ok) {
+        overlay.remove();
+        const msg = data.existing_user ? t('superadmin.created_existing_user') : t('superadmin.created_toast');
+        showToast(msg, 'success');
+        loadSuperadmin();
+      } else {
+        const msgs = {
+          org_name_taken:        t('superadmin.err_name_taken'),
+          admin_already_in_org:  t('superadmin.err_admin_in_org'),
+          org_name_and_admin_email_required: t('superadmin.err_required'),
+        };
+        errEl.textContent = msgs[data.error] || t('toast.error');
+        errEl.style.display = '';
+      }
+    } catch { errEl.textContent = t('auth.err_connection'); errEl.style.display=''; }
+    finally  { submitBtn.disabled = false; }
+  };
+
+  setTimeout(() => orgInput.focus(), 50);
 }
 
 function _renderInviteToken(data) {
