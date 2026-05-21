@@ -128,10 +128,56 @@ unprocessed_imports           — необроблені файли з Drive
 - Pending статус для незактивованих юзерів
 - Тести: test_api 16/16 ✅, test_hierarchy 22/24, test_members 47/47 ✅
 
-Відкладено / наступне:
-- Supabase cloud (КРОК 13)
-- Фінальні тести перед деплоєм
-- Перехід на Google OAuth як основний метод входу
+Відкладено / наступне: див. Roadmap нижче.
+
+## Roadmap
+
+### Фаза 0 — Виправити до Multi-org (критичне)
+
+> Не можна рухатись далі поки не закрито
+
+| # | Задача | Чому критично |
+|---|--------|---------------|
+| 0.1 | `data/` ізоляція — додати `org_id` в шлях файлів | Два "Ромашка ТОВ" — файли в одній папці, rename/delete ламає чужу org |
+| 0.2 | Super admin — `is_superadmin` + панель | Реєстрація закрита, але немає кому створювати нові org та першого admin |
+| 0.3 | `test_isolation.py` — 2 org, перевірити ізоляцію | Знайти решту логічних дірок до Multi-org |
+| 0.4 | `org_member_companies` — очистити при delete company | Записи доступу до видаленої компанії залишаються в БД |
+| 0.5 | Cascade delete для org | Що відбувається якщо видалити org? companies/records/instruments? |
+
+### Фаза 1 — Multi-org
+
+| # | Задача | Деталі |
+|---|--------|--------|
+| 1.1 | `get_user_org()` → повертає список org | Зараз повертає одну |
+| 1.2 | Org switcher у sidebar | Як Slack workspace switcher |
+| 1.3 | `active_org_id` в сесії | API знає яка org активна |
+| 1.4 | Onboarding: "Приєднатись до ще однієї org" | Для існуючих юзерів |
+| 1.5 | PostgreSQL RLS | Другий шар захисту після application-level |
+
+### Фаза 2 — Tenant features
+
+| # | Задача | Деталі |
+|---|--------|--------|
+| 2.1 | Tenant settings | `organizations.settings JSONB` — валюта, назва в листах |
+| 2.2 | Usage limits (Free tier) | 3 члени / 100 записів / 5 компаній |
+| 2.3 | `plan` колонка на org | `free` / `pro` |
+
+### Фаза 3 — Monetization
+
+| # | Задача | Деталі |
+|---|--------|--------|
+| 3.1 | Stripe або LiqPay | Webhook → оновлює `plan` |
+| 3.2 | Billing сторінка в settings | |
+| 3.3 | Plan upgrade flow | |
+
+### Суміжно
+
+| Задача | Коли |
+|--------|------|
+| Supabase cloud | Після Фази 0, перед деплоєм |
+| OWASP ZAP scan | Перед першим публічним деплоєм |
+| Hypothesis tests | Після Multi-org |
+| Перехід на Google OAuth | Після Фази 1 |
 
 ## Важливі правила
 
