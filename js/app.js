@@ -34,10 +34,8 @@ async function initApp(user) {
       currentOrg = await orgRes.json();
       const orgEl = document.getElementById('sidebar-org-name');
       if(orgEl) orgEl.textContent = currentOrg.name;
-      if(currentOrg.role === 'admin') {
-        const navEl = document.getElementById('nav-org-members');
-        if(navEl) navEl.style.display = '';
-      }
+      const navEl = document.getElementById('nav-org-members');
+      if(navEl) navEl.style.display = '';
     }
   } catch { }
 
@@ -424,10 +422,7 @@ async function loadProfile() {
         <div class="profile-label">${t('org.role_label')}</div>
         <div class="profile-value">${roleLabel[org.role] || org.role}</div>
       </div>
-      ${org.role !== 'admin' ? `
-      <div class="profile-row" style="padding-top:8px">
-        <button onclick="leaveOrg()" class="btn btn-danger" style="font-size:13px;width:100%">${t('org.leave_btn')}</button>
-      </div>` : ''}` : ''}
+      ` : ''}
     `;
   } catch {
     if(container) container.innerHTML = '';
@@ -444,10 +439,12 @@ async function loadOrgMembers() {
       fetch('/companies',    { credentials: 'include' }),
       fetch('/org/me',       { credentials: 'include' }),
     ]);
-    const members   = await membersRes.json();
-    const companies = companiesRes.ok ? await companiesRes.json() : [];
     const orgData   = orgRes.ok ? await orgRes.json() : null;
-    if(!membersRes.ok) { container.innerHTML = ''; return; }
+    const isAdmin   = orgData && orgData.role === 'admin';
+    const companies = companiesRes.ok ? await companiesRes.json() : [];
+    // Members only for admin — non-admin still gets org-info section
+    const members   = membersRes.ok ? await membersRes.json() : [];
+    if(!isAdmin) { container.innerHTML = ''; }
 
     if(orgInfoEl && orgData) {
       // Fetch org list and user plan
@@ -486,6 +483,7 @@ async function loadOrgMembers() {
         ${limitHtml}
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
           ${!atLimit ? `<button onclick="openJoinOrgModal()" class="btn btn-ghost" style="font-size:12px">${t('org.join_another_btn')}</button>` : ''}
+          ${orgData.role !== 'admin' ? `<button onclick="leaveOrg()" class="btn btn-danger" style="font-size:12px">${t('org.leave_btn')}</button>` : ''}
           ${orgData.role === 'admin' ? `
           <div class="profile-row" style="flex-direction:column;align-items:flex-start;gap:8px;width:100%;border:none;padding-top:4px">
             <div class="profile-label">${t('org.invite_label')}</div>
