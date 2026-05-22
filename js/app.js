@@ -444,6 +444,8 @@ async function loadOrgMembers() {
     const companies = companiesRes.ok ? await companiesRes.json() : [];
     // Members only for admin — non-admin still gets org-info section
     const members   = membersRes.ok ? await membersRes.json() : [];
+    const membersSection = document.getElementById('org-members-section');
+    if(membersSection) membersSection.style.display = isAdmin ? '' : 'none';
     if(!isAdmin) { container.innerHTML = ''; }
 
     if(orgInfoEl && orgData) {
