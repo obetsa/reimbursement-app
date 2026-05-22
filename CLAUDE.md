@@ -148,11 +148,17 @@ unprocessed_imports           — необроблені файли з Drive
 
 | # | Задача | Деталі |
 |---|--------|--------|
-| 1.1 | `get_user_org()` → повертає список org | Зараз повертає одну |
-| 1.2 | Org switcher у sidebar | Як Slack workspace switcher |
-| 1.3 | `active_org_id` в сесії | API знає яка org активна |
-| 1.4 | Onboarding: "Приєднатись до ще однієї org" | Для існуючих юзерів |
-| 1.5 | PostgreSQL RLS | Другий шар захисту після application-level |
+| 1.1 | `active_org_id` в сесії + `GET /org/list` + `POST /org/switch` | API знає яка org активна |
+| 1.2 | Org switcher в Налаштування → Організація | Не в sidebar — рідкісна дія |
+| 1.3 | Ліміт: max 2 активні org на free акаунт | `users.plan DEFAULT 'free'`; superadmin без ліміту |
+| 1.4 | Видалення org owner'ом | `DELETE /org/delete`; сповіщення для членів (`user_notifications`) |
+| 1.5 | Onboarding: "Приєднатись до ще однієї org" | Для юзерів вже в якійсь org |
+| 1.6 | PostgreSQL RLS | Другий шар захисту після application-level |
+
+**Правила ліміту:**
+- Free: max 2 активні org (left_at IS NULL)
+- Premium / Superadmin: без ліміту
+- Перевірка в: POST /org/join, POST /org/create, POST /org/members/invite
 
 ### Superadmin панель — доповнення (після Фази 0)
 
