@@ -968,11 +968,11 @@ function openJoinOrgModal() {
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:380px;width:100%">
       <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:20px">${t('onboarding.tab_join')}</div>
       <div style="margin-bottom:10px">
-        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">${t('onboarding.org_name_label')}</div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">${t('onboarding.org_name_placeholder')}</div>
         <input id="_join_org_name" type="text" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box">
       </div>
       <div style="margin-bottom:20px">
-        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">${t('onboarding.token_label')}</div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">${t('onboarding.token_placeholder')}</div>
         <input id="_join_token" type="text" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box">
       </div>
       <div id="_join_error" style="display:none;color:var(--red);font-size:12px;margin-bottom:10px"></div>
