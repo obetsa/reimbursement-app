@@ -344,6 +344,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const user = await authGetCurrentUser();
   if(user) {
+    if(user.deletion_notice) {
+      sessionStorage.setItem('_deletion_notice', user.deletion_notice);
+    }
     const orgRes = await fetch('/org/me', { credentials: 'include' });
     if(orgRes.status === 404) {
       showOnboarding();
@@ -447,17 +450,55 @@ async function loadOrgMembers() {
     if(!membersRes.ok) { container.innerHTML = ''; return; }
 
     if(orgInfoEl && orgData) {
-      orgInfoEl.innerHTML = `
-        <div class="profile-row">
-          <div class="profile-label">${t('org.label')}</div>
-          <div class="profile-value" style="font-weight:500">${orgData.name}</div>
-        </div>
-        <div class="profile-row" style="flex-direction:column;align-items:flex-start;gap:8px">
-          <div class="profile-label">${t('org.invite_label')}</div>
-          <div id="invite-token-block" style="width:100%"></div>
-          <button onclick="generateInvite()" class="btn btn-ghost btn-invite-generate">${t('org.invite_generate_btn')}</button>
+      // Fetch org list and user plan
+      const [listRes, meRes] = await Promise.all([
+        fetch('/org/list', { credentials: 'include' }),
+        fetch('/auth/me',  { credentials: 'include' }),
+      ]);
+      const orgList = listRes.ok ? await listRes.json() : [];
+      const meData  = meRes.ok  ? await meRes.json()  : {};
+      const plan    = meData.plan || 'free';
+      const isSA    = meData.is_superadmin;
+      const atLimit = !isSA && plan !== 'premium' && orgList.length >= 2;
+
+      // Org switcher rows
+      const switcherHtml = orgList.map(o => `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:${o.is_active ? '600' : '400'};color:${o.is_active ? 'var(--accent)' : 'var(--text1)'}">
+              ${o.name}${o.is_active ? ' ✓' : ''}
+            </div>
+            <div style="font-size:11px;color:var(--text3)">${{admin:t('org.role_admin'),manager:t('org.role_manager'),user:t('org.role_user')}[o.role]||o.role}</div>
+          </div>
+          ${!o.is_active ? `<button class="btn btn-ghost" style="font-size:11px;padding:3px 10px"
+            onclick="orgSwitchTo('${o.id}')">${t('org.switch_btn')}</button>` : ''}
+        </div>`).join('');
+
+      // Limit info
+      const limitHtml = isSA ? '' : `
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">
+          ${t('org.limit_info').replace('{used}', orgList.length).replace('{max}', 2)}
+          ${atLimit ? `<span style="color:var(--red);margin-left:6px">${t('org.limit_reached')}</span>` : ''}
         </div>`;
-      _loadCurrentInvite();
+
+      orgInfoEl.innerHTML = `
+        <div>${switcherHtml}</div>
+        ${limitHtml}
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
+          ${!atLimit ? `<button onclick="openJoinOrgModal()" class="btn btn-ghost" style="font-size:12px">${t('org.join_another_btn')}</button>` : ''}
+          ${orgData.role === 'admin' ? `
+          <div class="profile-row" style="flex-direction:column;align-items:flex-start;gap:8px;width:100%;border:none;padding-top:4px">
+            <div class="profile-label">${t('org.invite_label')}</div>
+            <div id="invite-token-block" style="width:100%"></div>
+            <button onclick="generateInvite()" class="btn btn-ghost btn-invite-generate">${t('org.invite_generate_btn')}</button>
+          </div>` : ''}
+        </div>
+        ${orgData.is_owner ? `
+        <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:16px">
+          <button onclick="openDeleteOrgModal('${orgData.name.replace(/'/g,"\\'")}') "
+            class="btn btn-danger" style="font-size:12px">${t('org.delete_org_btn')}</button>
+        </div>` : ''}`;
+      if(orgData.role === 'admin') _loadCurrentInvite();
     }
 
     const roleLabel = { admin: t('org.role_admin'), manager: t('org.role_manager'), user: t('org.role_user') };
@@ -904,6 +945,118 @@ async function leaveOrg() {
   } catch {
     showToast(t('toast.error'), 'error');
   }
+}
+
+async function orgSwitchTo(orgId) {
+  const res = await fetch('/org/switch', {
+    method: 'POST', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ org_id: orgId }),
+  });
+  if(res.ok) {
+    showToast(t('org.switch_success'), 'success');
+    window.location.reload();
+  } else {
+    showToast(t('toast.error'), 'error');
+  }
+}
+
+function openJoinOrgModal() {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:380px;width:100%">
+      <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:20px">${t('onboarding.tab_join')}</div>
+      <div style="margin-bottom:10px">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">${t('onboarding.org_name_label')}</div>
+        <input id="_join_org_name" type="text" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:20px">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">${t('onboarding.token_label')}</div>
+        <input id="_join_token" type="text" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box">
+      </div>
+      <div id="_join_error" style="display:none;color:var(--red);font-size:12px;margin-bottom:10px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="_join_cancel" class="btn btn-ghost">${t('org.delete_permanent_cancel')}</button>
+        <button id="_join_submit" class="btn btn-primary">${t('onboarding.join_btn')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const orgNameInput = overlay.querySelector('#_join_org_name');
+  const tokenInput   = overlay.querySelector('#_join_token');
+  const errEl        = overlay.querySelector('#_join_error');
+  const submitBtn    = overlay.querySelector('#_join_submit');
+  const cancelBtn    = overlay.querySelector('#_join_cancel');
+  cancelBtn.onclick = () => overlay.remove();
+  overlay.addEventListener('click', e => { if(e.target === overlay) overlay.remove(); });
+  submitBtn.onclick = async () => {
+    const org_name = orgNameInput.value.trim();
+    const token    = tokenInput.value.trim();
+    if(!org_name || !token) { errEl.textContent = t('onboarding.err_enter_name_token'); errEl.style.display=''; return; }
+    submitBtn.disabled = true;
+    try {
+      const res  = await fetch('/org/join', {
+        method: 'POST', credentials: 'include',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ org_name, token }),
+      });
+      const data = await res.json();
+      if(data.ok) {
+        overlay.remove();
+        showToast(t('org.join_success'), 'success');
+        window.location.reload();
+      } else {
+        const msgs = {
+          org_limit_reached:           t('org.limit_reached_err'),
+          invalid_token_or_name:        t('onboarding.err_invalid_token'),
+          org_name_and_token_required:  t('onboarding.err_enter_name_token'),
+        };
+        errEl.textContent = msgs[data.error] || t('toast.error');
+        errEl.style.display = '';
+      }
+    } catch { errEl.textContent = t('auth.err_connection'); errEl.style.display=''; }
+    finally  { submitBtn.disabled = false; }
+  };
+  setTimeout(() => orgNameInput.focus(), 50);
+}
+
+function openDeleteOrgModal(orgName) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:400px;width:100%">
+      <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:8px">${t('org.delete_org_title')}</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:16px">${t('org.delete_org_desc').replace('{name}', orgName)}</div>
+      <input id="_del_org_input" type="text" placeholder="${orgName}" autocomplete="off"
+        style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box;margin-bottom:16px">
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="_del_org_cancel" class="btn btn-ghost">${t('org.delete_permanent_cancel')}</button>
+        <button id="_del_org_confirm" class="btn btn-danger" disabled style="opacity:0.4">${t('org.delete_org_confirm_btn')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const input      = overlay.querySelector('#_del_org_input');
+  const confirmBtn = overlay.querySelector('#_del_org_confirm');
+  const cancelBtn  = overlay.querySelector('#_del_org_cancel');
+  input.addEventListener('input', () => {
+    const match = input.value.trim() === orgName;
+    confirmBtn.disabled = !match;
+    confirmBtn.style.opacity = match ? '1' : '0.4';
+  });
+  cancelBtn.onclick = () => overlay.remove();
+  overlay.addEventListener('click', e => { if(e.target === overlay) overlay.remove(); });
+  confirmBtn.onclick = async () => {
+    confirmBtn.disabled = true;
+    const res = await fetch('/org/delete', { method: 'DELETE', credentials: 'include' });
+    overlay.remove();
+    if(res.ok) {
+      showToast(t('org.delete_org_success'), 'success');
+      setTimeout(() => window.location.reload(), 800);
+    } else {
+      showToast(t('toast.error'), 'error');
+    }
+  };
+  setTimeout(() => input.focus(), 50);
 }
 
 function restoreSettingsTab() {

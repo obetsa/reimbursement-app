@@ -341,14 +341,25 @@ def me():
     if not user_id:
         return jsonify({'error': 'Unauthorized'}), 401
     conn = get_db()
-    row  = conn.execute("SELECT email_verified, is_superadmin FROM users WHERE id=%s", (user_id,)).fetchone()
+    row  = conn.execute(
+        "SELECT email_verified, is_superadmin, plan FROM users WHERE id=%s", (user_id,)
+    ).fetchone()
+    notice = conn.execute(
+        "SELECT id, org_name FROM org_deletion_notices WHERE user_id=%s ORDER BY created_at LIMIT 1",
+        (user_id,)
+    ).fetchone()
+    if notice:
+        conn.execute("DELETE FROM org_deletion_notices WHERE id=%s", (notice['id'],))
+        conn.commit()
     conn.close()
     return jsonify({
-        'id':             user_id,
-        'email':          flask_session.get('email', ''),
-        'full_name':      flask_session.get('full_name', ''),
-        'email_verified': bool(row['email_verified'])  if row else False,
-        'is_superadmin':  bool(row['is_superadmin'])   if row else False,
+        'id':               user_id,
+        'email':            flask_session.get('email', ''),
+        'full_name':        flask_session.get('full_name', ''),
+        'email_verified':   bool(row['email_verified'])  if row else False,
+        'is_superadmin':    bool(row['is_superadmin'])   if row else False,
+        'plan':             (row['plan'] or 'free')       if row else 'free',
+        'deletion_notice':  notice['org_name']            if notice else None,
     })
 
 
@@ -611,15 +622,21 @@ def org_me():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
     conn = get_db()
+    org_id, role = get_user_org(user_id, conn)
+    if not org_id:
+        conn.close()
+        return jsonify({'error': 'no_org'}), 404
     row = conn.execute(
-        "SELECT o.id, o.name, o.invite_code, m.role "
+        "SELECT o.id, o.name, o.invite_code, o.owner_id, m.role "
         "FROM org_members m JOIN organizations o ON m.org_id=o.id "
-        "WHERE m.user_id=%s AND m.left_at IS NULL LIMIT 1",
-        (user_id,)
+        "WHERE m.user_id=%s AND m.org_id=%s AND m.left_at IS NULL",
+        (user_id, org_id)
     ).fetchone()
     conn.close()
     if not row: return jsonify({'error': 'no_org'}), 404
-    return jsonify(dict(row))
+    d = dict(row)
+    d['is_owner'] = (d['owner_id'] == user_id)
+    return jsonify(d)
 
 
 @app.route('/org/create', methods=['POST'])
@@ -631,10 +648,9 @@ def org_create():
     if not name: return jsonify({'error': 'name_required'}), 400
 
     conn = get_db()
-    existing = conn.execute("SELECT id FROM org_members WHERE user_id=%s AND left_at IS NULL", (user_id,)).fetchone()
-    if existing:
+    if not check_org_limit(user_id, conn):
         conn.close()
-        return jsonify({'error': 'already_in_org'}), 409
+        return jsonify({'error': 'org_limit_reached'}), 403
 
     import secrets as _secrets
     org_id      = str(uuid.uuid4())
@@ -732,6 +748,10 @@ def org_member_invite():
     existing = conn.execute("SELECT id, password_hash FROM users WHERE email=%s", (email,)).fetchone()
     if existing:
         new_user_id  = existing['id']
+        # Check org limit for the invited user
+        if not check_org_limit(new_user_id, conn):
+            conn.close()
+            return jsonify({'error': 'invitee_org_limit_reached'}), 403
         active_m = conn.execute(
             "SELECT id FROM org_members WHERE user_id=%s AND org_id=%s AND left_at IS NULL",
             (new_user_id, org_id)
@@ -967,10 +987,9 @@ def org_join():
         return jsonify({'error': 'org_name_and_token_required'}), 400
 
     conn = get_db()
-    existing = conn.execute("SELECT id FROM org_members WHERE user_id=%s AND left_at IS NULL", (user_id,)).fetchone()
-    if existing:
+    if not check_org_limit(user_id, conn):
         conn.close()
-        return jsonify({'error': 'already_in_org'}), 409
+        return jsonify({'error': 'org_limit_reached'}), 403
 
     invite = conn.execute(
         "SELECT i.org_id FROM org_invites i "
@@ -1001,6 +1020,119 @@ def org_join():
     return jsonify({'ok': True})
 
 
+@app.route('/org/list', methods=['GET'])
+def org_list():
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT o.id, o.name, o.owner_id, m.role, m.joined_at "
+        "FROM org_members m JOIN organizations o ON m.org_id=o.id "
+        "WHERE m.user_id=%s AND m.left_at IS NULL ORDER BY m.joined_at",
+        (user_id,)
+    ).fetchall()
+    conn.close()
+    active_org_id = flask_session.get('active_org_id')
+    result = []
+    for r in rows:
+        d = dict(r)
+        d['is_owner']  = (d['owner_id'] == user_id)
+        d['is_active'] = (d['id'] == active_org_id)
+        if d.get('joined_at'):
+            d['joined_at'] = d['joined_at'].isoformat()
+        result.append(d)
+    # Mark first as active if nothing selected
+    if result and not any(r['is_active'] for r in result):
+        result[0]['is_active'] = True
+    return jsonify(result)
+
+
+@app.route('/org/switch', methods=['POST'])
+def org_switch():
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    org_id = (request.json or {}).get('org_id', '').strip()
+    if not org_id:
+        return jsonify({'error': 'org_id_required'}), 400
+    conn = get_db()
+    member = conn.execute(
+        "SELECT id FROM org_members WHERE user_id=%s AND org_id=%s AND left_at IS NULL",
+        (user_id, org_id)
+    ).fetchone()
+    conn.close()
+    if not member:
+        return jsonify({'error': 'not_member'}), 403
+    flask_session['active_org_id'] = org_id
+    return jsonify({'ok': True})
+
+
+@app.route('/org/delete', methods=['DELETE'])
+def org_delete_own():
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role = get_user_org(user_id, conn)
+    if not org_id:
+        conn.close()
+        return jsonify({'error': 'no_org'}), 404
+    org = conn.execute(
+        "SELECT id, name, owner_id FROM organizations WHERE id=%s", (org_id,)
+    ).fetchone()
+    if not org or org['owner_id'] != user_id:
+        conn.close()
+        return jsonify({'error': 'not_owner'}), 403
+    org_name = org['name']
+
+    # Notify active members (except owner)
+    members = conn.execute(
+        "SELECT user_id FROM org_members WHERE org_id=%s AND user_id<>%s AND left_at IS NULL",
+        (org_id, user_id)
+    ).fetchall()
+    for m in members:
+        conn.execute(
+            "INSERT INTO org_deletion_notices (id, user_id, org_name) VALUES (%s,%s,%s)",
+            (str(uuid.uuid4()), m['user_id'], org_name)
+        )
+
+    # Delete files from disk
+    org_folder = os.path.join(UPLOAD_FOLDER, DRIVE_ROOT, org_id)
+    if os.path.exists(org_folder):
+        try:
+            shutil.rmtree(org_folder)
+        except Exception as e:
+            print(f'[delete_org] {e}')
+
+    # Cascade delete data
+    conn.execute("DELETE FROM unprocessed_imports WHERE org_id=%s", (org_id,))
+    conn.execute("DELETE FROM return_events WHERE record_id IN (SELECT id FROM records WHERE org_id=%s)", (org_id,))
+    conn.execute("DELETE FROM attachments  WHERE record_id IN (SELECT id FROM records WHERE org_id=%s)", (org_id,))
+    conn.execute("DELETE FROM records             WHERE org_id=%s", (org_id,))
+    conn.execute("DELETE FROM payment_instruments WHERE org_id=%s", (org_id,))
+    conn.execute("DELETE FROM companies           WHERE org_id=%s", (org_id,))
+
+    # Delete PENDING users of this org without other orgs
+    pending = conn.execute("""
+        SELECT u.id FROM users u
+        JOIN org_members m ON m.user_id=u.id
+        WHERE m.org_id=%s AND u.password_hash='PENDING'
+        AND NOT EXISTS (
+            SELECT 1 FROM org_members m2
+            WHERE m2.user_id=u.id AND m2.org_id<>%s AND m2.left_at IS NULL
+        )
+    """, (org_id, org_id)).fetchall()
+    if pending:
+        ph = ','.join(['%s'] * len(pending))
+        pids = [r['id'] for r in pending]
+        conn.execute(f"DELETE FROM email_verifications WHERE user_id IN ({ph})", pids)
+        conn.execute(f"DELETE FROM users WHERE id IN ({ph})", pids)
+
+    conn.execute("DELETE FROM organizations WHERE id=%s", (org_id,))
+    conn.commit()
+    flask_session.pop('active_org_id', None)
+    conn.close()
+    return jsonify({'ok': True})
+
+
 @app.route('/org/leave', methods=['POST'])
 def org_leave():
     user_id = get_user_from_token(request)
@@ -1023,20 +1155,54 @@ def org_leave():
 # ══════════════════════════════════════════
 # ORG HELPERS
 # ══════════════════════════════════════════
+
+ORG_LIMIT_FREE = 2
+
+
+def check_org_limit(user_id, conn):
+    """Returns True if user can join/create more orgs."""
+    row = conn.execute(
+        "SELECT is_superadmin, plan FROM users WHERE id=%s", (user_id,)
+    ).fetchone()
+    if not row or row['is_superadmin'] or (row['plan'] or 'free') == 'premium':
+        return True
+    count = conn.execute(
+        "SELECT COUNT(*) as c FROM org_members WHERE user_id=%s AND left_at IS NULL",
+        (user_id,)
+    ).fetchone()['c']
+    return count < ORG_LIMIT_FREE
+
+
 def get_user_org(user_id, conn=None):
-    """Return (org_id, role) for user, or (None, None) if not in any org."""
+    """Return (org_id, role) for active org, or (None, None) if not in any org.
+    Uses active_org_id from session; falls back to first available org."""
     close = conn is None
     if close:
         conn = get_db()
+
+    active_org_id = flask_session.get('active_org_id')
+    if active_org_id:
+        row = conn.execute(
+            "SELECT m.org_id, m.role FROM org_members m "
+            "WHERE m.user_id=%s AND m.org_id=%s AND m.left_at IS NULL",
+            (user_id, active_org_id)
+        ).fetchone()
+        if row:
+            if close: conn.close()
+            return row['org_id'], row['role']
+        flask_session.pop('active_org_id', None)
+
     row = conn.execute(
-        "SELECT m.org_id, m.role FROM org_members m WHERE m.user_id=%s AND m.left_at IS NULL LIMIT 1",
+        "SELECT m.org_id, m.role FROM org_members m "
+        "WHERE m.user_id=%s AND m.left_at IS NULL ORDER BY m.joined_at LIMIT 1",
         (user_id,)
     ).fetchone()
-    if close:
-        conn.close()
+    if close: conn.close()
     if not row:
         return None, None
+    flask_session['active_org_id'] = row['org_id']
     return row['org_id'], row['role']
+
 
 def require_org(user_id, conn, min_role='user'):
     """Return (org_id, role, error_response).

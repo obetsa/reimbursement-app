@@ -102,6 +102,15 @@ function showOnboarding() {
   document.getElementById('loading-overlay').classList.add('hidden');
   document.getElementById('auth-screen').classList.add('hidden');
   document.getElementById('onboarding-screen').classList.remove('hidden');
+  const notice = sessionStorage.getItem('_deletion_notice');
+  if(notice) {
+    sessionStorage.removeItem('_deletion_notice');
+    const el = document.getElementById('ob-deletion-notice');
+    if(el) {
+      el.textContent = t('org.deleted_notice').replace('{name}', notice);
+      el.style.display = '';
+    }
+  }
 }
 
 function obShowTab(mode) {
