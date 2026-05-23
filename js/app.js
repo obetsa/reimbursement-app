@@ -753,34 +753,52 @@ async function loadSuperadmin() {
       el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text3)">${t('superadmin.no_orgs')}</div>`;
       return;
     }
-    el.innerHTML = `
-      <table style="width:100%;border-collapse:collapse;font-size:13px">
-        <thead>
-          <tr style="border-bottom:2px solid var(--border);color:var(--text3);font-size:11px;font-weight:600">
-            <th style="padding:10px 12px;text-align:left">${t('superadmin.col_name')}</th>
-            <th style="padding:10px 12px;text-align:left">${t('superadmin.col_admin')}</th>
-            <th style="padding:10px 12px;text-align:center">${t('superadmin.col_members')}</th>
-            <th style="padding:10px 12px;text-align:center">${t('superadmin.col_records')}</th>
-            <th style="padding:10px 12px;text-align:left">${t('superadmin.col_created')}</th>
-            <th style="padding:10px 12px;text-align:center"></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${orgs.map(o => `
-            <tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:10px 12px;font-weight:500;color:var(--text1)">${o.name}</td>
-              <td style="padding:10px 12px;color:var(--text2)">${o.owner_email}</td>
-              <td style="padding:10px 12px;text-align:center">${o.members_count}</td>
-              <td style="padding:10px 12px;text-align:center">${o.records_count}</td>
-              <td style="padding:10px 12px;color:var(--text3);font-size:11px">${o.created_at ? o.created_at.slice(0,10) : '—'}</td>
-              <td style="padding:6px 12px;text-align:center">
-                <button class="btn btn-danger" style="font-size:11px;padding:3px 8px"
-                  onclick="superadminDeleteOrg('${o.id}','${o.name.replace(/'/g,"\\'")}')"
-                  title="${t('superadmin.delete_org_btn')}">🗑</button>
-              </td>
-            </tr>`).join('')}
-        </tbody>
-      </table>`;
+    const isMobile = window.innerWidth <= 768;
+    if(isMobile) {
+      el.innerHTML = orgs.map(o => `
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px">
+            <div style="font-size:14px;font-weight:600;color:var(--text1)">${o.name}</div>
+            <button class="btn btn-danger" style="font-size:11px;padding:3px 8px;flex-shrink:0"
+              onclick="superadminDeleteOrg('${o.id}','${o.name.replace(/'/g,"\\'")}')">🗑</button>
+          </div>
+          <div style="font-size:12px;color:var(--text2);margin-bottom:6px">${o.owner_email}</div>
+          <div style="display:flex;gap:16px;font-size:11px;color:var(--text3)">
+            <span>${t('superadmin.col_members')}: <strong style="color:var(--text2)">${o.members_count}</strong></span>
+            <span>${t('superadmin.col_records')}: <strong style="color:var(--text2)">${o.records_count}</strong></span>
+            <span>${o.created_at ? o.created_at.slice(0,10) : '—'}</span>
+          </div>
+        </div>`).join('');
+    } else {
+      el.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="border-bottom:2px solid var(--border);color:var(--text3);font-size:11px;font-weight:600">
+              <th style="padding:10px 12px;text-align:left">${t('superadmin.col_name')}</th>
+              <th style="padding:10px 12px;text-align:left">${t('superadmin.col_admin')}</th>
+              <th style="padding:10px 12px;text-align:center">${t('superadmin.col_members')}</th>
+              <th style="padding:10px 12px;text-align:center">${t('superadmin.col_records')}</th>
+              <th style="padding:10px 12px;text-align:left">${t('superadmin.col_created')}</th>
+              <th style="padding:10px 12px;text-align:center"></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${orgs.map(o => `
+              <tr style="border-bottom:1px solid var(--border)">
+                <td style="padding:10px 12px;font-weight:500;color:var(--text1)">${o.name}</td>
+                <td style="padding:10px 12px;color:var(--text2)">${o.owner_email}</td>
+                <td style="padding:10px 12px;text-align:center">${o.members_count}</td>
+                <td style="padding:10px 12px;text-align:center">${o.records_count}</td>
+                <td style="padding:10px 12px;color:var(--text3);font-size:11px">${o.created_at ? o.created_at.slice(0,10) : '—'}</td>
+                <td style="padding:6px 12px;text-align:center">
+                  <button class="btn btn-danger" style="font-size:11px;padding:3px 8px"
+                    onclick="superadminDeleteOrg('${o.id}','${o.name.replace(/'/g,"\\'")}')"
+                    title="${t('superadmin.delete_org_btn')}">🗑</button>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>`;
+    }
   } catch { el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--red)">${t('toast.error')}</div>`; }
 }
 
