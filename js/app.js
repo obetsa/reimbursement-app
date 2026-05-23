@@ -484,7 +484,7 @@ async function loadOrgMembers() {
         <div>${switcherHtml}</div>
         ${limitHtml}
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
-          ${!atLimit ? `<button onclick="openJoinOrgModal()" class="btn btn-ghost" style="font-size:12px">${t('org.join_another_btn')}</button>` : ''}
+          <button onclick="openChangeOrgModal(${atLimit})" class="btn btn-ghost" style="font-size:12px">${t('org.join_another_btn')}</button>
           ${orgData.role !== 'admin' ? `<button onclick="leaveOrg()" class="btn btn-danger" style="font-size:12px">${t('org.leave_btn')}</button>` : ''}
           ${orgData.role === 'admin' ? `
           <div class="profile-row" style="flex-direction:column;align-items:flex-start;gap:8px;width:100%;border:none;padding-top:4px">
@@ -961,63 +961,124 @@ async function orgSwitchTo(orgId) {
   }
 }
 
-function openJoinOrgModal() {
+function openChangeOrgModal(atLimit) {
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
   overlay.innerHTML = `
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:380px;width:100%">
-      <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:20px">${t('onboarding.tab_join')}</div>
-      <div style="margin-bottom:10px">
-        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">${t('onboarding.org_name_placeholder')}</div>
-        <input id="_join_org_name" type="text" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box">
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:400px;width:100%">
+      <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:16px">${t('org.change_modal_title')}</div>
+      <div style="display:flex;gap:0;margin-bottom:20px;border-radius:var(--radius-sm);overflow:hidden;border:1px solid var(--border)">
+        <button id="_ch_tab_join"   style="flex:1;padding:8px;border:none;background:var(--accent);color:#fff;font-size:13px;font-weight:600;cursor:pointer">${t('org.join_tab')}</button>
+        <button id="_ch_tab_create" style="flex:1;padding:8px;border:none;background:var(--bg3);color:var(--text2);font-size:13px;cursor:pointer">${t('org.create_tab')}</button>
       </div>
-      <div style="margin-bottom:20px">
-        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">${t('onboarding.token_placeholder')}</div>
-        <input id="_join_token" type="text" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box">
+
+      <!-- Join form -->
+      <div id="_ch_join_form">
+        <div style="margin-bottom:10px">
+          <div style="font-size:12px;color:var(--text3);margin-bottom:4px">${t('onboarding.org_name_placeholder')}</div>
+          <input id="_join_org_name" type="text" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box">
+        </div>
+        <div style="margin-bottom:16px">
+          <div style="font-size:12px;color:var(--text3);margin-bottom:4px">${t('onboarding.token_placeholder')}</div>
+          <input id="_join_token" type="text" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box">
+        </div>
+        <div id="_join_error" style="display:none;color:var(--red);font-size:12px;margin-bottom:10px"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button id="_ch_cancel" class="btn btn-ghost">${t('org.delete_permanent_cancel')}</button>
+          <button id="_join_submit" class="btn btn-primary">${t('onboarding.join_btn')}</button>
+        </div>
       </div>
-      <div id="_join_error" style="display:none;color:var(--red);font-size:12px;margin-bottom:10px"></div>
-      <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button id="_join_cancel" class="btn btn-ghost">${t('org.delete_permanent_cancel')}</button>
-        <button id="_join_submit" class="btn btn-primary">${t('onboarding.join_btn')}</button>
+
+      <!-- Create form -->
+      <div id="_ch_create_form" style="display:none">
+        ${atLimit ? `<div style="padding:14px;background:var(--yellow-bg);color:var(--yellow);border-radius:var(--radius-sm);font-size:13px;margin-bottom:16px">${t('org.limit_create_hint')}</div>` : ''}
+        <div style="margin-bottom:16px;${atLimit ? 'opacity:0.5;pointer-events:none' : ''}">
+          <div style="font-size:12px;color:var(--text3);margin-bottom:4px">${t('org.create_name_label')}</div>
+          <input id="_create_org_name" type="text" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box">
+        </div>
+        <div id="_create_error" style="display:none;color:var(--red);font-size:12px;margin-bottom:10px"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button id="_ch_cancel2" class="btn btn-ghost">${t('org.delete_permanent_cancel')}</button>
+          <button id="_create_submit" class="btn btn-primary" ${atLimit ? 'disabled style="opacity:0.4"' : ''}>${t('org.create_btn')}</button>
+        </div>
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  const orgNameInput = overlay.querySelector('#_join_org_name');
-  const tokenInput   = overlay.querySelector('#_join_token');
-  const errEl        = overlay.querySelector('#_join_error');
-  const submitBtn    = overlay.querySelector('#_join_submit');
-  const cancelBtn    = overlay.querySelector('#_join_cancel');
-  cancelBtn.onclick = () => overlay.remove();
+
+  const tabJoin   = overlay.querySelector('#_ch_tab_join');
+  const tabCreate = overlay.querySelector('#_ch_tab_create');
+  const joinForm  = overlay.querySelector('#_ch_join_form');
+  const createForm= overlay.querySelector('#_ch_create_form');
+
+  const setTab = (tab) => {
+    const isJoin = tab === 'join';
+    tabJoin.style.background   = isJoin ? 'var(--accent)' : 'var(--bg3)';
+    tabJoin.style.color        = isJoin ? '#fff' : 'var(--text2)';
+    tabCreate.style.background = isJoin ? 'var(--bg3)' : 'var(--accent)';
+    tabCreate.style.color      = isJoin ? 'var(--text2)' : '#fff';
+    joinForm.style.display     = isJoin ? '' : 'none';
+    createForm.style.display   = isJoin ? 'none' : '';
+  };
+
+  tabJoin.onclick   = () => setTab('join');
+  tabCreate.onclick = () => setTab('create');
+
+  overlay.querySelectorAll('#_ch_cancel, #_ch_cancel2').forEach(b => b.onclick = () => overlay.remove());
   overlay.addEventListener('click', e => { if(e.target === overlay) overlay.remove(); });
-  submitBtn.onclick = async () => {
+
+  // Join submit
+  overlay.querySelector('#_join_submit').onclick = async () => {
+    const orgNameInput = overlay.querySelector('#_join_org_name');
+    const tokenInput   = overlay.querySelector('#_join_token');
+    const errEl        = overlay.querySelector('#_join_error');
+    const btn          = overlay.querySelector('#_join_submit');
     const org_name = orgNameInput.value.trim();
     const token    = tokenInput.value.trim();
     if(!org_name || !token) { errEl.textContent = t('onboarding.err_enter_name_token'); errEl.style.display=''; return; }
-    submitBtn.disabled = true;
+    btn.disabled = true;
     try {
       const res  = await fetch('/org/join', {
-        method: 'POST', credentials: 'include',
-        headers: {'Content-Type':'application/json'},
+        method:'POST', credentials:'include',
+        headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ org_name, token }),
       });
       const data = await res.json();
-      if(data.ok) {
-        overlay.remove();
-        showToast(t('org.join_success'), 'success');
-        window.location.reload();
-      } else {
-        const msgs = {
-          org_limit_reached:           t('org.limit_reached_err'),
-          invalid_token_or_name:        t('onboarding.err_invalid_token'),
-          org_name_and_token_required:  t('onboarding.err_enter_name_token'),
-        };
+      if(data.ok) { overlay.remove(); showToast(t('org.join_success'), 'success'); window.location.reload(); }
+      else {
+        const msgs = { org_limit_reached: t('org.limit_reached_err'), invalid_token_or_name: t('onboarding.err_invalid_token') };
         errEl.textContent = msgs[data.error] || t('toast.error');
         errEl.style.display = '';
       }
     } catch { errEl.textContent = t('auth.err_connection'); errEl.style.display=''; }
-    finally  { submitBtn.disabled = false; }
+    finally  { btn.disabled = false; }
   };
-  setTimeout(() => orgNameInput.focus(), 50);
+
+  // Create submit
+  overlay.querySelector('#_create_submit').onclick = async () => {
+    const nameInput = overlay.querySelector('#_create_org_name');
+    const errEl     = overlay.querySelector('#_create_error');
+    const btn       = overlay.querySelector('#_create_submit');
+    const name = nameInput.value.trim();
+    if(!name) { errEl.textContent = t('onboarding.err_enter_name'); errEl.style.display=''; return; }
+    btn.disabled = true;
+    try {
+      const res  = await fetch('/org/create', {
+        method:'POST', credentials:'include',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json();
+      if(data.ok) { overlay.remove(); showToast(t('org.create_success'), 'success'); window.location.reload(); }
+      else {
+        const msgs = { org_limit_reached: t('org.limit_reached_err'), org_name_taken: t('superadmin.err_name_taken') };
+        errEl.textContent = msgs[data.error] || t('toast.error');
+        errEl.style.display = '';
+      }
+    } catch { errEl.textContent = t('auth.err_connection'); errEl.style.display=''; }
+    finally  { btn.disabled = false; }
+  };
+
+  setTimeout(() => overlay.querySelector('#_join_org_name').focus(), 50);
 }
 
 function openDeleteOrgModal(orgName) {
