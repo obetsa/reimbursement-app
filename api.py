@@ -351,6 +351,13 @@ def me():
     if notice:
         conn.execute("DELETE FROM org_deletion_notices WHERE id=%s", (notice['id'],))
         conn.commit()
+    needs_org_pick = False
+    if not flask_session.get('active_org_id'):
+        count = conn.execute(
+            "SELECT COUNT(*) as c FROM org_members WHERE user_id=%s AND left_at IS NULL",
+            (user_id,)
+        ).fetchone()['c']
+        needs_org_pick = count > 1
     conn.close()
     return jsonify({
         'id':               user_id,
@@ -360,6 +367,7 @@ def me():
         'is_superadmin':    bool(row['is_superadmin'])   if row else False,
         'plan':             (row['plan'] or 'free')       if row else 'free',
         'deletion_notice':  notice['org_name']            if notice else None,
+        'needs_org_pick':   needs_org_pick,
     })
 
 

@@ -345,6 +345,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     if(user.deletion_notice) {
       sessionStorage.setItem('_deletion_notice', user.deletion_notice);
     }
+    if(user.needs_org_pick) {
+      const listRes = await fetch('/org/list', { credentials: 'include' });
+      if(listRes.ok) {
+        const orgs = await listRes.json();
+        if(orgs.length > 1) { showOrgPicker(orgs); return; }
+      }
+    }
     const orgRes = await fetch('/org/me', { credentials: 'include' });
     if(orgRes.status === 404) {
       showOnboarding();

@@ -167,6 +167,35 @@ async function obSubmit() {
   }
 }
 
+// ── ORG PICKER ──
+function showOrgPicker(orgs) {
+  document.getElementById('loading-overlay').classList.add('hidden');
+  document.getElementById('auth-screen').classList.add('hidden');
+  const screen = document.getElementById('org-picker-screen');
+  if(screen) screen.classList.remove('hidden');
+  applyTranslations();
+  const list = document.getElementById('org-picker-list');
+  if(!list) return;
+  const roleLabel = { admin: 'Адміністратор', manager: 'Менеджер', user: 'Користувач' };
+  list.innerHTML = orgs.map(o => `
+    <button onclick="pickOrg('${o.id}')"
+      style="width:100%;padding:14px 16px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;text-align:left;transition:all 0.12s"
+      onmouseenter="this.style.borderColor='var(--accent)'"
+      onmouseleave="this.style.borderColor='var(--border)'">
+      <div style="font-size:14px;font-weight:600;color:var(--text1)">${o.name}</div>
+      <div style="font-size:12px;color:var(--text3);margin-top:2px">${roleLabel[o.role] || o.role}</div>
+    </button>`).join('');
+}
+
+async function pickOrg(orgId) {
+  const res = await fetch('/org/switch', {
+    method: 'POST', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ org_id: orgId }),
+  });
+  if(res.ok) window.location.reload();
+}
+
 // ── VERIFY EMAIL SCREEN ──
 function showVerifyEmailScreen(email) {
   document.getElementById('loading-overlay').classList.add('hidden');
