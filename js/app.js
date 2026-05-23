@@ -561,20 +561,20 @@ async function loadOrgMembers() {
           style="background:none;border:none;color:var(--red,#e05555);font-size:18px;cursor:pointer;padding:0 4px">✕</button>
         ` : `<span style="font-size:12px;color:var(--text3);padding:4px 8px">${roleLabel[m.role]}</span>`;
 
+      const isMob = window.innerWidth <= 768;
       return `
         <div style="padding:10px 0;border-bottom:1px solid var(--border);${isExcluded ? 'opacity:0.55' : ''}">
           <div style="display:flex;align-items:center;gap:10px">
             <div style="width:36px;height:36px;border-radius:50%;background:${avatarBg};color:${avatarColor};display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px;flex-shrink:0">
               ${(m.full_name || m.email || '?')[0].toUpperCase()}
             </div>
-            <div style="flex:1;min-width:0">
-              <div style="font-size:13px;font-weight:500;color:${nameColor}">${m.full_name || m.email}</div>
-              <div style="font-size:11px;color:var(--text3)">${m.email}${isExcluded ? ` · <span style="color:var(--red)">${t('org.excluded_label')}</span>` : ''}</div>
+            <div style="flex:1;min-width:0;overflow:hidden">
+              <div style="font-size:13px;font-weight:500;color:${nameColor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${m.full_name || m.email}</div>
+              <div style="font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${m.email}${isExcluded ? ` · <span style="color:var(--red)">${t('org.excluded_label')}</span>` : ''}</div>
             </div>
-            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-              ${controls}
-            </div>
+            ${!isMob ? `<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">${controls}</div>` : ''}
           </div>
+          ${isMob ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;padding-left:46px">${controls}</div>` : ''}
           ${companiesHtml}
         </div>`;
     };
