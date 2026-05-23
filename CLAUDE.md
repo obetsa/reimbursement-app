@@ -105,7 +105,7 @@ unprocessed_imports           — необроблені файли з Drive
 | `manager` | свої записи + компанії, які має доступ       |
 | `user`    | тільки перегляд (viewer)                     |
 
-## Поточний стан (станом на 21.05.2026)
+## Поточний стан (станом на 23.05.2026)
 
 **Гілка `feature/org-roles`** — активна розробка.
 
@@ -118,7 +118,7 @@ unprocessed_imports           — необроблені файли з Drive
 - API оновлено під org_id: всі ендпоінти фільтрують по org
 - Ролі: admin / manager / user (viewer прибрано)
 - Company access: org_member_companies, фільтрація по юзеру
-- i18n для auth/onboarding/org/verify/activate/invite (uk/de/en)
+- i18n для auth/onboarding/org/verify/activate/invite/superadmin (uk/de/en)
 - Вихід з org: м'яке виключення (left_at), повернення зберігає id
 - User role restrictions: hide write buttons у frontend
 - Адмін запрошує юзерів через email (activation link, 48г)
@@ -126,6 +126,8 @@ unprocessed_imports           — необроблені файли з Drive
 - Soft exclude / restore / permanent delete (з підтвердженням email)
 - Email верифікація: SMTP Gmail, verify + activate flow
 - Pending статус для незактивованих юзерів
+- Фаза 0 ✅: ізоляція файлів, superadmin, IDOR фікси, cascade delete, test_isolation
+- Фаза 1 ✅: multi-org (active_org_id в сесії, /org/list, /org/switch), ліміт 2 org для free, owner видаляє org (cascade + notices), Settings→Організація для всіх ролей, "Змінити організацію" модалка (join+create)
 - Тести: test_api 16/16 ✅, test_hierarchy 22/24, test_members 47/47 ✅, test_isolation 45/45 ✅
 
 Відкладено / наступне: див. Roadmap нижче.
@@ -143,6 +145,17 @@ unprocessed_imports           — необроблені файли з Drive
 | ✅ 0.3 | `test_isolation.py` — 45/45 | 5 IDOR вразливостей знайдено і виправлено |
 | ✅ 0.4 | `org_member_companies` — очистка при permanent delete | Виправлено |
 | ✅ 0.5 | Cascade delete org — `DELETE /superadmin/orgs/{id}` | Виправлено |
+
+### Фаза 1 — Multi-org ✅
+
+| # | Задача | Статус |
+|---|--------|--------|
+| ✅ 1.1 | `active_org_id` в сесії + `GET /org/list` + `POST /org/switch` | Готово |
+| ✅ 1.2 | Settings → Організація для всіх ролей (switcher, join, create) | Готово |
+| ✅ 1.3 | Ліміт: max 2 активні org на free акаунт (`users.plan`) | Готово |
+| ✅ 1.4 | Owner видаляє org (`DELETE /org/delete`) + `org_deletion_notices` | Готово |
+| ✅ 1.5 | "Змінити організацію" — модалка з табами join/create | Готово |
+| ⬜ 1.6 | PostgreSQL RLS | Відкладено |
 
 ### Фаза 1 — Multi-org
 
