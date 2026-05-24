@@ -473,25 +473,78 @@ def superadmin_list_orgs():
     user_id, err = require_superadmin(request, conn)
     if err: conn.close(); return err
     rows = conn.execute("""
-        SELECT o.id, o.name, o.created_at,
+        SELECT o.id, o.name, o.created_at, o.is_suspended,
                u.email  AS owner_email,
                u.full_name AS owner_name,
                (SELECT COUNT(*) FROM org_members m
                 WHERE m.org_id=o.id AND m.left_at IS NULL)          AS members_count,
                (SELECT COUNT(*) FROM records r
-                WHERE r.org_id=o.id AND (r.is_deleted=0 OR r.is_deleted IS NULL)) AS records_count
+                WHERE r.org_id=o.id AND (r.is_deleted=0 OR r.is_deleted IS NULL)) AS records_count,
+               (SELECT COUNT(*) FROM org_members m
+                JOIN users pu ON m.user_id=pu.id
+                WHERE m.org_id=o.id AND m.left_at IS NULL
+                  AND pu.password_hash='PENDING')                    AS pending_count,
+               (SELECT MAX(r.created_at) FROM records r
+                WHERE r.org_id=o.id AND (r.is_deleted=0 OR r.is_deleted IS NULL)) AS last_activity
         FROM organizations o
         JOIN users u ON o.owner_id=u.id
         ORDER BY o.created_at DESC
     """).fetchall()
     conn.close()
+    data_root = os.path.join(os.path.dirname(__file__), 'data')
     result = []
     for r in rows:
         d = dict(r)
         if d.get('created_at'):
             d['created_at'] = d['created_at'].isoformat()
+        if d.get('last_activity'):
+            d['last_activity'] = d['last_activity'].isoformat()
+        org_dir = os.path.join(data_root, d['id'])
+        size_bytes = 0
+        if os.path.isdir(org_dir):
+            for dirpath, _, filenames in os.walk(org_dir):
+                for fname in filenames:
+                    try:
+                        size_bytes += os.path.getsize(os.path.join(dirpath, fname))
+                    except OSError:
+                        pass
+        d['storage_mb'] = round(size_bytes / (1024 * 1024), 2)
         result.append(d)
     return jsonify(result)
+
+
+@app.route('/superadmin/stats', methods=['GET'])
+def superadmin_stats():
+    conn = get_db()
+    user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+
+    total_orgs = conn.execute("SELECT COUNT(*) AS c FROM organizations").fetchone()['c']
+    active_users = conn.execute(
+        "SELECT COUNT(DISTINCT user_id) AS c FROM org_members WHERE left_at IS NULL"
+    ).fetchone()['c']
+    total_records = conn.execute(
+        "SELECT COUNT(*) AS c FROM records WHERE is_deleted IS NULL OR is_deleted=0"
+    ).fetchone()['c']
+    conn.close()
+
+    total_storage_mb = 0.0
+    data_dir = os.path.join(os.path.dirname(__file__), 'data')
+    if os.path.isdir(data_dir):
+        for dirpath, dirnames, filenames in os.walk(data_dir):
+            for fname in filenames:
+                try:
+                    total_storage_mb += os.path.getsize(os.path.join(dirpath, fname))
+                except OSError:
+                    pass
+        total_storage_mb = round(total_storage_mb / (1024 * 1024), 2)
+
+    return jsonify({
+        'total_orgs': total_orgs,
+        'active_users': active_users,
+        'total_records': total_records,
+        'total_storage_mb': total_storage_mb
+    })
 
 
 @app.route('/superadmin/orgs/<org_id_to_delete>', methods=['DELETE'])
@@ -507,7 +560,18 @@ def superadmin_delete_org(org_id_to_delete):
         conn.close()
         return jsonify({'error': 'not_found'}), 404
 
-    # 1. Delete files from disk
+    # 1. Notify active members
+    members = conn.execute(
+        "SELECT user_id FROM org_members WHERE org_id=%s AND left_at IS NULL",
+        (org_id_to_delete,)
+    ).fetchall()
+    for m in members:
+        conn.execute(
+            "INSERT INTO org_deletion_notices (id, user_id, org_name) VALUES (%s,%s,%s)",
+            (str(uuid.uuid4()), m['user_id'], org['name'])
+        )
+
+    # 2. Delete files from disk
     org_folder = os.path.join(UPLOAD_FOLDER, DRIVE_ROOT, org_id_to_delete)
     if os.path.exists(org_folder):
         try:
@@ -515,7 +579,7 @@ def superadmin_delete_org(org_id_to_delete):
         except Exception as e:
             print(f'[delete_org] rmtree failed: {e}')
 
-    # 2. Collect PENDING users (only in this org) before deleting members
+    # 3. Collect PENDING users (only in this org) before deleting members
     pending_users = conn.execute("""
         SELECT u.id FROM users u
         JOIN org_members m ON m.user_id = u.id
@@ -527,7 +591,7 @@ def superadmin_delete_org(org_id_to_delete):
     """, (org_id_to_delete, org_id_to_delete)).fetchall()
     pending_ids = [r['id'] for r in pending_users]
 
-    # 3. Clean up data tables (NO ACTION FKs must go first)
+    # 4. Clean up data tables (NO ACTION FKs must go first)
     conn.execute("DELETE FROM unprocessed_imports WHERE org_id=%s", (org_id_to_delete,))
     conn.execute("DELETE FROM return_events WHERE record_id IN (SELECT id FROM records WHERE org_id=%s)", (org_id_to_delete,))
     conn.execute("DELETE FROM attachments  WHERE record_id IN (SELECT id FROM records WHERE org_id=%s)", (org_id_to_delete,))
@@ -535,17 +599,41 @@ def superadmin_delete_org(org_id_to_delete):
     conn.execute("DELETE FROM payment_instruments WHERE org_id=%s", (org_id_to_delete,))
     conn.execute("DELETE FROM companies           WHERE org_id=%s", (org_id_to_delete,))
 
-    # 4. Delete PENDING users and their verification tokens
+    # 5. Delete PENDING users and their verification tokens
     if pending_ids:
         placeholders = ','.join(['%s'] * len(pending_ids))
         conn.execute(f"DELETE FROM email_verifications WHERE user_id IN ({placeholders})", pending_ids)
         conn.execute(f"DELETE FROM users WHERE id IN ({placeholders})", pending_ids)
 
-    # 5. Delete org (cascades: org_members, org_member_companies, org_invites)
+    # 6. Delete org (cascades: org_members, org_member_companies, org_invites)
     conn.execute("DELETE FROM organizations WHERE id=%s", (org_id_to_delete,))
     conn.commit()
     conn.close()
     return jsonify({'ok': True, 'deleted_org': dict(org)})
+
+
+@app.route('/superadmin/orgs/<org_id_to_suspend>/suspend', methods=['POST'])
+def superadmin_suspend_org(org_id_to_suspend):
+    conn = get_db()
+    user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+    org = conn.execute("SELECT id FROM organizations WHERE id=%s", (org_id_to_suspend,)).fetchone()
+    if not org: conn.close(); return jsonify({'error': 'not_found'}), 404
+    conn.execute("UPDATE organizations SET is_suspended=TRUE WHERE id=%s", (org_id_to_suspend,))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
+
+
+@app.route('/superadmin/orgs/<org_id_to_suspend>/unsuspend', methods=['POST'])
+def superadmin_unsuspend_org(org_id_to_suspend):
+    conn = get_db()
+    user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+    org = conn.execute("SELECT id FROM organizations WHERE id=%s", (org_id_to_suspend,)).fetchone()
+    if not org: conn.close(); return jsonify({'error': 'not_found'}), 404
+    conn.execute("UPDATE organizations SET is_suspended=FALSE WHERE id=%s", (org_id_to_suspend,))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
 
 
 @app.route('/superadmin/orgs', methods=['POST'])
@@ -635,13 +723,17 @@ def org_me():
         conn.close()
         return jsonify({'error': 'no_org'}), 404
     row = conn.execute(
-        "SELECT o.id, o.name, o.invite_code, o.owner_id, m.role "
+        "SELECT o.id, o.name, o.invite_code, o.owner_id, o.is_suspended, m.role "
         "FROM org_members m JOIN organizations o ON m.org_id=o.id "
         "WHERE m.user_id=%s AND m.org_id=%s AND m.left_at IS NULL",
         (user_id, org_id)
     ).fetchone()
+    if not row: conn.close(); return jsonify({'error': 'no_org'}), 404
+    if row['is_suspended']:
+        sa_row = conn.execute("SELECT is_superadmin FROM users WHERE id=%s", (user_id,)).fetchone()
+        if not (sa_row and sa_row['is_superadmin']):
+            conn.close(); return jsonify({'error': 'org_suspended'}), 403
     conn.close()
-    if not row: return jsonify({'error': 'no_org'}), 404
     d = dict(row)
     d['is_owner'] = (d['owner_id'] == user_id)
     return jsonify(d)
@@ -1218,6 +1310,14 @@ def require_org(user_id, conn, min_role='user'):
     org_id, role = get_user_org(user_id, conn)
     if not org_id:
         return None, None, (jsonify({'error': 'no_org'}), 403)
+    sa_row = conn.execute("SELECT is_superadmin FROM users WHERE id=%s", (user_id,)).fetchone()
+    is_sa = sa_row and sa_row['is_superadmin']
+    if not is_sa:
+        suspended = conn.execute(
+            "SELECT is_suspended FROM organizations WHERE id=%s", (org_id,)
+        ).fetchone()
+        if suspended and suspended['is_suspended']:
+            return org_id, role, (jsonify({'error': 'org_suspended'}), 403)
     order = {'user': 0, 'manager': 1, 'admin': 2}
     if order.get(role, -1) < order.get(min_role, 0):
         return org_id, role, (jsonify({'error': 'forbidden'}), 403)

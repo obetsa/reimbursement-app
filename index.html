@@ -206,6 +206,9 @@
     </div>
     <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:16px" data-i18n="org_picker.title">В яку організацію зайти?</div>
     <div id="org-picker-list" style="display:flex;flex-direction:column;gap:8px"></div>
+    <div style="margin-top:20px;text-align:center;padding-top:16px;border-top:1px solid var(--border)">
+      <button onclick="signOut()" style="background:none;border:none;color:var(--text3);font-size:13px;cursor:pointer" data-i18n="sidebar.logout">Вийти</button>
+    </div>
   </div>
 </div>
 
@@ -906,6 +909,7 @@
       </div>
     </div>
     <div class="content" style="overflow-y:auto">
+      <div id="superadmin-stats" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px"></div>
       <div id="superadmin-orgs-list">
         <div style="text-align:center;padding:40px;color:var(--text3)" data-i18n="loading.text">Завантаження...</div>
       </div>

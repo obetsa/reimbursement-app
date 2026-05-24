@@ -176,15 +176,27 @@ function showOrgPicker(orgs) {
   applyTranslations();
   const list = document.getElementById('org-picker-list');
   if(!list) return;
-  const roleLabel = { admin: 'Адміністратор', manager: 'Менеджер', user: 'Користувач' };
-  list.innerHTML = orgs.map(o => `
+  const roleKey = { admin: 'org.role_admin', manager: 'org.role_manager', user: 'org.role_user' };
+  const roleBadgeColor = { admin: 'background:var(--accent);color:#fff', manager: 'background:#f59e0b;color:#fff', user: 'background:var(--bg3);color:var(--text2);border:1px solid var(--border)' };
+  const avatarColors = ['#6366f1','#0ea5e9','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899'];
+  list.innerHTML = orgs.map((o, i) => {
+    const initial = (o.name || '?')[0].toUpperCase();
+    const color = avatarColors[i % avatarColors.length];
+    const badgeStyle = roleBadgeColor[o.role] || 'background:var(--bg3);color:var(--text2)';
+    const roleText = roleKey[o.role] ? t(roleKey[o.role]) : o.role;
+    return `
     <button onclick="pickOrg('${o.id}')"
-      style="width:100%;padding:14px 16px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;text-align:left;transition:all 0.12s"
+      style="width:100%;padding:12px 14px;background:var(--bg2);border:1.5px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;text-align:left;transition:border-color 0.12s;display:flex;align-items:center;gap:12px;box-sizing:border-box"
       onmouseenter="this.style.borderColor='var(--accent)'"
       onmouseleave="this.style.borderColor='var(--border)'">
-      <div style="font-size:14px;font-weight:600;color:var(--text1)">${o.name}</div>
-      <div style="font-size:12px;color:var(--text3);margin-top:2px">${roleLabel[o.role] || o.role}</div>
-    </button>`).join('');
+      <div style="width:40px;height:40px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:17px;font-weight:700;color:#fff">${initial}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:600;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${o.name}</div>
+        <div style="margin-top:5px"><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;${badgeStyle}">${roleText}</span></div>
+      </div>
+      <svg width="16" height="16" fill="none" stroke="var(--text3)" stroke-width="2" viewBox="0 0 24 24" style="flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M9 18l6-6-6-6"/></svg>
+    </button>`;
+  }).join('');
 }
 
 async function pickOrg(orgId) {

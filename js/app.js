@@ -36,6 +36,9 @@ async function initApp(user) {
       if(orgEl) orgEl.textContent = currentOrg.name;
       const navEl = document.getElementById('nav-org-members');
       if(navEl) navEl.style.display = '';
+    } else {
+      const orgData = await orgRes.json().catch(() => ({}));
+      if(orgData.error === 'org_suspended') { showOrgSuspendedPage(); return; }
     }
   } catch { }
 
@@ -76,6 +79,58 @@ async function initApp(user) {
     showApp();
     showToast(t('toast.load_error'), 'error');
   }
+}
+
+function showOrgSuspendedPage() {
+  showApp();
+  document.getElementById('app')?.remove();
+  const el = document.createElement('div');
+  el.className = 'auth-screen';
+  el.innerHTML = `
+    <div class="auth-box" style="text-align:center">
+      <div style="width:56px;height:56px;border-radius:50%;background:var(--red-bg);display:flex;align-items:center;justify-content:center;margin:0 auto 20px">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
+      </div>
+      <div style="font-size:18px;font-weight:600;color:var(--text);margin-bottom:10px">${t('org.suspended_title')}</div>
+      <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:28px">${t('org.suspended_msg')}</div>
+      <button class="btn btn-primary" style="width:100%;margin-bottom:10px" onclick="openSuspendedOrgSwitcher()">${t('org.suspended_switch')}</button>
+      <button class="btn btn-secondary" style="width:100%" onclick="signOut()">${t('sidebar.logout')}</button>
+    </div>`;
+  document.body.appendChild(el);
+}
+
+async function openSuspendedOrgSwitcher() {
+  const res = await fetch('/org/list', { credentials: 'include' });
+  const orgs = res.ok ? await res.json() : [];
+  const others = orgs.filter(o => !o.is_active);
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+
+  const orgRows = others.length
+    ? others.map(o => `
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+          <div style="flex:1;font-size:13px;color:var(--text)">${o.name}</div>
+          <button class="btn btn-primary" style="font-size:12px;padding:4px 12px"
+            onclick="orgSwitchTo('${o.id}')">${t('org.switch_btn')}</button>
+        </div>`).join('')
+    : `<div style="font-size:13px;color:var(--text2);padding:12px 0;text-align:center">${t('org.no_other_orgs')}</div>`;
+
+  overlay.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:400px;width:100%">
+      <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:16px">${t('org.suspended_switch')}</div>
+      ${orgRows}
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button class="btn btn-ghost" style="flex:1;font-size:13px"
+          onclick="openChangeOrgModal(false);this.closest('[style*=fixed]').remove()">${t('org.join_another_btn')}</button>
+        <button class="btn btn-secondary" style="font-size:13px"
+          onclick="this.closest('[style*=fixed]').remove()">✕</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
 }
 
 function canWrite() {
@@ -753,9 +808,29 @@ async function loadSuperadmin() {
   const el = document.getElementById('superadmin-orgs-list');
   if(!el) return;
   try {
-    const res  = await fetch('/superadmin/orgs', { credentials: 'include' });
+    const [res, statsRes] = await Promise.all([
+      fetch('/superadmin/orgs',   { credentials: 'include' }),
+      fetch('/superadmin/stats',  { credentials: 'include' })
+    ]);
     if(!res.ok) { el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--red)">${t('toast.forbidden')}</div>`; return; }
-    const orgs = await res.json();
+    const orgs  = await res.json();
+    const stats = statsRes.ok ? await statsRes.json() : null;
+    if(stats) {
+      const statsEl = document.getElementById('superadmin-stats');
+      if(statsEl) {
+        const cards = [
+          { label: t('superadmin.stats_orgs'),    value: stats.total_orgs },
+          { label: t('superadmin.stats_users'),   value: stats.active_users },
+          { label: t('superadmin.stats_records'), value: stats.total_records },
+          { label: t('superadmin.stats_storage'), value: stats.total_storage_mb + ' MB' }
+        ];
+        statsEl.innerHTML = cards.map(c => `
+          <div style="flex:1;min-width:120px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 18px">
+            <div style="font-size:22px;font-weight:600;color:var(--text1)">${c.value}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:4px">${c.label}</div>
+          </div>`).join('');
+      }
+    }
     if(!orgs.length) {
       el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text3)">${t('superadmin.no_orgs')}</div>`;
       return;
@@ -765,14 +840,28 @@ async function loadSuperadmin() {
       el.innerHTML = orgs.map(o => `
         <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px">
-            <div style="font-size:14px;font-weight:600;color:var(--text1)">${o.name}</div>
-            <button class="btn btn-danger" style="font-size:11px;padding:3px 8px;flex-shrink:0"
-              onclick="superadminDeleteOrg('${o.id}','${o.name.replace(/'/g,"\\'")}')">🗑</button>
+            <div>
+              <span style="font-size:14px;font-weight:600;color:var(--text1)">${o.name}</span>
+              ${o.is_suspended ? `<span style="font-size:10px;background:var(--red);color:#fff;border-radius:4px;padding:1px 5px;margin-left:6px">suspended</span>` : ''}
+            </div>
+            <div style="display:flex;gap:4px;flex-shrink:0">
+              ${o.is_suspended
+                ? `<button class="btn btn-secondary" style="font-size:11px;padding:3px 8px"
+                    onclick="superadminToggleSuspend('${o.id}',false,'${o.name.replace(/'/g,"\\'")}')">▶</button>`
+                : `<button class="btn btn-secondary" style="font-size:11px;padding:3px 8px;opacity:0.7"
+                    onclick="superadminToggleSuspend('${o.id}',true,'${o.name.replace(/'/g,"\\'")}')">⏸</button>`
+              }
+              <button class="btn btn-danger" style="font-size:11px;padding:3px 8px"
+                onclick="superadminDeleteOrg('${o.id}','${o.name.replace(/'/g,"\\'")}')">🗑</button>
+            </div>
           </div>
           <div style="font-size:12px;color:var(--text2);margin-bottom:6px">${o.owner_email}</div>
-          <div style="display:flex;gap:16px;font-size:11px;color:var(--text3)">
+          <div style="display:flex;gap:16px;font-size:11px;color:var(--text3);flex-wrap:wrap">
             <span>${t('superadmin.col_members')}: <strong style="color:var(--text2)">${o.members_count}</strong></span>
+            ${o.pending_count > 0 ? `<span>${t('superadmin.col_pending')}: <strong style="color:var(--yellow,#f59e0b)">${o.pending_count}</strong></span>` : ''}
             <span>${t('superadmin.col_records')}: <strong style="color:var(--text2)">${o.records_count}</strong></span>
+            <span>${t('superadmin.col_last_activity')}: <strong style="color:var(--text2)">${o.last_activity ? o.last_activity.slice(0,10) : '—'}</strong></span>
+            ${o.storage_mb > 0 ? `<span>${t('superadmin.col_storage')}: <strong style="color:var(--text2)">${o.storage_mb} MB</strong></span>` : ''}
             <span>${o.created_at ? o.created_at.slice(0,10) : '—'}</span>
           </div>
         </div>`).join('');
@@ -784,7 +873,10 @@ async function loadSuperadmin() {
               <th style="padding:10px 12px;text-align:left">${t('superadmin.col_name')}</th>
               <th style="padding:10px 12px;text-align:left">${t('superadmin.col_admin')}</th>
               <th style="padding:10px 12px;text-align:center">${t('superadmin.col_members')}</th>
+              <th style="padding:10px 12px;text-align:center">${t('superadmin.col_pending')}</th>
               <th style="padding:10px 12px;text-align:center">${t('superadmin.col_records')}</th>
+              <th style="padding:10px 12px;text-align:left">${t('superadmin.col_last_activity')}</th>
+              <th style="padding:10px 12px;text-align:right">${t('superadmin.col_storage')}</th>
               <th style="padding:10px 12px;text-align:left">${t('superadmin.col_created')}</th>
               <th style="padding:10px 12px;text-align:center"></th>
             </tr>
@@ -795,9 +887,18 @@ async function loadSuperadmin() {
                 <td style="padding:10px 12px;font-weight:500;color:var(--text1)">${o.name}</td>
                 <td style="padding:10px 12px;color:var(--text2)">${o.owner_email}</td>
                 <td style="padding:10px 12px;text-align:center">${o.members_count}</td>
+                <td style="padding:10px 12px;text-align:center">${o.pending_count > 0 ? `<span style="color:var(--yellow,#f59e0b);font-weight:600">${o.pending_count}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
                 <td style="padding:10px 12px;text-align:center">${o.records_count}</td>
+                <td style="padding:10px 12px;color:var(--text3);font-size:11px">${o.last_activity ? o.last_activity.slice(0,10) : '—'}</td>
+                <td style="padding:10px 12px;text-align:right;font-size:11px;color:var(--text3)">${o.storage_mb > 0 ? o.storage_mb + ' MB' : '—'}</td>
                 <td style="padding:10px 12px;color:var(--text3);font-size:11px">${o.created_at ? o.created_at.slice(0,10) : '—'}</td>
-                <td style="padding:6px 12px;text-align:center">
+                <td style="padding:6px 12px;text-align:center;white-space:nowrap">
+                  ${o.is_suspended
+                    ? `<button class="btn btn-secondary" style="font-size:11px;padding:3px 8px;margin-right:4px"
+                        onclick="superadminToggleSuspend('${o.id}',false,'${o.name.replace(/'/g,"\\'")}')">▶ ${t('superadmin.unsuspend_btn')}</button>`
+                    : `<button class="btn btn-secondary" style="font-size:11px;padding:3px 8px;margin-right:4px;opacity:0.7"
+                        onclick="superadminToggleSuspend('${o.id}',true,'${o.name.replace(/'/g,"\\'")}')">⏸ ${t('superadmin.suspend_btn')}</button>`
+                  }
                   <button class="btn btn-danger" style="font-size:11px;padding:3px 8px"
                     onclick="superadminDeleteOrg('${o.id}','${o.name.replace(/'/g,"\\'")}')"
                     title="${t('superadmin.delete_org_btn')}">🗑</button>
@@ -884,6 +985,19 @@ function openCreateOrgModal() {
   };
 
   setTimeout(() => orgInput.focus(), 50);
+}
+
+async function superadminToggleSuspend(orgId, suspend, orgName) {
+  const action = suspend ? 'suspend' : 'unsuspend';
+  const res = await fetch(`/superadmin/orgs/${orgId}/${action}`, {
+    method: 'POST', credentials: 'include'
+  });
+  if(res.ok) {
+    showToast(t(suspend ? 'superadmin.suspend_toast' : 'superadmin.unsuspend_toast'), suspend ? 'error' : 'success');
+    loadSuperadmin();
+  } else {
+    showToast(t('toast.error'), 'error');
+  }
 }
 
 function superadminDeleteOrg(orgId, orgName) {

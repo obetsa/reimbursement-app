@@ -14,9 +14,11 @@
 ## Запуск локально
 
 ```bash
-python api.py           # сервер на http://localhost:5500
-python test_api.py      # тести (потрібна змінна SESSION_COOKIE або аргумент)
-python test_hierarchy.py
+python api.py                        # сервер на http://localhost:5500
+python tests/test_api.py             # тести (потрібна змінна SESSION_COOKIE або аргумент)
+python tests/test_hierarchy.py
+python tests/test_members.py
+python tests/test_isolation.py       # не потребує cookie — створює тестових юзерів сам
 ```
 
 PostgreSQL має бути запущений локально. `DATABASE_URL` береться з `.env`.
@@ -36,17 +38,27 @@ css/
   style.css                        # основні стилі
   components.css                   # компоненти
   mobile.css                       # мобільна адаптація
-schema_pg.sql                      # базова схема PostgreSQL
-migrate_001_org_hierarchy.sql      # organizations, org_members, org_id
-migrate_002_leave_org.sql          # org_members.left_at (soft exclude)
-migrate_003_email_verification.sql # users.email_verified, email_verifications
-test_api.py                        # базові API тести (16/16)
-test_hierarchy.py                  # тести ієрархії org (22/24)
-test_members.py                    # тести member management (47/47)
+migrations/
+  schema_pg.sql                    # базова схема PostgreSQL (запуск: psql ... < migrations/schema_pg.sql)
+  migrate_001_org_hierarchy.sql    # organizations, org_members, org_id
+  migrate_002_leave_org.sql        # org_members.left_at (soft exclude)
+  migrate_002_seed_orgs.py         # seed: org для існуючих юзерів
+  migrate_003_email_verification.sql # users.email_verified, email_verifications
+  migrate_004_file_paths.py        # міграція шляхів файлів
+  migrate_005_superadmin.sql       # is_superadmin
+  migrate_006_multiorg.sql         # users.plan, org_deletion_notices
+tests/
+  test_api.py                      # базові API тести (16/16)
+  test_hierarchy.py                # тести ієрархії org (22/24)
+  test_members.py                  # тести member management (47/47)
+  test_isolation.py                # ізоляція org (45/45)
 requirements.txt
 Dockerfile
 docker-compose.yaml
 docs/                              # нотатки, план, story.md (.gitignore)
+
+> Всі нові тести створювати в папці `tests/`.
+> Всі нові SQL/Python міграції створювати в папці `migrations/`.
 ```
 
 ## Ієрархія БД (зверху вниз)
@@ -110,7 +122,7 @@ unprocessed_imports           — необроблені файли з Drive
 **Гілка `feature/org-roles`** — активна розробка.
 
 Зроблено:
-- SQLite → PostgreSQL (psycopg2, `schema_pg.sql`)
+- SQLite → PostgreSQL (psycopg2, `migrations/schema_pg.sql`)
 - Реєстрація/логін (email+password + Google OAuth)
 - Ієрархія org: organizations, org_members
 - Onboarding: створити/приєднатись до org (invite token 10 хв)
@@ -185,6 +197,8 @@ unprocessed_imports           — необроблені файли з Drive
 | SA.6 | Видалити org | З підтвердженням (як permanent delete у members) |
 | SA.7 | Пошук по назві org або email адміна | Filter в таблиці |
 | SA.8 | Змінити план org | free → pro (після Billing фази) |
+| SA.9 | Список всіх юзерів | Окрема вкладка/секція: email, ім'я, org(и), статус (active/pending/suspended), дата реєстрації |
+| SA.10 | Створити юзера від SA | SA вводить email + ім'я + вибирає: (а) надіслати activation link на email, або (б) задати пароль одразу. Юзер створюється без org — далі або SA додає його до org, або юзер сам приєднується по invite code. **Примітка:** перевірити поведінку при видаленні org — що відбувається з юзерами (чи отримують повідомлення, чи залишаються без org) |
 
 ### Фаза 2 — Tenant features
 
@@ -193,6 +207,23 @@ unprocessed_imports           — необроблені файли з Drive
 | 2.1 | Tenant settings | `organizations.settings JSONB` — валюта, назва в листах |
 | 2.2 | Usage limits (Free tier) | 3 члени / 100 записів / 5 компаній |
 | 2.3 | `plan` колонка на org | `free` / `pro` |
+
+### Фаза 2.5 — Error pages (критично перед деплоєм)
+
+Зараз всі помилки — це toast або порожній блок. Немає жодної окремої сторінки для типових HTTP-стану.
+
+| # | Сторінка | Коли показується |
+|---|----------|-----------------|
+| E.1 | 403 — Немає доступу | Спроба дії без прав (forbidden) |
+| E.2 | Org suspended | org заблокована superadmin (SA.5) |
+| E.3 | 404 — Не знайдено | Неіснуючий запис/сторінка |
+| E.4 | 500 — Помилка сервера | Неочікувана помилка backend |
+
+**Деталі реалізації:**
+- SPA: окремий `showErrorPage(type)` у `app.js`, який замінює main-контент
+- Кожна сторінка: ілюстрація/іконка + текст + кнопка "На головну"
+- `org_suspended`: специфічний текст "Організацію заблоковано адміністратором"
+- Backend вже повертає правильні коди (403, 404) — тільки frontend не обробляє
 
 ### Фаза 3 — Monetization
 
@@ -231,6 +262,14 @@ unprocessed_imports           — необроблені файли з Drive
 - Повністю прибрати кнопку (тільки адмін може виключати)
 - Замінити на "Запит на вихід" → адмін підтверджує
 - Залишити як є (юзер відповідальний за свої дії)
+
+**Валюта в записах — дизайн під питанням**
+Зараз `currency` зберігається в кожному записі, але захардкоджена як `EUR` (api.py дефолт + db.js + форма не має select).
+Варіанти:
+- Додати select валюти у форму запису (EUR / UAH / USD / інші)
+- Додати `default_currency` в org settings як підказку для форми
+- Залишити як є (один юзер — одна валюта)
+Повернутись якщо з'явиться реальна потреба.
 
 **Google Drive — перевірити перед підключенням**
 Drive sync вимкнено (`DRIVE_ENABLED = False`). Перед увімкненням:
