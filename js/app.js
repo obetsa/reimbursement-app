@@ -831,12 +831,29 @@ async function loadSuperadmin() {
           </div>`).join('');
       }
     }
-    if(!orgs.length) {
-      el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text3)">${t('superadmin.no_orgs')}</div>`;
-      return;
-    }
-    const isMobile = window.innerWidth <= 768;
-    if(isMobile) {
+    _saOrgs = orgs;
+    _renderSAOrgs(orgs);
+  } catch { el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--red)">${t('toast.error')}</div>`; }
+}
+
+let _saOrgs = [];
+
+function superadminFilter(q) {
+  const f = q.trim().toLowerCase();
+  _renderSAOrgs(f ? _saOrgs.filter(o =>
+    o.name.toLowerCase().includes(f) || o.owner_email.toLowerCase().includes(f)
+  ) : _saOrgs);
+}
+
+function _renderSAOrgs(orgs) {
+  const el = document.getElementById('superadmin-orgs-list');
+  if(!el) return;
+  if(!orgs.length) {
+    el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text3)">${t('superadmin.no_orgs')}</div>`;
+    return;
+  }
+  const isMobile = window.innerWidth <= 768;
+  if(isMobile) {
       el.innerHTML = orgs.map(o => `
         <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px">
@@ -907,7 +924,6 @@ async function loadSuperadmin() {
           </tbody>
         </table>`;
     }
-  } catch { el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--red)">${t('toast.error')}</div>`; }
 }
 
 function openCreateOrgModal() {

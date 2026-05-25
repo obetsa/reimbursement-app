@@ -910,6 +910,12 @@
     </div>
     <div class="content" style="overflow-y:auto">
       <div id="superadmin-stats" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px"></div>
+      <div style="margin-bottom:16px">
+        <input id="superadmin-search" type="text"
+          style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text1);font-size:13px;box-sizing:border-box"
+          data-i18n-placeholder="superadmin.search_placeholder"
+          oninput="superadminFilter(this.value)">
+      </div>
       <div id="superadmin-orgs-list">
         <div style="text-align:center;padding:40px;color:var(--text3)" data-i18n="loading.text">Завантаження...</div>
       </div>
