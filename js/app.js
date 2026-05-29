@@ -39,6 +39,8 @@ async function initApp(user) {
     } else {
       const orgData = await orgRes.json().catch(() => ({}));
       if(orgData.error === 'org_suspended') { showOrgSuspendedPage(); return; }
+      if(orgRes.status === 403) { showErrorPage('403'); return; }
+      if(orgRes.status >= 500) { showErrorPage('500'); return; }
     }
   } catch { }
 
@@ -76,9 +78,43 @@ async function initApp(user) {
     showApp();
   } catch(e) {
     console.error('initApp error', e);
-    showApp();
-    showToast(t('toast.load_error'), 'error');
+    if(e.status === 403) showErrorPage('403');
+    else if(e.status === 404) showErrorPage('404');
+    else showErrorPage('500');
   }
+}
+
+function showErrorPage(type) {
+  showApp();
+  document.getElementById('app')?.remove();
+  const cfg = {
+    '403': {
+      color: '#f59e0b', bg: 'rgba(245,158,11,0.12)',
+      icon: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
+      title: t('error.403_title'), desc: t('error.403_desc'),
+    },
+    '404': {
+      color: 'var(--text3)', bg: 'var(--bg3)',
+      icon: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
+      title: t('error.404_title'), desc: t('error.404_desc'),
+    },
+    '500': {
+      color: 'var(--red)', bg: 'var(--red-bg)',
+      icon: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
+      title: t('error.500_title'), desc: t('error.500_desc'),
+    },
+  };
+  const c = cfg[type] || cfg['500'];
+  const el = document.createElement('div');
+  el.className = 'auth-screen';
+  el.innerHTML = `
+    <div class="auth-box" style="text-align:center">
+      <div style="width:56px;height:56px;border-radius:50%;background:${c.bg};display:flex;align-items:center;justify-content:center;margin:0 auto 20px">${c.icon}</div>
+      <div style="font-size:18px;font-weight:600;color:var(--text1);margin-bottom:10px">${c.title}</div>
+      <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:28px">${c.desc}</div>
+      <button class="btn btn-primary" style="width:100%" onclick="window.location.reload()">${t('error.go_home')}</button>
+    </div>`;
+  document.body.appendChild(el);
 }
 
 function showOrgSuspendedPage() {

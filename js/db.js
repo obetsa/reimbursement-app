@@ -8,7 +8,11 @@ async function apiGet(path) {
   const res = await fetch(API_URL + path, {
     headers: { 'Authorization': 'Bearer ' + token }
   });
-  if(!res.ok) throw new Error(await res.text());
+  if(!res.ok) {
+    const err = new Error(await res.text());
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
 }
 
