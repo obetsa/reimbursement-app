@@ -804,6 +804,223 @@ function openInviteUserModal() {
 // SUPERADMIN
 // ══════════════════════════════════════════
 
+function saTab(name) {
+  const tabs = { orgs: 'sa-tab-orgs', users: 'sa-tab-users' };
+  const contents = { orgs: 'sa-orgs-content', users: 'sa-users-content' };
+  Object.keys(tabs).forEach(k => {
+    const btn = document.getElementById(tabs[k]);
+    const cnt = document.getElementById(contents[k]);
+    const active = k === name;
+    if(btn) { btn.style.color = active ? 'var(--accent)' : 'var(--text3)'; btn.style.borderBottomColor = active ? 'var(--accent)' : 'transparent'; }
+    if(cnt) cnt.style.display = active ? '' : 'none';
+  });
+  const btnOrg  = document.getElementById('sa-btn-new-org');
+  const btnUser = document.getElementById('sa-btn-new-user');
+  if(btnOrg)  btnOrg.style.display  = name === 'orgs'  ? '' : 'none';
+  if(btnUser) btnUser.style.display = name === 'users' ? '' : 'none';
+  if(name === 'users') loadSAUsers();
+}
+
+function openCreateSAUserModal() {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:400px;width:100%">
+      <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:20px">${t('superadmin.create_user_title')}</div>
+      <div style="margin-bottom:12px">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">Email *</div>
+        <input id="_sau_email" type="email" placeholder="user@example.com"
+          style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:16px">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">${t('superadmin.col_fullname')}</div>
+        <input id="_sau_name" type="text"
+          style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:16px">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:8px">${t('superadmin.create_user_mode')}</div>
+        <div style="display:flex;gap:8px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text1)">
+            <input type="radio" name="_sau_mode" value="invite" checked onchange="saUserModeChange()"> ${t('superadmin.mode_invite')}
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text1)">
+            <input type="radio" name="_sau_mode" value="password" onchange="saUserModeChange()"> ${t('superadmin.mode_password')}
+          </label>
+        </div>
+      </div>
+      <div id="_sau_pwd_block" style="display:none;margin-bottom:16px">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">${t('superadmin.create_user_pwd')}</div>
+        <input id="_sau_pwd" type="password" placeholder="min 6 символів"
+          style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box">
+      </div>
+      <div id="_sau_error" style="display:none;color:var(--red);font-size:12px;margin-bottom:10px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="_sau_cancel" class="btn btn-ghost">${t('org.delete_permanent_cancel')}</button>
+        <button id="_sau_submit" class="btn btn-primary">${t('superadmin.create_user_btn')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#_sau_cancel').onclick = () => overlay.remove();
+  overlay.addEventListener('click', e => { if(e.target === overlay) overlay.remove(); });
+  overlay.querySelector('#_sau_submit').onclick = async () => {
+    const email    = overlay.querySelector('#_sau_email').value.trim();
+    const fullName = overlay.querySelector('#_sau_name').value.trim();
+    const mode     = overlay.querySelector('input[name="_sau_mode"]:checked').value;
+    const password = overlay.querySelector('#_sau_pwd').value;
+    const errEl    = overlay.querySelector('#_sau_error');
+    errEl.style.display = 'none';
+    if(!email) { errEl.textContent = t('superadmin.err_email_required'); errEl.style.display = ''; return; }
+    if(mode === 'password' && password.length < 6) { errEl.textContent = t('superadmin.err_pwd_short'); errEl.style.display = ''; return; }
+    const btn = overlay.querySelector('#_sau_submit');
+    btn.disabled = true;
+    const res = await fetch('/superadmin/users', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, full_name: fullName, mode, password }),
+    });
+    btn.disabled = false;
+    if(res.ok) {
+      overlay.remove();
+      showToast(t('superadmin.create_user_toast'), 'success');
+      loadSAUsers();
+    } else {
+      const d = await res.json();
+      errEl.textContent = d.error === 'email_exists' ? t('superadmin.err_email_exists') : t('toast.error');
+      errEl.style.display = '';
+    }
+  };
+  setTimeout(() => overlay.querySelector('#_sau_email').focus(), 50);
+}
+
+function saUserModeChange() {
+  const mode = document.querySelector('input[name="_sau_mode"]:checked')?.value;
+  const block = document.getElementById('_sau_pwd_block');
+  if(block) block.style.display = mode === 'password' ? '' : 'none';
+}
+
+async function superadminToggleUserSuspend(userId, suspend, email) {
+  const action = suspend ? 'suspend' : 'unsuspend';
+  const res = await fetch(`/superadmin/users/${userId}/${action}`, { method: 'POST', credentials: 'include' });
+  if(res.ok) { showToast(t(suspend ? 'superadmin.suspend_user_toast' : 'superadmin.unsuspend_user_toast'), 'success'); loadSAUsers(); }
+  else showToast(t('toast.error'), 'error');
+}
+
+function superadminDeleteUser(userId, email) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:400px;width:100%">
+      <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:8px">${t('superadmin.delete_user_title')}</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:16px">${t('superadmin.delete_user_desc').replace('{email}', email)}</div>
+      <input id="_sud_input" type="text" placeholder="${email}"
+        style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box;margin-bottom:16px">
+      <div id="_sud_error" style="display:none;color:var(--red);font-size:12px;margin-bottom:10px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="_sud_cancel" class="btn btn-ghost">${t('org.delete_permanent_cancel')}</button>
+        <button id="_sud_confirm" class="btn btn-danger" disabled style="opacity:0.4">${t('superadmin.delete_user_btn')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const input = overlay.querySelector('#_sud_input');
+  const confirmBtn = overlay.querySelector('#_sud_confirm');
+  input.addEventListener('input', () => {
+    const match = input.value.trim() === email;
+    confirmBtn.disabled = !match;
+    confirmBtn.style.opacity = match ? '1' : '0.4';
+  });
+  overlay.querySelector('#_sud_cancel').onclick = () => overlay.remove();
+  overlay.addEventListener('click', e => { if(e.target === overlay) overlay.remove(); });
+  confirmBtn.onclick = async () => {
+    confirmBtn.disabled = true;
+    const res = await fetch(`/superadmin/users/${userId}`, { method: 'DELETE', credentials: 'include' });
+    overlay.remove();
+    if(res.ok) { showToast(t('superadmin.delete_user_toast'), 'success'); loadSAUsers(); }
+    else showToast(t('toast.error'), 'error');
+  };
+  setTimeout(() => input.focus(), 50);
+}
+
+async function loadSAUsers() {
+  const el = document.getElementById('superadmin-users-list');
+  if(!el) return;
+  try {
+    const res = await fetch('/superadmin/users', { credentials: 'include' });
+    if(!res.ok) { el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--red)">${t('toast.forbidden')}</div>`; return; }
+    const users = await res.json();
+    _renderSAUsers(users);
+  } catch { el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--red)">${t('toast.error')}</div>`; }
+}
+
+function _renderSAUsers(users) {
+  const el = document.getElementById('superadmin-users-list');
+  if(!el) return;
+  if(!users.length) { el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text3)">${t('superadmin.no_users')}</div>`; return; }
+  const statusStyle = { active: 'background:#dcfce7;color:#16a34a', pending: 'background:#fef9c3;color:#b45309', unverified: 'background:var(--bg3);color:var(--text3)' };
+  const statusLabel = { active: t('superadmin.status_active'), pending: t('superadmin.status_pending'), unverified: t('superadmin.status_unverified') };
+  const isMobile = window.innerWidth <= 768;
+  if(isMobile) {
+    el.innerHTML = users.map(u => `
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px">
+          <div>
+            <div style="font-size:13px;font-weight:600;color:var(--text1)">${u.email}${u.is_suspended ? ` <span style="font-size:10px;background:var(--red);color:#fff;border-radius:4px;padding:1px 5px">blocked</span>` : ''}</div>
+            ${u.full_name ? `<div style="font-size:12px;color:var(--text2);margin-top:2px">${u.full_name}</div>` : ''}
+          </div>
+          <span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;flex-shrink:0;${statusStyle[u.status]}">${statusLabel[u.status]}</span>
+        </div>
+        <div style="font-size:11px;color:var(--text3);display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;margin-bottom:8px">
+          ${u.is_superadmin ? `<span style="background:var(--accent);color:#fff;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600">SA</span>` : ''}
+          ${u.orgs.length ? `<span>${u.orgs.join(', ')}</span>` : `<span style="color:var(--text3)">${t('superadmin.no_org')}</span>`}
+          ${u.registered_at ? `<span>${u.registered_at.slice(0,10)}</span>` : ''}
+        </div>
+        ${!u.is_superadmin ? `<div style="display:flex;gap:4px">
+          ${u.is_suspended
+            ? `<button class="btn btn-secondary" style="font-size:11px;padding:3px 8px" onclick="superadminToggleUserSuspend('${u.id}',false,'${u.email.replace(/'/g,"\\'")}')">▶ ${t('superadmin.unsuspend_user_btn')}</button>`
+            : `<button class="btn btn-secondary" style="font-size:11px;padding:3px 8px;opacity:0.7" onclick="superadminToggleUserSuspend('${u.id}',true,'${u.email.replace(/'/g,"\\'")}')">⏸ ${t('superadmin.suspend_user_btn')}</button>`
+          }
+          <button class="btn btn-danger" style="font-size:11px;padding:3px 8px" onclick="superadminDeleteUser('${u.id}','${u.email.replace(/'/g,"\\'")}')">🗑</button>
+        </div>` : ''}
+      </div>`).join('');
+  } else {
+    el.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="border-bottom:2px solid var(--border);color:var(--text3);font-size:11px;font-weight:600">
+            <th style="padding:10px 12px;text-align:left">${t('superadmin.col_email')}</th>
+            <th style="padding:10px 12px;text-align:left">${t('superadmin.col_fullname')}</th>
+            <th style="padding:10px 12px;text-align:left">${t('superadmin.col_status')}</th>
+            <th style="padding:10px 12px;text-align:left">${t('superadmin.col_orgs')}</th>
+            <th style="padding:10px 12px;text-align:left">${t('superadmin.col_registered')}</th>
+            <th style="padding:10px 12px;text-align:center"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${users.map(u => `
+          <tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:10px 12px;color:var(--text1)">
+              ${u.is_superadmin ? `<span style="background:var(--accent);color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700;margin-right:5px">SA</span>` : ''}
+              ${u.email}
+              ${u.is_suspended ? `<span style="font-size:10px;background:var(--red);color:#fff;border-radius:4px;padding:1px 5px;margin-left:4px">blocked</span>` : ''}
+            </td>
+            <td style="padding:10px 12px;color:var(--text2)">${u.full_name || '—'}</td>
+            <td style="padding:10px 12px"><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;${statusStyle[u.status]}">${statusLabel[u.status]}</span></td>
+            <td style="padding:10px 12px;color:var(--text2);font-size:12px">${u.orgs.length ? u.orgs.join(', ') : `<span style="color:var(--text3)">—</span>`}</td>
+            <td style="padding:10px 12px;color:var(--text3);font-size:11px">${u.registered_at ? u.registered_at.slice(0,10) : '—'}</td>
+            <td style="padding:6px 12px;text-align:center;white-space:nowrap">
+              ${!u.is_superadmin ? `
+              ${u.is_suspended
+                ? `<button class="btn btn-secondary" style="font-size:11px;padding:3px 8px;margin-right:4px" onclick="superadminToggleUserSuspend('${u.id}',false,'${u.email.replace(/'/g,"\\'")}')">▶ ${t('superadmin.unsuspend_user_btn')}</button>`
+                : `<button class="btn btn-secondary" style="font-size:11px;padding:3px 8px;margin-right:4px;opacity:0.7" onclick="superadminToggleUserSuspend('${u.id}',true,'${u.email.replace(/'/g,"\\'")}')">⏸ ${t('superadmin.suspend_user_btn')}</button>`
+              }
+              <button class="btn btn-danger" style="font-size:11px;padding:3px 8px" onclick="superadminDeleteUser('${u.id}','${u.email.replace(/'/g,"\\'")}')">🗑</button>
+              ` : '—'}
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  }
+}
+
 async function loadSuperadmin() {
   const el = document.getElementById('superadmin-orgs-list');
   if(!el) return;

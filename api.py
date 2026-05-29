@@ -220,7 +220,7 @@ def send_activation_email(to_email, full_name, org_name, activate_url):
         return False
     try:
         msg = MIMEMultipart('alternative')
-        msg['Subject'] = f'Запрошення в {org_name} — Reimbursement App'
+        msg['Subject'] = f'Запрошення в {org_name} — Reimbursement App' if org_name else 'Активація акаунту — Reimbursement App'
         msg['From']    = SMTP_FROM
         msg['To']      = to_email
         name_str = full_name or to_email
@@ -236,7 +236,7 @@ display:flex;align-items:center;justify-content:center;font-size:22px">💳</div
   </div>
   <p style="color:#ccc;font-size:14px;margin:0 0 8px">Привіт, {name_str}!</p>
   <p style="color:#ccc;font-size:14px;margin:0 0 24px">
-    Тебе запросили в організацію <strong style="color:#fff">{org_name}</strong>.<br>
+    {f'Тебе запросили в організацію <strong style="color:#fff">{org_name}</strong>.<br>' if org_name else ''}
     Натисни кнопку нижче щоб встановити пароль і активувати акаунт:
   </p>
   <a href="{activate_url}"
@@ -342,8 +342,11 @@ def me():
         return jsonify({'error': 'Unauthorized'}), 401
     conn = get_db()
     row  = conn.execute(
-        "SELECT email_verified, is_superadmin, plan FROM users WHERE id=%s", (user_id,)
+        "SELECT email_verified, is_superadmin, plan, is_suspended FROM users WHERE id=%s", (user_id,)
     ).fetchone()
+    if row and row['is_suspended'] and not row['is_superadmin']:
+        conn.close(); flask_session.clear()
+        return jsonify({'error': 'user_suspended'}), 403
     notice = conn.execute(
         "SELECT id, org_name FROM org_deletion_notices WHERE user_id=%s ORDER BY created_at LIMIT 1",
         (user_id,)
@@ -441,7 +444,7 @@ def auth_activate_post():
         return jsonify({'error': 'invalid_or_expired_token'}), 400
     pwd_hash = hashlib.sha256(password.encode()).hexdigest()
     conn.execute(
-        "UPDATE users SET password_hash=%s, email_verified=TRUE WHERE id=%s",
+        "UPDATE users SET password_hash=%s, email_verified=TRUE, registered_at=now() WHERE id=%s",
         (pwd_hash, row['user_id'])
     )
     conn.execute("DELETE FROM email_verifications WHERE token=%s", (token,))
@@ -465,6 +468,135 @@ def require_superadmin(request, conn):
     if not row or not row['is_superadmin']:
         return None, (jsonify({'error': 'forbidden'}), 403)
     return user_id, None
+
+
+@app.route('/superadmin/users', methods=['GET'])
+def superadmin_list_users():
+    conn = get_db()
+    user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+    rows = conn.execute("""
+        SELECT u.id, u.email, u.full_name, u.email_verified, u.is_superadmin,
+               u.plan, u.password_hash, u.created_at, u.registered_at, u.is_suspended,
+               array_agg(DISTINCT o.name) FILTER (WHERE o.name IS NOT NULL) AS orgs
+        FROM users u
+        LEFT JOIN org_members m ON m.user_id = u.id AND m.left_at IS NULL
+        LEFT JOIN organizations o ON o.id = m.org_id
+        GROUP BY u.id, u.email, u.full_name, u.email_verified, u.is_superadmin,
+                 u.plan, u.password_hash, u.created_at, u.registered_at, u.is_suspended
+        ORDER BY u.created_at DESC
+    """).fetchall()
+    conn.close()
+    result = []
+    for r in rows:
+        if r['password_hash'] == 'PENDING':
+            status = 'pending'
+        elif r['email_verified']:
+            status = 'active'
+        else:
+            status = 'unverified'
+        result.append({
+            'id':           r['id'],
+            'email':        r['email'],
+            'full_name':    r['full_name'] or '',
+            'status':       status,
+            'is_superadmin': bool(r['is_superadmin']),
+            'plan':         r['plan'] or 'free',
+            'orgs':         r['orgs'] or [],
+            'created_at':    r['created_at'].isoformat()    if r['created_at']    else None,
+            'registered_at': r['registered_at'].isoformat() if r['registered_at'] else None,
+            'is_suspended':  bool(r['is_suspended']),
+        })
+    return jsonify(result)
+
+
+@app.route('/superadmin/users', methods=['POST'])
+def superadmin_create_user():
+    conn = get_db()
+    user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+    data      = request.json or {}
+    email     = (data.get('email') or '').strip().lower()
+    full_name = (data.get('full_name') or '').strip()
+    mode      = data.get('mode')  # 'invite' or 'password'
+    password  = data.get('password') or ''
+    if not email:
+        conn.close(); return jsonify({'error': 'email_required'}), 400
+    if mode not in ('invite', 'password'):
+        conn.close(); return jsonify({'error': 'invalid_mode'}), 400
+    if mode == 'password' and len(password) < 6:
+        conn.close(); return jsonify({'error': 'password_too_short'}), 400
+    existing = conn.execute("SELECT id FROM users WHERE email=%s", (email,)).fetchone()
+    if existing:
+        conn.close(); return jsonify({'error': 'email_exists'}), 409
+    new_id = str(uuid.uuid4())
+    if mode == 'password':
+        pwd_hash = hashlib.sha256(password.encode()).hexdigest()
+        conn.execute(
+            "INSERT INTO users (id, email, password_hash, full_name, email_verified, registered_at) VALUES (%s,%s,%s,%s,TRUE,now())",
+            (new_id, email, pwd_hash, full_name)
+        )
+        conn.commit(); conn.close()
+        return jsonify({'ok': True, 'user_id': new_id})
+    else:
+        conn.execute(
+            "INSERT INTO users (id, email, password_hash, full_name, email_verified) VALUES (%s,%s,'PENDING',%s,FALSE)",
+            (new_id, email, full_name)
+        )
+        token      = secrets.token_urlsafe(32)
+        expires_at = datetime.utcnow() + __import__('datetime').timedelta(hours=48)
+        conn.execute(
+            "INSERT INTO email_verifications (id, user_id, token, expires_at) VALUES (%s,%s,%s,%s)",
+            (str(uuid.uuid4()), new_id, token, expires_at)
+        )
+        conn.commit(); conn.close()
+        activate_url = request.host_url.rstrip('/') + f'/auth/activate?token={token}'
+        send_activation_email(email, full_name, None, activate_url)
+        return jsonify({'ok': True, 'user_id': new_id})
+
+
+@app.route('/superadmin/users/<target_user_id>/suspend', methods=['POST'])
+def superadmin_suspend_user(target_user_id):
+    conn = get_db()
+    user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+    target = conn.execute("SELECT is_superadmin FROM users WHERE id=%s", (target_user_id,)).fetchone()
+    if target and target['is_superadmin']:
+        conn.close(); return jsonify({'error': 'cannot_act_on_superadmin'}), 400
+    conn.execute("UPDATE users SET is_suspended=TRUE WHERE id=%s", (target_user_id,))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
+
+
+@app.route('/superadmin/users/<target_user_id>/unsuspend', methods=['POST'])
+def superadmin_unsuspend_user(target_user_id):
+    conn = get_db()
+    user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+    conn.execute("UPDATE users SET is_suspended=FALSE WHERE id=%s", (target_user_id,))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
+
+
+@app.route('/superadmin/users/<target_user_id>', methods=['DELETE'])
+def superadmin_delete_user(target_user_id):
+    conn = get_db()
+    user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+    if target_user_id == user_id:
+        conn.close(); return jsonify({'error': 'cannot_delete_self'}), 400
+    target = conn.execute("SELECT is_superadmin FROM users WHERE id=%s", (target_user_id,)).fetchone()
+    if target and target['is_superadmin']:
+        conn.close(); return jsonify({'error': 'cannot_act_on_superadmin'}), 400
+    conn.execute("DELETE FROM return_events WHERE record_id IN (SELECT id FROM records WHERE user_id=%s)", (target_user_id,))
+    conn.execute("DELETE FROM attachments  WHERE record_id IN (SELECT id FROM records WHERE user_id=%s)", (target_user_id,))
+    conn.execute("DELETE FROM records WHERE user_id=%s", (target_user_id,))
+    conn.execute("DELETE FROM org_deletion_notices WHERE user_id=%s", (target_user_id,))
+    conn.execute("DELETE FROM email_verifications WHERE user_id=%s", (target_user_id,))
+    conn.execute("DELETE FROM org_members WHERE user_id=%s", (target_user_id,))
+    conn.execute("DELETE FROM users WHERE id=%s", (target_user_id,))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
 
 
 @app.route('/superadmin/orgs', methods=['GET'])

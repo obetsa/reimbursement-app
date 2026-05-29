@@ -905,19 +905,35 @@
     <div class="topbar">
       <div class="topbar-title" data-i18n="superadmin.title">🔑 Адмін панель</div>
       <div class="topbar-actions">
-        <button class="btn btn-primary" onclick="openCreateOrgModal()" data-i18n="superadmin.create_org_btn">+ Нова організація</button>
+        <button id="sa-btn-new-org" class="btn btn-primary" onclick="openCreateOrgModal()" data-i18n="superadmin.create_org_btn">+ Нова організація</button>
+        <button id="sa-btn-new-user" class="btn btn-primary" style="display:none" onclick="openCreateSAUserModal()" data-i18n="superadmin.create_user_btn">+ Новий юзер</button>
       </div>
     </div>
     <div class="content" style="overflow-y:auto">
-      <div id="superadmin-stats" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px"></div>
-      <div style="margin-bottom:16px">
-        <input id="superadmin-search" type="text"
-          style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text1);font-size:13px;box-sizing:border-box"
-          data-i18n-placeholder="superadmin.search_placeholder"
-          oninput="superadminFilter(this.value)">
+      <div style="display:flex;border-bottom:2px solid var(--border);margin-bottom:20px;gap:0">
+        <button id="sa-tab-orgs" onclick="saTab('orgs')"
+          style="padding:8px 18px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:600;color:var(--accent);border-bottom:2px solid var(--accent);margin-bottom:-2px"
+          data-i18n="superadmin.tab_orgs">Організації</button>
+        <button id="sa-tab-users" onclick="saTab('users')"
+          style="padding:8px 18px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:600;color:var(--text3);border-bottom:2px solid transparent;margin-bottom:-2px"
+          data-i18n="superadmin.tab_users">Користувачі</button>
       </div>
-      <div id="superadmin-orgs-list">
-        <div style="text-align:center;padding:40px;color:var(--text3)" data-i18n="loading.text">Завантаження...</div>
+      <div id="sa-orgs-content">
+        <div id="superadmin-stats" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px"></div>
+        <div style="margin-bottom:16px">
+          <input id="superadmin-search" type="text"
+            style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text1);font-size:13px;box-sizing:border-box"
+            data-i18n-placeholder="superadmin.search_placeholder"
+            oninput="superadminFilter(this.value)">
+        </div>
+        <div id="superadmin-orgs-list">
+          <div style="text-align:center;padding:40px;color:var(--text3)" data-i18n="loading.text">Завантаження...</div>
+        </div>
+      </div>
+      <div id="sa-users-content" style="display:none">
+        <div id="superadmin-users-list">
+          <div style="text-align:center;padding:40px;color:var(--text3)" data-i18n="loading.text">Завантаження...</div>
+        </div>
       </div>
     </div>
   </div>
