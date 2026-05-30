@@ -47,11 +47,15 @@ migrations/
   migrate_004_file_paths.py        # міграція шляхів файлів
   migrate_005_superadmin.sql       # is_superadmin
   migrate_006_multiorg.sql         # users.plan, org_deletion_notices
+  migrate_007_suspended.sql        # organizations.is_suspended
+  migrate_008_registered_at.sql    # users.registered_at
+  migrate_009_user_suspended.sql   # users.is_suspended
 tests/
   test_api.py                      # базові API тести (16/16)
   test_hierarchy.py                # тести ієрархії org (22/24)
   test_members.py                  # тести member management (47/47)
   test_isolation.py                # ізоляція org (45/45)
+  test_superadmin.py               # SA: delete org + deletion notices (11/11)
 requirements.txt
 Dockerfile
 docker-compose.yaml
@@ -66,13 +70,16 @@ docs/                              # нотатки, план, story.md (.gitign
 ```
 users                         — акаунти (email+password або Google OAuth)
 ├── email_verified BOOLEAN
+├── registered_at TIMESTAMP   — коли активував акаунт (≠ created_at = коли створено/запрошено)
+├── is_suspended BOOLEAN       — заблоковано superadmin
 └── password_hash = 'PENDING' — юзер запрошений але не активований
 
 email_verifications           — токени активації / email верифікації
 └── → users.id
 
 organizations                 — верхній рівень, org належить owner_id
-└── → users.id (owner_id)
+├── → users.id (owner_id)
+└── is_suspended BOOLEAN       — заблоковано superadmin (SA.5)
 
 org_invites                   — токени запрошення (10 хв)
 └── → organizations.id
@@ -117,7 +124,7 @@ unprocessed_imports           — необроблені файли з Drive
 | `manager` | свої записи + компанії, які має доступ       |
 | `user`    | тільки перегляд (viewer)                     |
 
-## Поточний стан (станом на 23.05.2026)
+## Поточний стан (станом на 30.05.2026)
 
 **Гілка `feature/org-roles`** — активна розробка.
 
@@ -140,7 +147,11 @@ unprocessed_imports           — необроблені файли з Drive
 - Pending статус для незактивованих юзерів
 - Фаза 0 ✅: ізоляція файлів, superadmin, IDOR фікси, cascade delete, test_isolation
 - Фаза 1 ✅: multi-org (active_org_id в сесії, /org/list, /org/switch), ліміт 2 org для free, owner видаляє org (cascade + notices), Settings→Організація для всіх ролей, "Змінити організацію" модалка (join+create)
-- Тести: test_api 16/16 ✅, test_hierarchy 22/24, test_members 47/47 ✅, test_isolation 45/45 ✅
+- Superadmin панель ✅: SA.1–SA.7, SA.9–SA.10 (статистика, org/users списки, пошук, suspend/delete org та users, створення users)
+- Фаза 2.5 ✅: error pages — 403, 404, 500, org suspended, user suspended (з кнопкою "Вийти")
+- Org picker redesign: картки з аватаром, badge ролі, стрілка
+- `users.registered_at` — дата активації акаунту (окремо від created_at)
+- Тести: test_api 16/16 ✅, test_hierarchy 22/24 ⚠️, test_members 47/47 ✅, test_isolation 45/45 ✅, test_superadmin 11/11 ✅
 
 Відкладено / наступне: див. Roadmap нижче.
 
@@ -169,37 +180,21 @@ unprocessed_imports           — необроблені файли з Drive
 | ✅ 1.5 | "Змінити організацію" — модалка з табами join/create | Готово |
 | ⬜ 1.6 | PostgreSQL RLS | Відкладено |
 
-### Фаза 1 — Multi-org
+### Superadmin панель
 
-| # | Задача | Деталі |
+| # | Задача | Статус |
 |---|--------|--------|
-| 1.1 | `active_org_id` в сесії + `GET /org/list` + `POST /org/switch` | API знає яка org активна |
-| 1.2 | Org switcher в Налаштування → Організація | Не в sidebar — рідкісна дія |
-| 1.3 | Ліміт: max 2 активні org на free акаунт | `users.plan DEFAULT 'free'`; superadmin без ліміту |
-| 1.4 | Видалення org owner'ом | `DELETE /org/delete`; сповіщення для членів (`user_notifications`) |
-| 1.5 | Onboarding: "Приєднатись до ще однієї org" | Для юзерів вже в якійсь org |
-| 1.6 | PostgreSQL RLS | Другий шар захисту після application-level |
-
-**Правила ліміту:**
-- Free: max 2 активні org (left_at IS NULL)
-- Premium / Superadmin: без ліміту
-- Перевірка в: POST /org/join, POST /org/create, POST /org/members/invite
-
-### Superadmin панель — доповнення (після Фази 0)
-
-| # | Задача | Деталі |
-|---|--------|--------|
-| SA.1 | Статистика-картки вгорі | Всього org / активних юзерів / записів / storage |
-| SA.2 | Pending юзерів в таблиці | Скільки не активували акаунт по кожній org |
-| SA.3 | Остання активність | Коли org востаннє додавала запис |
-| SA.4 | Storage per org | Скільки МБ займає кожна org |
-| SA.5 | Заблокувати/розблокувати org | Поле `is_suspended`, тимчасово відключити доступ |
-| SA.6 | Видалити org | З підтвердженням (як permanent delete у members) |
-| SA.7 | Пошук по назві org або email адміна | Filter в таблиці |
-| SA.8 | Змінити план org | free → pro (після Billing фази) |
-| SA.9 | Список всіх юзерів | Окрема вкладка/секція: email, ім'я, org(и), статус (active/pending/suspended), дата реєстрації |
-| SA.10 | Створити юзера від SA | SA вводить email + ім'я + вибирає: (а) надіслати activation link на email, або (б) задати пароль одразу. Юзер створюється без org — далі або SA додає його до org, або юзер сам приєднується по invite code. **Примітка:** перевірити поведінку при видаленні org — що відбувається з юзерами (чи отримують повідомлення, чи залишаються без org) |
-| SA.11 | Фільтри + сортування в списку користувачів | Пошук по email/імені, фільтр по статусу (active/pending/blocked), сортування по даті реєстрації або email. Аналогічно до SA.7 для org |
+| ✅ SA.1 | Статистика-картки вгорі (org / users / records / storage) | Готово |
+| ✅ SA.2 | Pending юзерів в таблиці org | Готово |
+| ✅ SA.3 | Остання активність org | Готово |
+| ✅ SA.4 | Storage per org (МБ) | Готово |
+| ✅ SA.5 | Заблокувати/розблокувати org (`is_suspended`) | Готово |
+| ✅ SA.6 | Видалити org з підтвердженням | Готово |
+| ✅ SA.7 | Пошук по назві org або email адміна | Готово |
+| ⬜ SA.8 | Змінити план org (free → pro) | Після Billing фази |
+| ✅ SA.9 | Список всіх користувачів (email, ім'я, org(и), статус, дата реєстрації) | Готово |
+| ✅ SA.10 | Створити користувача від SA (invite link або пароль одразу, без org) | Готово |
+| ⬜ SA.11 | Фільтри + сортування в списку користувачів (пошук, статус, дата) | Відкладено |
 
 ### Фаза 2 — Tenant features
 
@@ -209,22 +204,17 @@ unprocessed_imports           — необроблені файли з Drive
 | 2.2 | Usage limits (Free tier) | 3 члени / 100 записів / 5 компаній |
 | 2.3 | `plan` колонка на org | `free` / `pro` |
 
-### Фаза 2.5 — Error pages (критично перед деплоєм)
+### Фаза 2.5 — Error pages ✅
 
-Зараз всі помилки — це toast або порожній блок. Немає жодної окремої сторінки для типових HTTP-стану.
+| # | Сторінка | Статус |
+|---|----------|--------|
+| ✅ E.1 | 403 — Немає доступу | Готово |
+| ✅ E.2 | Org suspended — "Організацію заблоковано" | Готово |
+| ✅ E.3 | 404 — Не знайдено | Готово |
+| ✅ E.4 | 500 — Помилка сервера | Готово |
+| ✅ E.5 | User suspended — "Акаунт заблоковано" + кнопка Вийти | Готово |
 
-| # | Сторінка | Коли показується |
-|---|----------|-----------------|
-| E.1 | 403 — Немає доступу | Спроба дії без прав (forbidden) |
-| E.2 | Org suspended | org заблокована superadmin (SA.5) |
-| E.3 | 404 — Не знайдено | Неіснуючий запис/сторінка |
-| E.4 | 500 — Помилка сервера | Неочікувана помилка backend |
-
-**Деталі реалізації:**
-- SPA: окремий `showErrorPage(type)` у `app.js`, який замінює main-контент
-- Кожна сторінка: ілюстрація/іконка + текст + кнопка "На головну"
-- `org_suspended`: специфічний текст "Організацію заблоковано адміністратором"
-- Backend вже повертає правильні коди (403, 404) — тільки frontend не обробляє
+`showErrorPage(type)` у `app.js` — замінює main-контент, іконка + текст + кнопка.
 
 ### Фаза 3 — Monetization
 
