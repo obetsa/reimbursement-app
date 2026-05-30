@@ -103,6 +103,12 @@ function showErrorPage(type) {
       icon: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
       title: t('error.500_title'), desc: t('error.500_desc'),
     },
+    'user_suspended': {
+      color: 'var(--red)', bg: 'var(--red-bg)',
+      icon: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>`,
+      title: t('error.user_suspended_title'), desc: t('error.user_suspended_desc'),
+      signOut: true,
+    },
   };
   const c = cfg[type] || cfg['500'];
   const el = document.createElement('div');
@@ -112,7 +118,10 @@ function showErrorPage(type) {
       <div style="width:56px;height:56px;border-radius:50%;background:${c.bg};display:flex;align-items:center;justify-content:center;margin:0 auto 20px">${c.icon}</div>
       <div style="font-size:18px;font-weight:600;color:var(--text1);margin-bottom:10px">${c.title}</div>
       <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:28px">${c.desc}</div>
-      <button class="btn btn-primary" style="width:100%" onclick="window.location.reload()">${t('error.go_home')}</button>
+      ${c.signOut
+        ? `<button class="btn btn-danger" style="width:100%" onclick="signOut()">${t('error.sign_out')}</button>`
+        : `<button class="btn btn-primary" style="width:100%" onclick="window.location.reload()">${t('error.go_home')}</button>`
+      }
     </div>`;
   document.body.appendChild(el);
 }
@@ -432,6 +441,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadSavedLang();
 
   const user = await authGetCurrentUser();
+  if(user && user.__suspended) {
+    document.getElementById('loading-overlay').classList.add('hidden');
+    showErrorPage('user_suspended');
+    return;
+  }
   if(user) {
     if(user.deletion_notice) {
       sessionStorage.setItem('_deletion_notice', user.deletion_notice);

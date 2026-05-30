@@ -68,7 +68,13 @@ async function authSubmit() {
 async function authGetCurrentUser() {
   try {
     const res = await fetch('/auth/me', { credentials: 'include' });
-    if (!res.ok) return null;
+    if(!res.ok) {
+      if(res.status === 403) {
+        const d = await res.json().catch(() => ({}));
+        if(d.error === 'user_suspended') return { __suspended: true };
+      }
+      return null;
+    }
     return await res.json();
   } catch {
     return null;
