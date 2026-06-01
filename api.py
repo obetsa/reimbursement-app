@@ -855,7 +855,7 @@ def org_me():
         conn.close()
         return jsonify({'error': 'no_org'}), 404
     row = conn.execute(
-        "SELECT o.id, o.name, o.invite_code, o.owner_id, o.is_suspended, m.role "
+        "SELECT o.id, o.name, o.invite_code, o.owner_id, o.is_suspended, o.plan, m.role "
         "FROM org_members m JOIN organizations o ON m.org_id=o.id "
         "WHERE m.user_id=%s AND m.org_id=%s AND m.left_at IS NULL",
         (user_id, org_id)
@@ -869,6 +869,26 @@ def org_me():
     d = dict(row)
     d['is_owner'] = (d['owner_id'] == user_id)
     return jsonify(d)
+
+
+@app.route('/org/usage', methods=['GET'])
+def org_usage():
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role = get_user_org(user_id, conn)
+    if not org_id:
+        conn.close()
+        return jsonify({'error': 'no_org'}), 404
+    org = conn.execute("SELECT plan FROM organizations WHERE id=%s", (org_id,)).fetchone()
+    plan = (org['plan'] or 'free') if org else 'free'
+    usage = get_org_usage(org_id, conn)
+    conn.close()
+    return jsonify({
+        'plan': plan,
+        'usage': usage,
+        'limits': FREE_LIMITS if plan == 'free' else None,
+    })
 
 
 @app.route('/org/create', methods=['POST'])
@@ -975,6 +995,9 @@ def org_member_invite():
     conn = get_db()
     org_id, admin_role, err = require_org(user_id, conn, min_role='admin')
     if err: conn.close(); return err
+    if not check_free_limit(org_id, 'members', conn):
+        conn.close()
+        return jsonify({'error': 'limit_reached', 'resource': 'members', 'limit': FREE_LIMITS['members']}), 403
     org      = conn.execute("SELECT name FROM organizations WHERE id=%s", (org_id,)).fetchone()
     org_name = org['name'] if org else ''
     existing = conn.execute("SELECT id, password_hash FROM users WHERE email=%s", (email,)).fetchone()
@@ -1405,6 +1428,30 @@ def check_org_limit(user_id, conn):
     return count < ORG_LIMIT_FREE
 
 
+FREE_LIMITS = {'members': 3, 'records': 100, 'companies': 5}
+
+def get_org_usage(org_id, conn):
+    """Return current usage counts for an org."""
+    members   = conn.execute(
+        "SELECT COUNT(*) as c FROM org_members WHERE org_id=%s AND left_at IS NULL", (org_id,)
+    ).fetchone()['c']
+    records   = conn.execute(
+        "SELECT COUNT(*) as c FROM records WHERE org_id=%s AND (is_deleted IS NULL OR is_deleted=0)", (org_id,)
+    ).fetchone()['c']
+    companies = conn.execute(
+        "SELECT COUNT(*) as c FROM companies WHERE org_id=%s AND (is_active IS NULL OR is_active=1)", (org_id,)
+    ).fetchone()['c']
+    return {'members': members, 'records': records, 'companies': companies}
+
+def check_free_limit(org_id, resource, conn):
+    """Returns True if org can add more of 'resource'. Always True for pro/premium orgs."""
+    org = conn.execute("SELECT plan FROM organizations WHERE id=%s", (org_id,)).fetchone()
+    if not org or (org['plan'] or 'free') != 'free':
+        return True
+    usage = get_org_usage(org_id, conn)
+    return usage[resource] < FREE_LIMITS[resource]
+
+
 def get_user_org(user_id, conn=None):
     """Return (org_id, role) for active org, or (None, None) if not in any org.
     Uses active_org_id from session; falls back to first available org."""
@@ -1489,6 +1536,9 @@ def create_company():
     conn = get_db()
     org_id, role, err = require_org(user_id, conn, min_role='manager')
     if err: conn.close(); return err
+    if not check_free_limit(org_id, 'companies', conn):
+        conn.close()
+        return jsonify({'error': 'limit_reached', 'resource': 'companies', 'limit': FREE_LIMITS['companies']}), 403
     data = request.json
     company_id = str(uuid.uuid4())
     conn.execute(
@@ -1834,6 +1884,9 @@ def create_record():
     conn = get_db()
     org_id, role, err = require_org(user_id, conn, min_role='manager')
     if err: conn.close(); return err
+    if not check_free_limit(org_id, 'records', conn):
+        conn.close()
+        return jsonify({'error': 'limit_reached', 'resource': 'records', 'limit': FREE_LIMITS['records']}), 403
 
     data = request.json
     record_id = str(uuid.uuid4())

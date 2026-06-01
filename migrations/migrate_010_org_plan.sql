@@ -1,0 +1,1 @@
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS plan VARCHAR(20) DEFAULT 'free';

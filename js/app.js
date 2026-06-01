@@ -2,6 +2,9 @@ const DRIVE_ENABLED = false;
 
 function _errMsg(e) {
   const m = (e && e.message) || '';
+  if(m === 'limit_reached' && e.data) {
+    return t('limit.' + e.data.resource).replace('{limit}', e.data.limit);
+  }
   if(m.includes('forbidden') || m.includes('no_org')) return t('toast.forbidden');
   return t('toast.error');
 }
@@ -561,13 +564,15 @@ async function loadOrgMembers() {
     if(!isAdmin) { container.innerHTML = ''; }
 
     if(orgInfoEl && orgData) {
-      // Fetch org list and user plan
-      const [listRes, meRes] = await Promise.all([
-        fetch('/org/list', { credentials: 'include' }),
-        fetch('/auth/me',  { credentials: 'include' }),
+      // Fetch org list, user plan and usage
+      const [listRes, meRes, usageRes] = await Promise.all([
+        fetch('/org/list',   { credentials: 'include' }),
+        fetch('/auth/me',    { credentials: 'include' }),
+        fetch('/org/usage',  { credentials: 'include' }),
       ]);
-      const orgList = listRes.ok ? await listRes.json() : [];
-      const meData  = meRes.ok  ? await meRes.json()  : {};
+      const orgList   = listRes.ok  ? await listRes.json()  : [];
+      const meData    = meRes.ok    ? await meRes.json()    : {};
+      const usageData = usageRes.ok ? await usageRes.json() : null;
       const plan    = meData.plan || 'free';
       const isSA    = meData.is_superadmin;
       const atLimit = !isSA && plan !== 'premium' && orgList.length >= 2;
@@ -592,9 +597,33 @@ async function loadOrgMembers() {
           ${atLimit ? `<span style="color:var(--red);margin-left:6px">${t('org.limit_reached')}</span>` : ''}
         </div>`;
 
+      // Usage bars (free plan only, for admin)
+      const usageHtml = (isAdmin && usageData && usageData.limits) ? (() => {
+        const u = usageData.usage, l = usageData.limits;
+        const bar = (used, max, key) => {
+          const pct = Math.min(100, Math.round(used / max * 100));
+          const color = pct >= 100 ? 'var(--red)' : pct >= 80 ? '#f59e0b' : 'var(--accent)';
+          return `<div style="margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2);margin-bottom:3px">
+              <span>${t('limit.label_' + key)}</span><span style="color:${color}">${used} / ${max}</span>
+            </div>
+            <div style="height:4px;border-radius:2px;background:var(--bg3)">
+              <div style="height:4px;border-radius:2px;background:${color};width:${pct}%"></div>
+            </div>
+          </div>`;
+        };
+        return `<div style="margin-top:12px;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm)">
+          <div style="font-size:11px;font-weight:600;color:var(--text3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">${t('limit.section_title')}</div>
+          ${bar(u.members, l.members, 'members')}
+          ${bar(u.records, l.records, 'records')}
+          ${bar(u.companies, l.companies, 'companies')}
+        </div>`;
+      })() : '';
+
       orgInfoEl.innerHTML = `
         <div>${switcherHtml}</div>
         ${limitHtml}
+        ${usageHtml}
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
           <button onclick="openChangeOrgModal(${atLimit})" class="btn btn-ghost" style="font-size:12px">${t('org.join_another_btn')}</button>
           ${orgData.role !== 'admin' ? `<button onclick="leaveOrg()" class="btn btn-danger" style="font-size:12px">${t('org.leave_btn')}</button>` : ''}
@@ -840,7 +869,11 @@ function openInviteUserModal() {
         loadOrgMembers();
       } else {
         const msgs = { already_in_org: t('onboarding.err_already_in_org'), email_required: t('invite.err_email_required') };
-        errEl.textContent = msgs[data.error] || t('toast.error');
+        if(data.error === 'limit_reached') {
+          errEl.textContent = t('limit.members').replace('{limit}', data.limit);
+        } else {
+          errEl.textContent = msgs[data.error] || t('toast.error');
+        }
         errEl.style.display = '';
       }
     } catch { errEl.textContent = t('auth.err_connection'); errEl.style.display=''; }
