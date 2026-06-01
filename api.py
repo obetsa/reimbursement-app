@@ -605,7 +605,7 @@ def superadmin_list_orgs():
     user_id, err = require_superadmin(request, conn)
     if err: conn.close(); return err
     rows = conn.execute("""
-        SELECT o.id, o.name, o.created_at, o.is_suspended,
+        SELECT o.id, o.name, o.created_at, o.is_suspended, o.plan,
                u.email  AS owner_email,
                u.full_name AS owner_name,
                (SELECT COUNT(*) FROM org_members m
@@ -766,6 +766,22 @@ def superadmin_unsuspend_org(org_id_to_suspend):
     conn.execute("UPDATE organizations SET is_suspended=FALSE WHERE id=%s", (org_id_to_suspend,))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
+
+
+@app.route('/superadmin/orgs/<org_id>/set-plan', methods=['POST'])
+def superadmin_set_org_plan(org_id):
+    conn = get_db()
+    user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+    data = request.json or {}
+    plan = data.get('plan', 'free')
+    if plan not in ('free', 'pro'):
+        conn.close(); return jsonify({'error': 'invalid_plan'}), 400
+    org = conn.execute("SELECT id FROM organizations WHERE id=%s", (org_id,)).fetchone()
+    if not org: conn.close(); return jsonify({'error': 'not_found'}), 404
+    conn.execute("UPDATE organizations SET plan=%s WHERE id=%s", (plan, org_id))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True, 'plan': plan})
 
 
 @app.route('/superadmin/orgs', methods=['POST'])
@@ -1428,7 +1444,7 @@ def check_org_limit(user_id, conn):
     return count < ORG_LIMIT_FREE
 
 
-FREE_LIMITS = {'members': 3, 'records': 100, 'companies': 5}
+FREE_LIMITS = {'members': 10, 'records': 100, 'companies': 5}
 
 def get_org_usage(org_id, conn):
     """Return current usage counts for an org."""

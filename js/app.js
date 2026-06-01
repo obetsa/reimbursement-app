@@ -1162,6 +1162,8 @@ function _renderSAOrgs(orgs) {
               ${o.is_suspended ? `<span style="font-size:10px;background:var(--red);color:#fff;border-radius:4px;padding:1px 5px;margin-left:6px">suspended</span>` : ''}
             </div>
             <div style="display:flex;gap:4px;flex-shrink:0">
+              <button class="btn" style="font-size:11px;padding:3px 8px;background:${(o.plan||'free')==='pro'?'var(--accent)':'var(--bg3)'};color:${(o.plan||'free')==='pro'?'#fff':'var(--text2)'};border:1px solid var(--border)"
+                onclick="superadminToggleOrgPlan('${o.id}','${o.plan||'free'}')">${(o.plan||'free').toUpperCase()}</button>
               ${o.is_suspended
                 ? `<button class="btn btn-secondary" style="font-size:11px;padding:3px 8px"
                     onclick="superadminToggleSuspend('${o.id}',false,'${o.name.replace(/'/g,"\\'")}')">▶</button>`
@@ -1210,6 +1212,9 @@ function _renderSAOrgs(orgs) {
                 <td style="padding:10px 12px;text-align:right;font-size:11px;color:var(--text3)">${o.storage_mb > 0 ? o.storage_mb + ' MB' : '—'}</td>
                 <td style="padding:10px 12px;color:var(--text3);font-size:11px">${o.created_at ? o.created_at.slice(0,10) : '—'}</td>
                 <td style="padding:6px 12px;text-align:center;white-space:nowrap">
+                  <button class="btn" style="font-size:11px;padding:3px 10px;margin-right:4px;background:${(o.plan||'free')==='pro'?'var(--accent)':'var(--bg3)'};color:${(o.plan||'free')==='pro'?'#fff':'var(--text2)'};border:1px solid var(--border)"
+                    onclick="superadminToggleOrgPlan('${o.id}','${o.plan||'free'}')"
+                    title="${t('superadmin.plan_toggle_hint')}">${(o.plan||'free').toUpperCase()}</button>
                   ${o.is_suspended
                     ? `<button class="btn btn-secondary" style="font-size:11px;padding:3px 8px;margin-right:4px"
                         onclick="superadminToggleSuspend('${o.id}',false,'${o.name.replace(/'/g,"\\'")}')">▶ ${t('superadmin.unsuspend_btn')}</button>`
@@ -1301,6 +1306,21 @@ function openCreateOrgModal() {
   };
 
   setTimeout(() => orgInput.focus(), 50);
+}
+
+async function superadminToggleOrgPlan(orgId, currentPlan) {
+  const newPlan = currentPlan === 'pro' ? 'free' : 'pro';
+  const res = await fetch(`/superadmin/orgs/${orgId}/set-plan`, {
+    method: 'POST', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plan: newPlan }),
+  });
+  if(res.ok) {
+    showToast(t('superadmin.plan_changed_toast').replace('{plan}', newPlan.toUpperCase()), 'success');
+    loadSuperadmin();
+  } else {
+    showToast(t('toast.error'), 'error');
+  }
 }
 
 async function superadminToggleSuspend(orgId, suspend, orgName) {
