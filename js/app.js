@@ -1023,15 +1023,39 @@ function superadminDeleteUser(userId, email) {
   setTimeout(() => input.focus(), 50);
 }
 
+let _saUsers = [];
+
 async function loadSAUsers() {
   const el = document.getElementById('superadmin-users-list');
   if(!el) return;
   try {
     const res = await fetch('/superadmin/users', { credentials: 'include' });
     if(!res.ok) { el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--red)">${t('toast.forbidden')}</div>`; return; }
-    const users = await res.json();
-    _renderSAUsers(users);
+    _saUsers = await res.json();
+    superadminUsersFilter();
   } catch { el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--red)">${t('toast.error')}</div>`; }
+}
+
+function superadminUsersFilter() {
+  const q      = (document.getElementById('sa-users-search')?.value || '').trim().toLowerCase();
+  const status = document.getElementById('sa-users-status')?.value || '';
+  const sort   = document.getElementById('sa-users-sort')?.value || 'registered_desc';
+
+  let list = _saUsers.filter(u => {
+    if(q && !u.email.toLowerCase().includes(q) && !(u.full_name || '').toLowerCase().includes(q)) return false;
+    if(status === 'blocked') return !!u.is_suspended;
+    if(status && status !== 'blocked') return u.status === status && !u.is_suspended;
+    return true;
+  });
+
+  list = list.slice().sort((a, b) => {
+    if(sort === 'email_asc')        return (a.email||'').localeCompare(b.email||'');
+    if(sort === 'email_desc')       return (b.email||'').localeCompare(a.email||'');
+    if(sort === 'registered_asc')   return (a.registered_at||'').localeCompare(b.registered_at||'');
+    return (b.registered_at||'').localeCompare(a.registered_at||''); // registered_desc
+  });
+
+  _renderSAUsers(list);
 }
 
 function _renderSAUsers(users) {

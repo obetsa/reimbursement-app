@@ -931,6 +931,27 @@
         </div>
       </div>
       <div id="sa-users-content" style="display:none">
+        <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+          <input id="sa-users-search" type="text"
+            style="flex:1;min-width:180px;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text1);font-size:13px;box-sizing:border-box"
+            data-i18n-placeholder="superadmin.search_placeholder"
+            oninput="superadminUsersFilter()">
+          <select id="sa-users-status" onchange="superadminUsersFilter()"
+            style="padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text1);font-size:13px">
+            <option value="" data-i18n="superadmin.filter_all">Всі</option>
+            <option value="active" data-i18n="superadmin.status_active">Активні</option>
+            <option value="pending" data-i18n="superadmin.status_pending">Pending</option>
+            <option value="unverified" data-i18n="superadmin.status_unverified">Unverified</option>
+            <option value="blocked" data-i18n="superadmin.filter_blocked">Заблоковані</option>
+          </select>
+          <select id="sa-users-sort" onchange="superadminUsersFilter()"
+            style="padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text1);font-size:13px">
+            <option value="registered_desc" data-i18n="superadmin.sort_date_desc">Дата ↓</option>
+            <option value="registered_asc" data-i18n="superadmin.sort_date_asc">Дата ↑</option>
+            <option value="email_asc" data-i18n="superadmin.sort_email_asc">Email A→Z</option>
+            <option value="email_desc" data-i18n="superadmin.sort_email_desc">Email Z→A</option>
+          </select>
+        </div>
         <div id="superadmin-users-list">
           <div style="text-align:center;padding:40px;color:var(--text3)" data-i18n="loading.text">Завантаження...</div>
         </div>
