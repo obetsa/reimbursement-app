@@ -47,10 +47,11 @@ async function initApp(user) {
     }
   } catch { }
 
-  if(user.is_superadmin) {
-    const saNav = document.getElementById('nav-superadmin');
-    if(saNav) saNav.style.display = '';
-  }
+  // SA nav moved to admin.html — superadmin uses /admin route
+  // if(user.is_superadmin) {
+  //   const saNav = document.getElementById('nav-superadmin');
+  //   if(saNav) saNav.style.display = '';
+  // }
 
   // Load data
   try {
@@ -405,7 +406,7 @@ function showPage(name, el) {
   if(name === 'settings') { restoreSettingsTab(); loadProfile(); }
   if(name === 'unprocessed') { applyTranslations(); loadUnprocessed(); }
   if(name === 'gallery') { applyTranslations(); loadGallery(); }
-  if(name === 'superadmin') loadSuperadmin();
+  // if(name === 'superadmin') loadSuperadmin(); // SA moved to admin.html
 
   localStorage.setItem('currentPage', name);
 }
@@ -884,8 +885,10 @@ function openInviteUserModal() {
 }
 
 // ══════════════════════════════════════════
-// SUPERADMIN
+// SUPERADMIN — moved to js/admin.js + admin.html
+// Functions below are kept for reference only
 // ══════════════════════════════════════════
+/* SA_BLOCK_START
 
 function saTab(name) {
   const tabs = { orgs: 'sa-tab-orgs', users: 'sa-tab-users' };
@@ -1401,6 +1404,8 @@ function superadminDeleteOrg(orgId, orgName) {
 
   setTimeout(() => input.focus(), 50);
 }
+
+SA_BLOCK_END */
 
 function _renderInviteToken(data) {
   const el = document.getElementById('invite-token-block');

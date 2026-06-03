@@ -38,6 +38,8 @@ SMTP_USER = os.environ.get('SMTP_USER', '')
 SMTP_PASS = os.environ.get('SMTP_PASS', '')
 SMTP_FROM = os.environ.get('SMTP_FROM', SMTP_USER)
 
+ADMIN_TOKEN = os.environ.get('ADMIN_TOKEN', '')
+
 
 def send_verification_email(to_email, verify_url):
     if not SMTP_USER or not SMTP_PASS:
@@ -461,6 +463,8 @@ def auth_activate_post():
 # ══════════════════════════════════════════
 
 def require_superadmin(request, conn):
+    if flask_session.get('admin_auth'):
+        return 'admin', None
     user_id = get_user_from_token(request)
     if not user_id:
         return None, (jsonify({'error': 'Unauthorized'}), 401)
@@ -3381,6 +3385,28 @@ def attach_from_drive(record_id):
         'file_name': file_name, 'file_type': mime_type,
         'storage_type': storage, 'drive_id': drive_id,
     }), 201
+
+
+# ══════════════════════════════════════════
+# ADMIN PANEL
+# ══════════════════════════════════════════
+@app.route('/admin')
+def admin_panel():
+    return send_from_directory('.', 'admin.html')
+
+@app.route('/admin/login', methods=['POST'])
+def admin_login():
+    data = request.json or {}
+    token = data.get('token', '')
+    if not ADMIN_TOKEN or token != ADMIN_TOKEN:
+        return jsonify({'error': 'invalid_token'}), 401
+    flask_session['admin_auth'] = True
+    return jsonify({'ok': True})
+
+@app.route('/admin/logout', methods=['POST'])
+def admin_logout():
+    flask_session.pop('admin_auth', None)
+    return jsonify({'ok': True})
 
 
 # ══════════════════════════════════════════

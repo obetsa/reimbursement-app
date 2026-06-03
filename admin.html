@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Panel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/components.css">
+<style>
+  /* admin overrides */
+  body { display: block; }
+  #admin-login-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  #admin-main { display: none; min-height: 100vh; }
+</style>
+</head>
+<body>
+
+<!-- ── TOAST ── -->
+<div id="toast-container" style="position:fixed;bottom:24px;right:24px;z-index:10000;display:flex;flex-direction:column;gap:8px"></div>
+
+<!-- ── LOGIN SCREEN ── -->
+<div id="admin-login-screen">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:36px;max-width:360px;width:100%;margin:20px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:28px">
+      <div style="font-size:28px">🔑</div>
+      <div>
+        <div style="font-size:16px;font-weight:600;color:var(--text)">Admin Panel</div>
+        <div style="font-size:12px;color:var(--text3)">Reimbursement App</div>
+      </div>
+    </div>
+    <div style="margin-bottom:16px">
+      <div style="font-size:12px;color:var(--text3);margin-bottom:6px">Токен доступу</div>
+      <input id="admin-token-input" type="password" placeholder="••••••••••••"
+        style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:14px;box-sizing:border-box;outline:none">
+    </div>
+    <div id="admin-login-error" style="display:none;color:var(--red);font-size:12px;margin-bottom:12px"></div>
+    <button id="admin-login-btn" class="btn btn-primary" style="width:100%;padding:10px" onclick="adminLogin()">Увійти</button>
+  </div>
+</div>
+
+<!-- ── MAIN PANEL ── -->
+<div id="admin-main">
+
+  <!-- Header -->
+  <div style="background:var(--bg2);border-bottom:1px solid var(--border);padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100">
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="font-size:18px">🔑</span>
+      <span style="font-size:15px;font-weight:600;color:var(--text)" data-i18n="superadmin.title">Адмін панель</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <a href="/" style="font-size:12px;color:var(--text3);text-decoration:none">← Додаток</a>
+      <button class="btn btn-ghost" style="font-size:12px" onclick="adminLogout()">Вийти</button>
+    </div>
+  </div>
+
+  <!-- Content -->
+  <div style="max-width:1200px;margin:0 auto;padding:24px 20px">
+
+    <!-- Tabs -->
+    <div style="display:flex;border-bottom:2px solid var(--border);margin-bottom:24px">
+      <button id="sa-tab-orgs" onclick="saTab('orgs')"
+        style="padding:8px 18px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:600;color:var(--accent);border-bottom:2px solid var(--accent);margin-bottom:-2px"
+        data-i18n="superadmin.tab_orgs">Організації</button>
+      <button id="sa-tab-users" onclick="saTab('users')"
+        style="padding:8px 18px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:600;color:var(--text3);border-bottom:2px solid transparent;margin-bottom:-2px"
+        data-i18n="superadmin.tab_users">Користувачі</button>
+    </div>
+
+    <!-- Orgs Tab -->
+    <div id="sa-orgs-content">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+        <div id="superadmin-stats" style="display:flex;gap:12px;flex-wrap:wrap"></div>
+        <button id="sa-btn-new-org" class="btn btn-primary" onclick="openCreateOrgModal()" data-i18n="superadmin.create_org_btn">+ Нова організація</button>
+      </div>
+      <div style="margin-bottom:16px">
+        <input id="superadmin-search" type="text"
+          style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text);font-size:13px;box-sizing:border-box"
+          placeholder="Пошук..."
+          oninput="superadminFilter(this.value)">
+      </div>
+      <div id="superadmin-orgs-list">
+        <div style="text-align:center;padding:40px;color:var(--text3)">Завантаження...</div>
+      </div>
+    </div>
+
+    <!-- Users Tab -->
+    <div id="sa-users-content" style="display:none">
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+        <input id="sa-users-search" type="text"
+          style="flex:1;min-width:180px;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text);font-size:13px;box-sizing:border-box"
+          placeholder="Пошук..."
+          oninput="superadminUsersFilter()">
+        <select id="sa-users-status" onchange="superadminUsersFilter()"
+          style="padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text);font-size:13px">
+          <option value="">Всі</option>
+          <option value="active">Активні</option>
+          <option value="pending">Pending</option>
+          <option value="unverified">Unverified</option>
+          <option value="blocked">Заблоковані</option>
+        </select>
+        <select id="sa-users-sort" onchange="superadminUsersFilter()"
+          style="padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text);font-size:13px">
+          <option value="registered_desc">Дата ↓</option>
+          <option value="registered_asc">Дата ↑</option>
+          <option value="email_asc">Email A→Z</option>
+          <option value="email_desc">Email Z→A</option>
+        </select>
+        <button id="sa-btn-new-user" class="btn btn-primary" onclick="openCreateSAUserModal()" data-i18n="superadmin.create_user_btn">+ Новий юзер</button>
+      </div>
+      <div id="superadmin-users-list">
+        <div style="text-align:center;padding:40px;color:var(--text3)">Завантаження...</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="js/i18n.js"></script>
+<script src="js/admin.js"></script>
+</body>
+</html>
