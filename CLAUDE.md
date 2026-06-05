@@ -28,8 +28,10 @@ PostgreSQL має бути запущений локально. `DATABASE_URL` �
 ```
 api.py                             # весь backend (~3000+ рядків)
 index.html                         # SPA, один файл
+admin.html                         # окрема адмін панель (token login, SA функції)
 js/
   app.js                           # весь frontend JS
+  admin.js                         # SA функції для admin.html (окремо від app.js)
   auth.js                          # авторизація (login/activate/OAuth)
   config.js                        # конфіг (DRIVE_ENABLED тощо)
   i18n.js                          # переклади UA/DE/EN
@@ -124,7 +126,7 @@ unprocessed_imports           — необроблені файли з Drive
 | `manager` | свої записи + компанії, які має доступ       |
 | `user`    | тільки перегляд (viewer)                     |
 
-## Поточний стан (станом на 30.05.2026)
+## Поточний стан (станом на 05.06.2026)
 
 **Гілка `feature/org-roles`** — активна розробка.
 
@@ -147,10 +149,12 @@ unprocessed_imports           — необроблені файли з Drive
 - Pending статус для незактивованих юзерів
 - Фаза 0 ✅: ізоляція файлів, superadmin, IDOR фікси, cascade delete, test_isolation
 - Фаза 1 ✅: multi-org (active_org_id в сесії, /org/list, /org/switch), ліміт 2 org для free, owner видаляє org (cascade + notices), Settings→Організація для всіх ролей, "Змінити організацію" модалка (join+create)
-- Superadmin панель ✅: SA.1–SA.7, SA.9–SA.10 (статистика, org/users списки, пошук, suspend/delete org та users, створення users)
+- Superadmin панель ✅: SA.1–SA.7, SA.9–SA.11 (статистика, org/users списки, пошук, suspend/delete org та users, створення users, фільтри)
 - Фаза 2.5 ✅: error pages — 403, 404, 500, org suspended, user suspended (з кнопкою "Вийти")
+- Фаза 2.2+2.3 ✅: org plan (free/pro), usage limits (members 10 / records 100 / companies 5), progress bars в Settings
 - Org picker redesign: картки з аватаром, badge ролі, стрілка
 - `users.registered_at` — дата активації акаунту (окремо від created_at)
+- **Окрема адмін панель** ✅: `admin.html` + `js/admin.js` на роуті `/admin`, token-based login (`ADMIN_TOKEN` в `.env`), повністю відокремлена від `index.html`
 - Тести: test_api 16/16 ✅, test_hierarchy 22/24 ⚠️, test_members 47/47 ✅, test_isolation 45/45 ✅, test_superadmin 11/11 ✅
 
 Відкладено / наступне: див. Roadmap нижче.
@@ -191,10 +195,10 @@ unprocessed_imports           — необроблені файли з Drive
 | ✅ SA.5 | Заблокувати/розблокувати org (`is_suspended`) | Готово |
 | ✅ SA.6 | Видалити org з підтвердженням | Готово |
 | ✅ SA.7 | Пошук по назві org або email адміна | Готово |
-| ⬜ SA.8 | Змінити план org (free → pro) | Після Billing фази |
+| ✅ SA.8 | Змінити план org (free → pro) — toggle кнопка в рядку org | Готово |
 | ✅ SA.9 | Список всіх користувачів (email, ім'я, org(и), статус, дата реєстрації) | Готово |
 | ✅ SA.10 | Створити користувача від SA (invite link або пароль одразу, без org) | Готово |
-| ⬜ SA.11 | Фільтри + сортування в списку користувачів (пошук, статус, дата) | Відкладено |
+| ✅ SA.11 | Фільтри + сортування в списку користувачів (пошук, статус, дата) | Готово |
 
 ### Фаза 2 — Tenant features
 
