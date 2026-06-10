@@ -100,6 +100,11 @@ print('── Тести ──')
 sa_session = make_session(SA_EMAIL, PASSWORD)
 check('SA: логін успішний', sa_session is not None)
 
+# 1b. SA also authenticates with ADMIN_TOKEN (required by /superadmin/* since AND-logic fix)
+if sa_session:
+    r = sa_session.post(BASE + '/admin/login', json={'token': os.environ['ADMIN_TOKEN']})
+    check('SA: /admin/login з ADMIN_TOKEN → 200', r.status_code == 200, f'status={r.status_code}')
+
 # 2. SA can see org in list
 r = sa_session.get(BASE + '/superadmin/orgs') if sa_session else None
 if r and r.ok:

@@ -71,7 +71,12 @@
       "Bash(PGPASSWORD=12345678 \"C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\\\\psql.exe\" -U postgres -h localhost reimbursement -c \"SELECT id, title FROM records WHERE title IN \\('_hierarchy_test_','_dbgtest_'\\);\")",
       "Bash(taskkill //F //IM python.exe //T)",
       "Bash(PGPASSWORD=12345678 \"C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\\\\psql.exe\" -U postgres -h localhost reimbursement -c \"\\\\d email_verifications\" -c \"\\\\d org_invites\")",
-      "Bash(PYTHONIOENCODING=utf-8 python tests/test_isolation.py)"
+      "Bash(PYTHONIOENCODING=utf-8 python tests/test_isolation.py)",
+      "Bash(PGPASSWORD=12345678 \"C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\\\\psql.exe\" -U postgres -h localhost reimbursement -c \"\\\\d organizations\")",
+      "Bash(PGPASSWORD=12345678 \"C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\\\\psql.exe\" -U postgres -h localhost reimbursement -c \"SELECT 1;\")",
+      "Bash(sc query *)",
+      "Bash(taskkill //F //PID 16604)",
+      "Bash(PYTHONIOENCODING=utf-8 python tests/test_superadmin.py)"
     ]
   }
 }

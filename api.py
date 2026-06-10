@@ -463,8 +463,8 @@ def auth_activate_post():
 # ══════════════════════════════════════════
 
 def require_superadmin(request, conn):
-    if flask_session.get('admin_auth'):
-        return 'admin', None
+    if not flask_session.get('admin_auth'):
+        return None, (jsonify({'error': 'Unauthorized'}), 401)
     user_id = get_user_from_token(request)
     if not user_id:
         return None, (jsonify({'error': 'Unauthorized'}), 401)
@@ -3400,6 +3400,14 @@ def admin_login():
     token = data.get('token', '')
     if not ADMIN_TOKEN or token != ADMIN_TOKEN:
         return jsonify({'error': 'invalid_token'}), 401
+    user_id = flask_session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'login_required'}), 401
+    conn = get_db()
+    row = conn.execute("SELECT is_superadmin FROM users WHERE id=%s", (user_id,)).fetchone()
+    conn.close()
+    if not row or not row['is_superadmin']:
+        return jsonify({'error': 'forbidden'}), 403
     flask_session['admin_auth'] = True
     return jsonify({'ok': True})
 

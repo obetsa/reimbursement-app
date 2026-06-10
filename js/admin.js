@@ -36,7 +36,14 @@ async function adminLogin() {
     if (res.ok) {
       showAdminPanel();
     } else {
-      errEl.textContent = 'Невірний токен';
+      const body = await res.json().catch(() => ({}));
+      if (body.error === 'login_required') {
+        errEl.textContent = 'Спочатку увійдіть в систему через головний застосунок (як superadmin), потім введіть токен тут';
+      } else if (body.error === 'forbidden') {
+        errEl.textContent = 'Поточний користувач не має прав superadmin';
+      } else {
+        errEl.textContent = 'Невірний токен';
+      }
       errEl.style.display = '';
       input.value = '';
       input.focus();

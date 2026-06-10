@@ -161,6 +161,18 @@ unprocessed_imports           — необроблені файли з Drive
 
 Відкладено / наступне: див. Roadmap нижче.
 
+## Відомі баги (TODO)
+
+| # | Баг | Деталі | Запропонований фікс |
+|---|-----|--------|---------------------|
+| B.1 | `DELETE /superadmin/users/<id>` падає для власника org | `organizations.owner_id REFERENCES users(id)` без `ON DELETE CASCADE/SET NULL` → `DELETE FROM users` кидає FK violation, юзер не видаляється, запит повертає 500 | Перевірити перед видаленням: якщо юзер — owner якоїсь org, повертати `409 {'error': 'is_org_owner'}` |
+
+### Виправлено
+
+| # | Баг | Фікс |
+|---|-----|------|
+| B.2 | `/admin` пускав без `ADMIN_TOKEN`, якщо вже була сесія superadmin (`require_superadmin()` приймав `admin_auth` АБО `is_superadmin`-сесію) | `require_superadmin()` тепер вимагає І `admin_auth` (токен), І `is_superadmin`-сесію (AND). `/admin/login` додатково перевіряє що поточний юзер залогінений в основному застосунку і має `is_superadmin=true` — інакше `login_required`/`forbidden`. Тепер доступ до `/admin` мають тільки superadmin, залогінений в `index.html` **і** з правильним токеном |
+
 ## Roadmap
 
 ### Фаза 0 — Виправити до Multi-org (критичне)
