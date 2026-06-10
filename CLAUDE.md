@@ -126,7 +126,7 @@ unprocessed_imports           — необроблені файли з Drive
 | `manager` | свої записи + компанії, які має доступ       |
 | `user`    | тільки перегляд (viewer)                     |
 
-## Поточний стан (станом на 05.06.2026)
+## Поточний стан (станом на 10.06.2026)
 
 **Гілка `feature/org-roles`** — активна розробка.
 
@@ -155,7 +155,9 @@ unprocessed_imports           — необроблені файли з Drive
 - Org picker redesign: картки з аватаром, badge ролі, стрілка
 - `users.registered_at` — дата активації акаунту (окремо від created_at)
 - **Окрема адмін панель** ✅: `admin.html` + `js/admin.js` на роуті `/admin`, token-based login (`ADMIN_TOKEN` в `.env`), повністю відокремлена від `index.html`
-- Тести: test_api 16/16 ✅, test_hierarchy 22/24 ⚠️, test_members 47/47 ✅, test_isolation 45/45 ✅, test_superadmin 11/11 ✅
+- Фікс timezone-багу: `expires_at` (email_verifications, org_invites) — naive UTC порівнювався з `now()` в сесійній timezone БД (Europe/Kiev), через що 10-хв org-invite токен миттєво "протухав". Фікс: `expires_at > (now() AT TIME ZONE 'utc')`
+- `seed_data.py` переписано під PostgreSQL (org-схема, генерує тестові записи для org "obetsa")
+- Тести: test_api 16/16 ✅, test_hierarchy 24/24 ✅, test_members 47/47 ✅, test_isolation 45/45 ✅, test_superadmin 11/11 ✅
 
 Відкладено / наступне: див. Roadmap нижче.
 
