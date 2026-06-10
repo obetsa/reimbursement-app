@@ -383,7 +383,7 @@ def auth_verify_email():
         return redirect('/?verify_error=1')
     conn = get_db()
     row  = conn.execute(
-        "SELECT user_id FROM email_verifications WHERE token=%s AND expires_at > now()",
+        "SELECT user_id FROM email_verifications WHERE token=%s AND expires_at > (now() AT TIME ZONE 'utc')",
         (token,)
     ).fetchone()
     if not row:
@@ -438,7 +438,7 @@ def auth_activate_post():
     row  = conn.execute(
         "SELECT ev.user_id, u.email, u.full_name "
         "FROM email_verifications ev JOIN users u ON ev.user_id=u.id "
-        "WHERE ev.token=%s AND ev.expires_at > now() AND u.password_hash='PENDING'",
+        "WHERE ev.token=%s AND ev.expires_at > (now() AT TIME ZONE 'utc') AND u.password_hash='PENDING'",
         (token,)
     ).fetchone()
     if not row:
@@ -974,7 +974,7 @@ def org_invite_current():
     if err: conn.close(); return err
 
     row = conn.execute(
-        "SELECT token, expires_at FROM org_invites WHERE org_id=%s AND expires_at > now() ORDER BY expires_at DESC LIMIT 1",
+        "SELECT token, expires_at FROM org_invites WHERE org_id=%s AND expires_at > (now() AT TIME ZONE 'utc') ORDER BY expires_at DESC LIMIT 1",
         (org_id,)
     ).fetchone()
     conn.close()
@@ -1269,7 +1269,7 @@ def org_join():
     invite = conn.execute(
         "SELECT i.org_id FROM org_invites i "
         "JOIN organizations o ON i.org_id=o.id "
-        "WHERE i.token=%s AND i.expires_at > now() AND lower(o.name)=lower(%s)",
+        "WHERE i.token=%s AND i.expires_at > (now() AT TIME ZONE 'utc') AND lower(o.name)=lower(%s)",
         (token, org_name)
     ).fetchone()
     if not invite:

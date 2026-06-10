@@ -114,7 +114,7 @@ print('\n── Cleanup ──')
 
 # Видалити тестовий запис
 if new_id:
-    r = post(f'/records/{new_id}/delete')
+    r = delete(f'/records/{new_id}')
     check('Видалити тестовий запис', r.status_code == 200)
 
 # ── Summary ──
