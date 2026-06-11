@@ -158,6 +158,7 @@ unprocessed_imports           — необроблені файли з Drive
 - Фікс timezone-багу: `expires_at` (email_verifications, org_invites) — naive UTC порівнювався з `now()` в сесійній timezone БД (Europe/Kiev), через що 10-хв org-invite токен миттєво "протухав". Фікс: `expires_at > (now() AT TIME ZONE 'utc')`
 - `seed_data.py` переписано під PostgreSQL (org-схема, генерує тестові записи для org "obetsa")
 - Тести: test_api 16/16 ✅, test_hierarchy 24/24 ✅, test_members 47/47 ✅, test_isolation 45/45 ✅, test_superadmin 16/16 ✅
+- Фаза 2.1 (частково) ✅: `organizations.settings JSONB` (`migrate_011_org_settings.sql`) — `default_currency` (EUR/UAH/USD), `GET /org/me` повертає `settings`, `PUT /org/settings` (admin). Нові записи отримують currency з org-дефолту (без select у формі, без конвертації — старі записи не змінюються). UI: Settings → Організація, select валюти (admin); відображення суми/деталей запису тепер показує реальну валюту запису (€/₴/$)
 
 Відкладено / наступне: див. Roadmap нижче.
 
@@ -217,9 +218,9 @@ unprocessed_imports           — необроблені файли з Drive
 
 | # | Задача | Деталі |
 |---|--------|--------|
-| 2.1 | Tenant settings | `organizations.settings JSONB` — валюта, назва в листах |
-| 2.2 | Usage limits (Free tier) | 3 члени / 100 записів / 5 компаній |
-| 2.3 | `plan` колонка на org | `free` / `pro` |
+| ✅ 2.1 | Tenant settings | `organizations.settings JSONB` — `default_currency` (EUR/UAH/USD) зроблено; "назва в листах" відкладено (не зрозуміло навіщо окремо від `organizations.name`) |
+| ✅ 2.2 | Usage limits (Free tier) | 3 члени / 100 записів / 5 компаній |
+| ✅ 2.3 | `plan` колонка на org | `free` / `pro` |
 
 ### Фаза 2.5 — Error pages ✅
 
@@ -293,13 +294,8 @@ unprocessed_imports           — необроблені файли з Drive
 - Замінити на "Запит на вихід" → адмін підтверджує
 - Залишити як є (юзер відповідальний за свої дії)
 
-**Валюта в записах — дизайн під питанням**
-Зараз `currency` зберігається в кожному записі, але захардкоджена як `EUR` (api.py дефолт + db.js + форма не має select).
-Варіанти:
-- Додати select валюти у форму запису (EUR / UAH / USD / інші)
-- Додати `default_currency` в org settings як підказку для форми
-- Залишити як є (один юзер — одна валюта)
-Повернутись якщо з'явиться реальна потреба.
+**Валюта в записах — вирішено (12.06.2026)**
+`organizations.settings.default_currency` (EUR/UAH/USD, дефолт EUR), встановлює org-admin в Settings → Організація. Нові записи отримують цю валюту автоматично, без select у формі. **Конвертації немає** — старі записи зберігають свою валюту, суми не перераховуються при зміні org-валюти. Якщо знадобиться реальна конвертація (курси, перерахунок) — окрема велика фіча, не планується.
 
 **Google Drive — перевірити перед підключенням**
 Drive sync вимкнено (`DRIVE_ENABLED = False`). Перед увімкненням:

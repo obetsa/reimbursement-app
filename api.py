@@ -879,7 +879,7 @@ def org_me():
         conn.close()
         return jsonify({'error': 'no_org'}), 404
     row = conn.execute(
-        "SELECT o.id, o.name, o.invite_code, o.owner_id, o.is_suspended, o.plan, m.role "
+        "SELECT o.id, o.name, o.invite_code, o.owner_id, o.is_suspended, o.plan, o.settings, m.role "
         "FROM org_members m JOIN organizations o ON m.org_id=o.id "
         "WHERE m.user_id=%s AND m.org_id=%s AND m.left_at IS NULL",
         (user_id, org_id)
@@ -892,7 +892,33 @@ def org_me():
     conn.close()
     d = dict(row)
     d['is_owner'] = (d['owner_id'] == user_id)
+    d['settings'] = d.get('settings') or {}
     return jsonify(d)
+
+
+ORG_CURRENCIES = ('EUR', 'UAH', 'USD')
+
+@app.route('/org/settings', methods=['PUT'])
+def org_settings_update():
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='admin')
+    if err: conn.close(); return err
+
+    data = request.json or {}
+    currency = data.get('default_currency')
+    if currency not in ORG_CURRENCIES:
+        conn.close()
+        return jsonify({'error': 'invalid_currency'}), 400
+
+    conn.execute(
+        "UPDATE organizations SET settings = settings || %s::jsonb WHERE id=%s",
+        (psycopg2.extras.Json({'default_currency': currency}), org_id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
 
 
 @app.route('/org/usage', methods=['GET'])
@@ -1914,6 +1940,8 @@ def create_record():
 
     data = request.json
     record_id = str(uuid.uuid4())
+    org_row = conn.execute("SELECT settings FROM organizations WHERE id=%s", (org_id,)).fetchone()
+    default_currency = (org_row['settings'] or {}).get('default_currency', 'EUR') if org_row else 'EUR'
     conn.execute('''
         insert into records
         (id, user_id, org_id, title, note, date, amount, currency, pay_type, pay_method,
@@ -1923,7 +1951,7 @@ def create_record():
         record_id, user_id, org_id,
         data['title'], data.get('note', ''),
         data['date'], data['amount'],
-        data.get('currency', 'EUR'),
+        data.get('currency', default_currency),
         data['pay_type'], data['pay_method'],
         data.get('card_id'), data.get('company_id'),
         data.get('status', 'waiting'),

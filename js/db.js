@@ -102,6 +102,8 @@ async function restoreInstrumentDB(id) { return await apiPost('/instruments/' + 
 async function permanentDeleteInstrumentDB(id) { return await apiDelete('/instruments/' + id + '/permanent'); }
 
 // ── RECORDS ──
+const CURRENCY_SYMBOLS = { EUR: '€', UAH: '₴', USD: '$' };
+
 function mapRecord(r) {
   return {
     id: r.id,
@@ -112,7 +114,8 @@ function mapRecord(r) {
     company: r.company_name || '—',
     companyId: r.company_id,
     amount: parseFloat(r.amount) || 0,
-    currency: '€',
+    currency: CURRENCY_SYMBOLS[r.currency] || '€',
+    currencyCode: r.currency || 'EUR',
     payType: r.pay_type,
     payMethod: r.pay_method,
     card: r.card_name || '',
@@ -155,7 +158,7 @@ async function loadDeletedRecords() {
 async function createRecord(data) {
   const rec = await apiPost('/records', {
     title: data.title, note: data.note || '', date: data.date,
-    amount: data.amount, currency: 'EUR',
+    amount: data.amount,
     pay_type: data.payType, pay_method: data.payMethod,
     card_id: data.cardId || null, company_id: data.companyId || null,
     status: data.status,

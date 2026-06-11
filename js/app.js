@@ -630,6 +630,13 @@ async function loadOrgMembers() {
           ${orgData.role !== 'admin' ? `<button onclick="leaveOrg()" class="btn btn-danger" style="font-size:12px">${t('org.leave_btn')}</button>` : ''}
           ${orgData.role === 'admin' ? `
           <div class="profile-row" style="flex-direction:column;align-items:flex-start;gap:8px;width:100%;border:none;padding-top:4px">
+            <div class="profile-label">${t('org.currency_label')}</div>
+            <select id="org-currency-select" onchange="updateOrgCurrency(this.value)"
+              style="padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:13px">
+              ${['EUR','UAH','USD'].map(c => `<option value="${c}" ${(orgData.settings.default_currency || 'EUR') === c ? 'selected' : ''}>${c}</option>`).join('')}
+            </select>
+          </div>
+          <div class="profile-row" style="flex-direction:column;align-items:flex-start;gap:8px;width:100%;border:none;padding-top:4px">
             <div class="profile-label">${t('org.invite_label')}</div>
             <div id="invite-token-block" style="width:100%"></div>
             <button onclick="generateInvite()" class="btn btn-ghost btn-invite-generate">${t('org.invite_generate_btn')}</button>
@@ -1421,6 +1428,16 @@ function _renderInviteToken(data) {
       <div style="font-family:monospace;font-size:13px;font-weight:600;word-break:break-all;margin-bottom:4px">${data.token}</div>
       <div style="font-size:11px;color:var(--text3)">${t('org.invite_expires').replace('{m}', diff)}</div>
     </div>`;
+}
+
+async function updateOrgCurrency(currency) {
+  const res = await fetch('/org/settings', {
+    method: 'PUT', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ default_currency: currency }),
+  });
+  if(res.ok) showToast(t('org.currency_saved_toast'), 'success');
+  else showToast(t('toast.error'), 'error');
 }
 
 async function generateInvite() {
@@ -2811,7 +2828,7 @@ function openDetail(id) {
     </div>
     <div class="detail-field">
       <div class="detail-field-label">${t('detail.currency')}</div>
-      <div class="detail-field-value mono">${t('detail.currency_eur')}</div>
+      <div class="detail-field-value mono">${doc.currencyCode} ${doc.currency}</div>
     </div>
     <div class="detail-field">
       <div class="detail-field-label">${t('detail.files_count')}</div>
