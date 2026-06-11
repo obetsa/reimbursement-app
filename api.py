@@ -592,6 +592,10 @@ def superadmin_delete_user(target_user_id):
     target = conn.execute("SELECT is_superadmin FROM users WHERE id=%s", (target_user_id,)).fetchone()
     if target and target['is_superadmin']:
         conn.close(); return jsonify({'error': 'cannot_act_on_superadmin'}), 400
+    owned_orgs = conn.execute("SELECT name FROM organizations WHERE owner_id=%s", (target_user_id,)).fetchall()
+    if owned_orgs:
+        conn.close()
+        return jsonify({'error': 'is_org_owner', 'orgs': [o['name'] for o in owned_orgs]}), 409
     conn.execute("DELETE FROM return_events WHERE record_id IN (SELECT id FROM records WHERE user_id=%s)", (target_user_id,))
     conn.execute("DELETE FROM attachments  WHERE record_id IN (SELECT id FROM records WHERE user_id=%s)", (target_user_id,))
     conn.execute("DELETE FROM records WHERE user_id=%s", (target_user_id,))

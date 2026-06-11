@@ -157,20 +157,19 @@ unprocessed_imports           — необроблені файли з Drive
 - **Окрема адмін панель** ✅: `admin.html` + `js/admin.js` на роуті `/admin`, token-based login (`ADMIN_TOKEN` в `.env`), повністю відокремлена від `index.html`
 - Фікс timezone-багу: `expires_at` (email_verifications, org_invites) — naive UTC порівнювався з `now()` в сесійній timezone БД (Europe/Kiev), через що 10-хв org-invite токен миттєво "протухав". Фікс: `expires_at > (now() AT TIME ZONE 'utc')`
 - `seed_data.py` переписано під PostgreSQL (org-схема, генерує тестові записи для org "obetsa")
-- Тести: test_api 16/16 ✅, test_hierarchy 24/24 ✅, test_members 47/47 ✅, test_isolation 45/45 ✅, test_superadmin 11/11 ✅
+- Тести: test_api 16/16 ✅, test_hierarchy 24/24 ✅, test_members 47/47 ✅, test_isolation 45/45 ✅, test_superadmin 16/16 ✅
 
 Відкладено / наступне: див. Roadmap нижче.
 
 ## Відомі баги (TODO)
 
-| # | Баг | Деталі | Запропонований фікс |
-|---|-----|--------|---------------------|
-| B.1 | `DELETE /superadmin/users/<id>` падає для власника org | `organizations.owner_id REFERENCES users(id)` без `ON DELETE CASCADE/SET NULL` → `DELETE FROM users` кидає FK violation, юзер не видаляється, запит повертає 500 | Перевірити перед видаленням: якщо юзер — owner якоїсь org, повертати `409 {'error': 'is_org_owner'}` |
+Немає відкритих.
 
 ### Виправлено
 
 | # | Баг | Фікс |
 |---|-----|------|
+| B.1 | `DELETE /superadmin/users/<id>` падав для власника org (`organizations.owner_id REFERENCES users(id)` без `ON DELETE CASCADE/SET NULL` → FK violation → 500) | Перед видаленням перевіряємо `SELECT name FROM organizations WHERE owner_id=%s` — якщо юзер власник якоїсь org, повертаємо `409 {'error': 'is_org_owner', 'orgs': [...]}` без видалення. У `js/admin.js` модалка видалення показує назву(и) org замість generic помилки |
 | B.2 | `/admin` пускав без `ADMIN_TOKEN`, якщо вже була сесія superadmin (`require_superadmin()` приймав `admin_auth` АБО `is_superadmin`-сесію) | `require_superadmin()` тепер вимагає І `admin_auth` (токен), І `is_superadmin`-сесію (AND). `/admin/login` додатково перевіряє що поточний юзер залогінений в основному застосунку і має `is_superadmin=true` — інакше `login_required`/`forbidden`. Тепер доступ до `/admin` мають тільки superadmin, залогінений в `index.html` **і** з правильним токеном |
 
 ## Roadmap

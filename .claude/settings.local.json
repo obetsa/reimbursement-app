@@ -76,7 +76,10 @@
       "Bash(PGPASSWORD=12345678 \"C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\\\\psql.exe\" -U postgres -h localhost reimbursement -c \"SELECT 1;\")",
       "Bash(sc query *)",
       "Bash(taskkill //F //PID 16604)",
-      "Bash(PYTHONIOENCODING=utf-8 python tests/test_superadmin.py)"
+      "Bash(PYTHONIOENCODING=utf-8 python tests/test_superadmin.py)",
+      "Bash(node --check js/admin.js)",
+      "Bash(findstr LISTENING)",
+      "Bash(taskkill //F //PID 7900)"
     ]
   }
 }

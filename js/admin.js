@@ -206,9 +206,21 @@ function superadminDeleteUser(userId, email) {
   confirmBtn.onclick = async () => {
     confirmBtn.disabled = true;
     const res = await fetch(`/superadmin/users/${userId}`, { method: 'DELETE', credentials: 'include' });
+    if (res.ok) {
+      overlay.remove();
+      showToast(t('superadmin.delete_user_toast'), 'success'); loadSAUsers();
+      return;
+    }
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 409 && body.error === 'is_org_owner') {
+      const errEl = overlay.querySelector('#_sud_error');
+      errEl.textContent = t('superadmin.delete_user_is_owner').replace('{orgs}', (body.orgs || []).join(', '));
+      errEl.style.display = '';
+      confirmBtn.disabled = false;
+      return;
+    }
     overlay.remove();
-    if (res.ok) { showToast(t('superadmin.delete_user_toast'), 'success'); loadSAUsers(); }
-    else showToast(t('toast.error'), 'error');
+    showToast(t('toast.error'), 'error');
   };
   setTimeout(() => input.focus(), 50);
 }

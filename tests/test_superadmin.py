@@ -114,6 +114,16 @@ if r and r.ok:
 else:
     check('SA: /superadmin/orgs відповідає', False, r.status_code if r else 'no session')
 
+# 2b. B.1: SA tries to delete org owner → 409 is_org_owner, user not deleted
+r = sa_session.delete(BASE + f'/superadmin/users/{owner_id}') if sa_session else None
+check('B.1: DELETE /superadmin/users/{owner_id} → 409', r is not None and r.status_code == 409, f'status={r.status_code if r is not None else None}')
+if r is not None and r.status_code == 409:
+    body = r.json()
+    check('B.1: відповідь містить is_org_owner', body.get('error') == 'is_org_owner', repr(body))
+    check('B.1: відповідь містить назву org', ORG_NAME in body.get('orgs', []), repr(body.get('orgs')))
+cur.execute("SELECT id FROM users WHERE id=%s", (owner_id,))
+check('B.1: owner не видалений з БД', cur.fetchone() is not None)
+
 # 3. SA deletes org
 r = sa_session.delete(BASE + f'/superadmin/orgs/{org_id}') if sa_session else None
 check('SA: DELETE /superadmin/orgs/{id} → 200', r is not None and r.status_code == 200)
