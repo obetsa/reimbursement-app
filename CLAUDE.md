@@ -151,7 +151,7 @@ unprocessed_imports           — необроблені файли з Drive
 - Фаза 1 ✅: multi-org (active_org_id в сесії, /org/list, /org/switch), ліміт 2 org для free, owner видаляє org (cascade + notices), Settings→Організація для всіх ролей, "Змінити організацію" модалка (join+create)
 - Superadmin панель ✅: SA.1–SA.7, SA.9–SA.11 (статистика, org/users списки, пошук, suspend/delete org та users, створення users, фільтри)
 - Фаза 2.5 ✅: error pages — 403, 404, 500, org suspended, user suspended (з кнопкою "Вийти")
-- Фаза 2.2+2.3 ✅: org plan (free/pro), usage limits (members 10 / records 100 / companies 5), progress bars в Settings
+- Фаза 2.2+2.3 ✅: org plan (free/pro), usage limits, progress bars в Settings (ліміти оновлено 13.06 — див. нижче, план тіарів)
 - Org picker redesign: картки з аватаром, badge ролі, стрілка
 - `users.registered_at` — дата активації акаунту (окремо від created_at)
 - **Окрема адмін панель** ✅: `admin.html` + `js/admin.js` на роуті `/admin`, token-based login (`ADMIN_TOKEN` в `.env`), повністю відокремлена від `index.html`
@@ -159,6 +159,7 @@ unprocessed_imports           — необроблені файли з Drive
 - `seed_data.py` переписано під PostgreSQL (org-схема, генерує тестові записи для org "obetsa")
 - Тести: test_api 16/16 ✅, test_hierarchy 24/24 ✅, test_members 47/47 ✅, test_isolation 45/45 ✅, test_superadmin 16/16 ✅
 - Фаза 2.1 (частково) ✅: `organizations.settings JSONB` (`migrate_011_org_settings.sql`) — `default_currency` (EUR/UAH/USD), `GET /org/me` повертає `settings`, `PUT /org/settings` (admin). Нові записи отримують currency з org-дефолту (без select у формі, без конвертації — старі записи не змінюються). UI: Settings → Організація, select валюти (admin); відображення суми/деталей запису тепер показує реальну валюту запису (€/₴/$)
+- План-тіари (частково) ✅: `migrate_012_plan_tiers.sql` + `USER_ORG_LIMITS`/`ORG_USAGE_LIMITS`/`get_org_limits()` в api.py — 4 тіари (free/pro/ultimate/zero) для `users.plan` і `organizations.plan`. Залишилось: SA UI (dropdown планів, users.plan), storage-лімит enforcement, динамічний `{max}` org picker — деталі у "Відкриті питання"
 
 Відкладено / наступне: див. Roadmap нижче.
 
@@ -304,24 +305,36 @@ Drive sync вимкнено (`DRIVE_ENABLED = False`). Перед увімкне
 3. Врахувати нову multi-tenant структуру папок (зараз `ReceiptsManager/{org_id}/...`)
 4. Drive папки теж мають бути ізольовані по org
 
-**⚠️ Бізнес-модель free/pro — НЕ УЗГОДЖЕНА з замовником (уточнити)**
+**Бізнес-модель free/pro — вирішено (13.06.2026)**
 
-Обговорювались три питання, рішення відкладено до уточнення з клієнтом:
+Гібрид: два окремих поля плану, кожне зі своєю роллю. Без терміну дії (без `plan_expires_at`) — підписка діє доки SA не змінить план вручну; періоди (місяць/рік) — окрема фіча на майбутнє.
 
-_1. На кому сидить план — на юзері чи на org?_
-Зараз є обидва поля: `users.plan` (скільки org може мати юзер) і `organizations.plan` (ліміти всередині org). Виходить два окремих "платежі", що заплутано.
+`users.plan` — скільки організацій може мати юзер:
 
-Варіанти:
-- **План на юзері** (`users.plan`) — юзер платить, всі його org отримують PRO. Один платіж — все відкрито.
-- **План на org** (`organizations.plan`) — кожна org платить окремо. Гнучкіше, але складніше.
-- **Гібрид** — залишити обидва поля, SA керує вручну.
+| plan | ліміт org |
+|---|---|
+| free | 1 |
+| pro | 3 |
+| ultimate | 10 |
+| zero (SA-only, прихований) | без ліміту |
 
-_2. Модель "один акаунт = одна org"_
-Розглядалась спрощена модель: юзер реєструється → автоматично має одну org → платить за акаунт (не за org окремо). Може запрошувати членів. Не може створити другу org.
-Якщо прийняти — треба прибрати: org picker, multi-org switcher, `ORG_LIMIT_FREE`, `organizations.plan`.
+`organizations.plan` — ліміти ресурсів всередині org:
 
-_3. Що робити з поточним кодом (`organizations.plan`, usage limits)?_
-Код написано, працює. Якщо бізнес-модель зміниться — рефакторинг невеликий. Поки залишаємо як є, не чіпаємо до рішення замовника.
+| plan | members | records | companies | storage |
+|---|---|---|---|---|
+| free | 9 | 100 | 5 | 300 MB |
+| pro | 24 | 500 | 20 | 1 GB |
+| ultimate | 99 | 1000 | 50 | 5 GB |
+| zero (SA-only, прихований) | без ліміту | без ліміту | без ліміту | без ліміту |
+
+`zero` — невидимий план, ставить тільки SA вручну (напр. для тестових/VIP акаунтів). SA може встановити будь-який план будь-якому юзеру/org без обмежень.
+
+Реалізація (api.py): `USER_ORG_LIMITS`, `ORG_USAGE_LIMITS`, `check_org_limit()`, `check_free_limit()`, `get_org_limits()`. `migrations/migrate_012_plan_tiers.sql` — існуючі юзери з невалідним `plan` (стара `'premium'` тощо) → `pro`.
+
+Залишилось (наступні кроки):
+- SA UI: dropdown 4 плани для org (зараз toggle тільки free/pro); новий SA-ендпоінт + UI для `users.plan`
+- Storage-лімит (`storage_mb`) — поки не enforced при завантаженні файлів
+- Org picker: текст лімітів org (`{max}`) хардкоджений як 2 — зробити динамічним за `USER_ORG_LIMITS`
 
 ## Важливі правила
 

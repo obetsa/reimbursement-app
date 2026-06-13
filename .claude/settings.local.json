@@ -82,7 +82,9 @@
       "Bash(taskkill //F //PID 7900)",
       "Bash(PGPASSWORD=12345678 \"C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\\\\psql.exe\" -U postgres -h localhost reimbursement -f migrations/migrate_011_org_settings.sql)",
       "Bash(taskkill //F //PID 19744)",
-      "Bash(PYTHONIOENCODING=utf-8 python tests/test_members.py)"
+      "Bash(PYTHONIOENCODING=utf-8 python tests/test_members.py)",
+      "Bash(taskkill *)",
+      "Bash(disown)"
     ]
   }
 }

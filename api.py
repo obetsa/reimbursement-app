@@ -783,7 +783,7 @@ def superadmin_set_org_plan(org_id):
     if err: conn.close(); return err
     data = request.json or {}
     plan = data.get('plan', 'free')
-    if plan not in ('free', 'pro'):
+    if plan not in ('free', 'pro', 'ultimate', 'zero'):
         conn.close(); return jsonify({'error': 'invalid_plan'}), 400
     org = conn.execute("SELECT id FROM organizations WHERE id=%s", (org_id,)).fetchone()
     if not org: conn.close(); return jsonify({'error': 'not_found'}), 404
@@ -937,7 +937,7 @@ def org_usage():
     return jsonify({
         'plan': plan,
         'usage': usage,
-        'limits': FREE_LIMITS if plan == 'free' else None,
+        'limits': ORG_USAGE_LIMITS.get(plan, ORG_USAGE_LIMITS['free']),
     })
 
 
@@ -1047,7 +1047,7 @@ def org_member_invite():
     if err: conn.close(); return err
     if not check_free_limit(org_id, 'members', conn):
         conn.close()
-        return jsonify({'error': 'limit_reached', 'resource': 'members', 'limit': FREE_LIMITS['members']}), 403
+        return jsonify({'error': 'limit_reached', 'resource': 'members', 'limit': get_org_limits(org_id, conn)['members']}), 403
     org      = conn.execute("SELECT name FROM organizations WHERE id=%s", (org_id,)).fetchone()
     org_name = org['name'] if org else ''
     existing = conn.execute("SELECT id, password_hash FROM users WHERE email=%s", (email,)).fetchone()
@@ -1461,7 +1461,8 @@ def org_leave():
 # ORG HELPERS
 # ══════════════════════════════════════════
 
-ORG_LIMIT_FREE = 2
+# Скільки org може мати юзер (узгоджено 13.06.2026, без терміну дії)
+USER_ORG_LIMITS = {'free': 1, 'pro': 3, 'ultimate': 10, 'zero': None}
 
 
 def check_org_limit(user_id, conn):
@@ -1469,16 +1470,25 @@ def check_org_limit(user_id, conn):
     row = conn.execute(
         "SELECT is_superadmin, plan FROM users WHERE id=%s", (user_id,)
     ).fetchone()
-    if not row or row['is_superadmin'] or (row['plan'] or 'free') == 'premium':
+    if not row or row['is_superadmin']:
+        return True
+    limit = USER_ORG_LIMITS.get(row['plan'] or 'free', USER_ORG_LIMITS['free'])
+    if limit is None:
         return True
     count = conn.execute(
         "SELECT COUNT(*) as c FROM org_members WHERE user_id=%s AND left_at IS NULL",
         (user_id,)
     ).fetchone()['c']
-    return count < ORG_LIMIT_FREE
+    return count < limit
 
 
-FREE_LIMITS = {'members': 10, 'records': 100, 'companies': 5}
+# Ліміти ресурсів всередині org за планом (узгоджено 13.06.2026, без терміну дії)
+ORG_USAGE_LIMITS = {
+    'free':     {'members': 9,  'records': 100,  'companies': 5,  'storage_mb': 300},
+    'pro':      {'members': 24, 'records': 500,  'companies': 20, 'storage_mb': 1024},
+    'ultimate': {'members': 99, 'records': 1000, 'companies': 50, 'storage_mb': 5120},
+    'zero':     None,
+}
 
 def get_org_usage(org_id, conn):
     """Return current usage counts for an org."""
@@ -1493,13 +1503,19 @@ def get_org_usage(org_id, conn):
     ).fetchone()['c']
     return {'members': members, 'records': records, 'companies': companies}
 
-def check_free_limit(org_id, resource, conn):
-    """Returns True if org can add more of 'resource'. Always True for pro/premium orgs."""
+def get_org_limits(org_id, conn):
+    """Return the usage-limits dict for an org's plan, or None if unlimited (zero plan)."""
     org = conn.execute("SELECT plan FROM organizations WHERE id=%s", (org_id,)).fetchone()
-    if not org or (org['plan'] or 'free') != 'free':
+    plan = (org['plan'] or 'free') if org else 'free'
+    return ORG_USAGE_LIMITS.get(plan, ORG_USAGE_LIMITS['free'])
+
+def check_free_limit(org_id, resource, conn):
+    """Returns True if org can add more of 'resource'. Always True for unlimited (zero) plan."""
+    limits = get_org_limits(org_id, conn)
+    if limits is None:
         return True
     usage = get_org_usage(org_id, conn)
-    return usage[resource] < FREE_LIMITS[resource]
+    return usage[resource] < limits[resource]
 
 
 def get_user_org(user_id, conn=None):
@@ -1588,7 +1604,7 @@ def create_company():
     if err: conn.close(); return err
     if not check_free_limit(org_id, 'companies', conn):
         conn.close()
-        return jsonify({'error': 'limit_reached', 'resource': 'companies', 'limit': FREE_LIMITS['companies']}), 403
+        return jsonify({'error': 'limit_reached', 'resource': 'companies', 'limit': get_org_limits(org_id, conn)['companies']}), 403
     data = request.json
     company_id = str(uuid.uuid4())
     conn.execute(
@@ -1936,7 +1952,7 @@ def create_record():
     if err: conn.close(); return err
     if not check_free_limit(org_id, 'records', conn):
         conn.close()
-        return jsonify({'error': 'limit_reached', 'resource': 'records', 'limit': FREE_LIMITS['records']}), 403
+        return jsonify({'error': 'limit_reached', 'resource': 'records', 'limit': get_org_limits(org_id, conn)['records']}), 403
 
     data = request.json
     record_id = str(uuid.uuid4())
