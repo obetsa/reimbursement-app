@@ -1491,9 +1491,9 @@ def check_org_limit(user_id, conn):
 
 # Ліміти ресурсів всередині org за планом (узгоджено 13.06.2026, без терміну дії)
 ORG_USAGE_LIMITS = {
-    'free':     {'members': 9,  'records': 100,  'companies': 5,  'storage_mb': 300},
-    'pro':      {'members': 24, 'records': 500,  'companies': 20, 'storage_mb': 1024},
-    'ultimate': {'members': 99, 'records': 1000, 'companies': 50, 'storage_mb': 5120},
+    'free':     {'members': 10,  'records': 100,  'companies': 5,  'storage_mb': 300},
+    'pro':      {'members': 25,  'records': 500,  'companies': 20, 'storage_mb': 1024},
+    'ultimate': {'members': 100, 'records': 1000, 'companies': 50, 'storage_mb': 5120},
     'zero':     None,
 }
 
