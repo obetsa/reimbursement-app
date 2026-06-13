@@ -995,6 +995,17 @@ def billing_webhook(provider):
     return jsonify({'error': 'not_implemented'}), 501
 
 
+@app.route('/billing/plans', methods=['GET'])
+def billing_plans():
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+
+    return jsonify({
+        'user_plans': {p: limit for p, limit in USER_ORG_LIMITS.items() if p != 'zero'},
+        'org_plans':  {p: limits for p, limits in ORG_USAGE_LIMITS.items() if p != 'zero'},
+    })
+
+
 @app.route('/org/create', methods=['POST'])
 def org_create():
     user_id = get_user_from_token(request)

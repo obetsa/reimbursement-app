@@ -504,6 +504,7 @@ function showSettingsTab(name, el) {
   if(name === 'storage') loadStorageInfo();
   if(name === 'profile') loadProfile();
   if(name === 'org-members') loadOrgMembers();
+  if(name === 'billing') loadBillingInfo();
 }
 
 async function loadProfile() {
@@ -817,6 +818,79 @@ async function orgMemberResendInvite(userId) {
   const res = await fetch(`/org/members/${userId}/resend-invite`, { method: 'POST', credentials: 'include' });
   if(res.ok) showToast(t('invite.resent_toast'), 'success');
   else       showToast(t('toast.error'), 'error');
+}
+
+const BILLING_PLAN_ORDER = ['free', 'pro', 'ultimate'];
+
+function _billingPlanRow(plan, isCurrent, canUpgrade, target, detailsHtml) {
+  return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+    <div>
+      <div style="font-size:13px;font-weight:600;${isCurrent ? 'color:var(--accent)' : ''}">${plan.toUpperCase()}${isCurrent ? ` · ${t('billing.current')}` : ''}</div>
+      <div style="font-size:11px;color:var(--text3)">${detailsHtml}</div>
+    </div>
+    ${canUpgrade ? `<button class="btn btn-ghost" style="font-size:12px" onclick="billingCheckout('${target}','${plan}')">${t('billing.upgrade_btn').replace('{plan}', plan.toUpperCase())}</button>` : ''}
+  </div>`;
+}
+
+async function loadBillingInfo() {
+  const userEl = document.getElementById('billing-user-content');
+  const orgSection = document.getElementById('billing-org-section');
+  const orgEl = document.getElementById('billing-org-content');
+  if(!userEl) return;
+  try {
+    const [meRes, plansRes, usageRes, orgRes] = await Promise.all([
+      fetch('/auth/me',       { credentials: 'include' }),
+      fetch('/billing/plans', { credentials: 'include' }),
+      fetch('/org/usage',     { credentials: 'include' }),
+      fetch('/org/me',        { credentials: 'include' }),
+    ]);
+    const meData    = meRes.ok    ? await meRes.json()    : {};
+    const plansData = plansRes.ok ? await plansRes.json() : null;
+    const usageData = usageRes.ok ? await usageRes.json() : null;
+    const orgData   = orgRes.ok   ? await orgRes.json()   : null;
+    if(!plansData) return;
+
+    const rank = p => BILLING_PLAN_ORDER.indexOf(p);
+
+    const userPlan = meData.plan || 'free';
+    userEl.innerHTML = BILLING_PLAN_ORDER.map(p => _billingPlanRow(
+      p, p === userPlan, rank(p) > rank(userPlan), 'user_plan',
+      `${t('billing.col_orgs')}: ${plansData.user_plans[p]}`
+    )).join('');
+
+    if(orgSection) {
+      if(usageData && orgData) {
+        orgSection.style.display = '';
+        const orgPlan = usageData.plan || 'free';
+        const isAdmin = orgData.role === 'admin';
+        orgEl.innerHTML = BILLING_PLAN_ORDER.map(p => {
+          const l = plansData.org_plans[p];
+          const details = `${t('limit.label_members')}: ${l.members} · ${t('limit.label_records')}: ${l.records} · `
+            + `${t('limit.label_companies')}: ${l.companies} · ${t('limit.label_storage')}: ${l.storage_mb} MB`;
+          return _billingPlanRow(p, p === orgPlan, isAdmin && rank(p) > rank(orgPlan), 'org_plan', details);
+        }).join('');
+      } else {
+        orgSection.style.display = 'none';
+      }
+    }
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+async function billingCheckout(target, plan) {
+  try {
+    const res = await fetch('/billing/checkout', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target, plan }),
+    });
+    if(res.status === 503) { showToast(t('billing.unavailable'), 'error'); return; }
+    if(!res.ok) { showToast(t('toast.error'), 'error'); return; }
+    // TODO: redirect на checkout_url, коли провайдер підключений
+  } catch(e) {
+    showToast(t('toast.error'), 'error');
+  }
 }
 
 function openInviteUserModal() {

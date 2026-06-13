@@ -162,6 +162,7 @@ unprocessed_imports           — необроблені файли з Drive
 - Тести: test_api 16/16 ✅, test_hierarchy 24/24 ✅, test_members 47/47 ✅, test_isolation 45/45 ✅, test_superadmin 16/16 ✅
 - Фаза 2.1 (частково) ✅: `organizations.settings JSONB` (`migrate_011_org_settings.sql`) — `default_currency` (EUR/UAH/USD), `GET /org/me` повертає `settings`, `PUT /org/settings` (admin). Нові записи отримують currency з org-дефолту (без select у формі, без конвертації — старі записи не змінюються). UI: Settings → Організація, select валюти (admin); відображення суми/деталей запису тепер показує реальну валюту запису (€/₴/$)
 - План-тіари ✅: `migrate_012_plan_tiers.sql` + `USER_ORG_LIMITS`/`ORG_USAGE_LIMITS`/`get_org_limits()`/`get_org_usage()`/`get_org_storage_mb()` в api.py — 4 тіари (free/pro/ultimate/zero) для `users.plan` і `organizations.plan`. SA UI: dropdown планів для org і users. Storage-лімит enforced при завантаженні файлів (+ фікс SA.4 storage path). Org picker: динамічний `{max}` через `/auth/me.org_limit`. Деталі у "Відкриті питання" → "Бізнес-модель free/pro"
+- Фаза 3, Крок 1+2 ✅ (Монетизація): таблиця `payments`, `PAYMENT_PROVIDER=None`, `apply_plan_payment()`, `/billing/checkout` + `/billing/webhook/<provider>` (стаби 503). UI: Settings → "💳 Тариф" — `GET /billing/plans` віддає тіри free/pro/ultimate, дві секції (свій план юзера + план org), кнопки "Перейти на PRO/ULTIMATE" → checkout (зараз тост "недоступно"). Тести: test_billing 21/21 ✅
 
 Відкладено / наступне: див. Roadmap нижче.
 
@@ -242,8 +243,8 @@ unprocessed_imports           — необроблені файли з Drive
 | # | Задача | Деталі |
 |---|--------|--------|
 | ✅ 3.0 | Архітектура оплат (без провайдера) | `migrations/migrate_013_payments.sql` — таблиця `payments`; `PAYMENT_PROVIDER = None` (флаг як `DRIVE_ENABLED`); `apply_plan_payment()`; `POST /billing/checkout` і `POST /billing/webhook/<provider>` — стаби, 503 поки провайдер не підключений. Тести: `tests/test_billing.py` 21/21 ✅ |
+| ✅ 3.2 | Billing сторінка в settings | Новий таб Settings → "💳 Тариф" (`settings.billing`, окремо від `settings.payments` = платіжні інструменти). `GET /billing/plans` — публічні (не-zero) тіри `USER_ORG_LIMITS`/`ORG_USAGE_LIMITS`. Дві секції: "Ваш тариф" (ліміт org для юзера) і "Тариф організації" (members/records/companies/storage, видно всім, кнопки тільки admin). Кнопки "Перейти на PRO/ULTIMATE" → `/billing/checkout` (зараз 503 → тост `billing.unavailable`) |
 | 3.1 | Stripe або LiqPay | Підключити провайдера (ключі, checkout-сесія, перевірка підпису вебхука) |
-| 3.2 | Billing сторінка в settings | Тарифи (org plan + user plan), кнопки "Перейти на Pro/Ultimate" → `/billing/checkout` |
 | 3.3 | Plan upgrade flow | Один платіж = план назавжди (без `plan_expires_at`); `valid_until` в `payments` підготовлено під майбутні періоди |
 
 ### Суміжно
