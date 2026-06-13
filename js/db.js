@@ -220,7 +220,12 @@ async function uploadAttachment(recordId, file) {
     headers: { 'Authorization': 'Bearer ' + token },
     body: formData
   });
-  if(!res.ok) throw new Error(await res.text());
+  if(!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    const e = new Error(err.error || res.statusText);
+    e.data = err;
+    throw e;
+  }
   return res.json();
 }
 

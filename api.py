@@ -371,6 +371,7 @@ def me():
         'email_verified':   bool(row['email_verified'])  if row else False,
         'is_superadmin':    bool(row['is_superadmin'])   if row else False,
         'plan':             (row['plan'] or 'free')       if row else 'free',
+        'org_limit':        None if (row and row['is_superadmin']) else USER_ORG_LIMITS.get((row['plan'] or 'free') if row else 'free', USER_ORG_LIMITS['free']),
         'deletion_notice':  notice['org_name']            if notice else None,
         'needs_org_pick':   needs_org_pick,
     })
@@ -647,7 +648,6 @@ def superadmin_list_orgs():
         ORDER BY o.created_at DESC
     """).fetchall()
     conn.close()
-    data_root = os.path.join(os.path.dirname(__file__), 'data')
     result = []
     for r in rows:
         d = dict(r)
@@ -655,16 +655,7 @@ def superadmin_list_orgs():
             d['created_at'] = d['created_at'].isoformat()
         if d.get('last_activity'):
             d['last_activity'] = d['last_activity'].isoformat()
-        org_dir = os.path.join(data_root, d['id'])
-        size_bytes = 0
-        if os.path.isdir(org_dir):
-            for dirpath, _, filenames in os.walk(org_dir):
-                for fname in filenames:
-                    try:
-                        size_bytes += os.path.getsize(os.path.join(dirpath, fname))
-                    except OSError:
-                        pass
-        d['storage_mb'] = round(size_bytes / (1024 * 1024), 2)
+        d['storage_mb'] = get_org_storage_mb(d['id'])
         result.append(d)
     return jsonify(result)
 
@@ -1506,6 +1497,19 @@ ORG_USAGE_LIMITS = {
     'zero':     None,
 }
 
+def get_org_storage_mb(org_id):
+    """Return total size (MB) of files stored for this org under data/uploads/ReceiptsManager/{org_id}."""
+    org_dir = os.path.join(UPLOAD_FOLDER, DRIVE_ROOT, org_id)
+    size_bytes = 0
+    if os.path.isdir(org_dir):
+        for dirpath, _, filenames in os.walk(org_dir):
+            for fname in filenames:
+                try:
+                    size_bytes += os.path.getsize(os.path.join(dirpath, fname))
+                except OSError:
+                    pass
+    return round(size_bytes / (1024 * 1024), 2)
+
 def get_org_usage(org_id, conn):
     """Return current usage counts for an org."""
     members   = conn.execute(
@@ -1517,7 +1521,8 @@ def get_org_usage(org_id, conn):
     companies = conn.execute(
         "SELECT COUNT(*) as c FROM companies WHERE org_id=%s AND (is_active IS NULL OR is_active=1)", (org_id,)
     ).fetchone()['c']
-    return {'members': members, 'records': records, 'companies': companies}
+    storage_mb = get_org_storage_mb(org_id)
+    return {'members': members, 'records': records, 'companies': companies, 'storage_mb': storage_mb}
 
 def get_org_limits(org_id, conn):
     """Return the usage-limits dict for an org's plan, or None if unlimited (zero plan)."""
@@ -2283,6 +2288,16 @@ def upload_attachment(record_id):
     month = record_date[5:7]
     raw_company = rec['company_name'] or 'Unassigned'
     safe_company = re.sub(r'[^\w\s\-]', '', raw_company).strip().replace(' ', '_') or 'Unassigned'
+
+    # Storage limit check
+    limits = get_org_limits(org_id, conn)
+    if limits is not None:
+        file.seek(0, os.SEEK_END)
+        file_size_mb = file.tell() / (1024 * 1024)
+        file.seek(0)
+        if get_org_storage_mb(org_id) + file_size_mb > limits['storage_mb']:
+            conn.close()
+            return jsonify({'error': 'limit_reached', 'resource': 'storage', 'limit': limits['storage_mb']}), 403
 
     rel_folder = '/'.join([DRIVE_ROOT, org_id, year, month, safe_company])
     abs_folder = os.path.join(UPLOAD_FOLDER, DRIVE_ROOT, org_id, year, month, safe_company)

@@ -574,9 +574,10 @@ async function loadOrgMembers() {
       const orgList   = listRes.ok  ? await listRes.json()  : [];
       const meData    = meRes.ok    ? await meRes.json()    : {};
       const usageData = usageRes.ok ? await usageRes.json() : null;
-      const plan    = meData.plan || 'free';
-      const isSA    = meData.is_superadmin;
-      const atLimit = !isSA && plan !== 'premium' && orgList.length >= 2;
+      const isSA      = meData.is_superadmin;
+      const orgLimit  = meData.org_limit;
+      const showLimit = !isSA && orgLimit !== null && orgLimit !== undefined;
+      const atLimit   = showLimit && orgList.length >= orgLimit;
 
       // Org switcher rows
       const switcherHtml = orgList.map(o => `
@@ -592,21 +593,22 @@ async function loadOrgMembers() {
         </div>`).join('');
 
       // Limit info
-      const limitHtml = isSA ? '' : `
+      const limitHtml = !showLimit ? '' : `
         <div style="font-size:11px;color:var(--text3);margin-top:4px">
-          ${t('org.limit_info').replace('{used}', orgList.length).replace('{max}', 2)}
+          ${t('org.limit_info').replace('{used}', orgList.length).replace('{max}', orgLimit)}
           ${atLimit ? `<span style="color:var(--red);margin-left:6px">${t('org.limit_reached')}</span>` : ''}
         </div>`;
 
-      // Usage bars (free plan only, for admin)
+      // Usage bars (for admin)
       const usageHtml = (isAdmin && usageData && usageData.limits) ? (() => {
         const u = usageData.usage, l = usageData.limits;
-        const bar = (used, max, key) => {
+        const bar = (used, max, key, unit) => {
+          unit = unit || '';
           const pct = Math.min(100, Math.round(used / max * 100));
           const color = pct >= 100 ? 'var(--red)' : pct >= 80 ? '#f59e0b' : 'var(--accent)';
           return `<div style="margin-bottom:8px">
             <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2);margin-bottom:3px">
-              <span>${t('limit.label_' + key)}</span><span style="color:${color}">${used} / ${max}</span>
+              <span>${t('limit.label_' + key)}</span><span style="color:${color}">${used}${unit} / ${max}${unit}</span>
             </div>
             <div style="height:4px;border-radius:2px;background:var(--bg3)">
               <div style="height:4px;border-radius:2px;background:${color};width:${pct}%"></div>
@@ -618,6 +620,7 @@ async function loadOrgMembers() {
           ${bar(u.members, l.members, 'members')}
           ${bar(u.records, l.records, 'records')}
           ${bar(u.companies, l.companies, 'companies')}
+          ${bar(u.storage_mb, l.storage_mb, 'storage', ' MB')}
         </div>`;
       })() : '';
 
@@ -2950,7 +2953,7 @@ async function addFilesToRecord(input) {
     renderDocs();
     showToast(t('toast.files_added'), 'success');
   } catch(e) {
-    showToast(t('toast.file_upload_error'), 'error');
+    showToast(e && e.data ? _errMsg(e) : t('toast.file_upload_error'), 'error');
   } finally {
     setBusy(false);
   }

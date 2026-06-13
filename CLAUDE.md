@@ -126,7 +126,7 @@ unprocessed_imports           — необроблені файли з Drive
 | `manager` | свої записи + компанії, які має доступ       |
 | `user`    | тільки перегляд (viewer)                     |
 
-## Поточний стан (станом на 10.06.2026)
+## Поточний стан (станом на 13.06.2026)
 
 **Гілка `feature/org-roles`** — активна розробка.
 
@@ -159,7 +159,7 @@ unprocessed_imports           — необроблені файли з Drive
 - `seed_data.py` переписано під PostgreSQL (org-схема, генерує тестові записи для org "obetsa")
 - Тести: test_api 16/16 ✅, test_hierarchy 24/24 ✅, test_members 47/47 ✅, test_isolation 45/45 ✅, test_superadmin 16/16 ✅
 - Фаза 2.1 (частково) ✅: `organizations.settings JSONB` (`migrate_011_org_settings.sql`) — `default_currency` (EUR/UAH/USD), `GET /org/me` повертає `settings`, `PUT /org/settings` (admin). Нові записи отримують currency з org-дефолту (без select у формі, без конвертації — старі записи не змінюються). UI: Settings → Організація, select валюти (admin); відображення суми/деталей запису тепер показує реальну валюту запису (€/₴/$)
-- План-тіари (частково) ✅: `migrate_012_plan_tiers.sql` + `USER_ORG_LIMITS`/`ORG_USAGE_LIMITS`/`get_org_limits()` в api.py — 4 тіари (free/pro/ultimate/zero) для `users.plan` і `organizations.plan`. Залишилось: SA UI (dropdown планів, users.plan), storage-лімит enforcement, динамічний `{max}` org picker — деталі у "Відкриті питання"
+- План-тіари ✅: `migrate_012_plan_tiers.sql` + `USER_ORG_LIMITS`/`ORG_USAGE_LIMITS`/`get_org_limits()`/`get_org_usage()`/`get_org_storage_mb()` в api.py — 4 тіари (free/pro/ultimate/zero) для `users.plan` і `organizations.plan`. SA UI: dropdown планів для org і users. Storage-лімит enforced при завантаженні файлів (+ фікс SA.4 storage path). Org picker: динамічний `{max}` через `/auth/me.org_limit`. Деталі у "Відкриті питання" → "Бізнес-модель free/pro"
 
 Відкладено / наступне: див. Roadmap нижче.
 
@@ -329,13 +329,17 @@ Drive sync вимкнено (`DRIVE_ENABLED = False`). Перед увімкне
 
 `zero` — невидимий план, ставить тільки SA вручну (напр. для тестових/VIP акаунтів). SA може встановити будь-який план будь-якому юзеру/org без обмежень.
 
-Реалізація (api.py): `USER_ORG_LIMITS`, `ORG_USAGE_LIMITS`, `check_org_limit()`, `check_free_limit()`, `get_org_limits()`. `migrations/migrate_012_plan_tiers.sql` — існуючі юзери з невалідним `plan` (стара `'premium'` тощо) → `pro`.
+Реалізація (api.py): `USER_ORG_LIMITS`, `ORG_USAGE_LIMITS`, `check_org_limit()`, `check_free_limit()`, `get_org_limits()`, `get_org_usage()`, `get_org_storage_mb()`. `migrations/migrate_012_plan_tiers.sql` — існуючі юзери з невалідним `plan` (стара `'premium'` тощо) → `pro`.
 
 SA UI ✅: dropdown 4 плани (free/pro/ultimate/zero) для org (`/superadmin/orgs/<id>/set-plan`, було toggle free/pro) і для users.plan (новий `/superadmin/users/<id>/set-plan`) — `js/admin.js` (`_planSelect`, `superadminSetOrgPlan`, `superadminSetUserPlan`), нова колонка "Plan" у списку users. Тести: `test_superadmin.py` 22/22 ✅.
 
-Залишилось (наступні кроки):
-- Storage-лімит (`storage_mb`) — поки не enforced при завантаженні файлів
-- Org picker: текст лімітів org (`{max}`) хардкоджений як 2 — зробити динамічним за `USER_ORG_LIMITS`
+Storage-лімит ✅: `get_org_storage_mb(org_id)` рахує реальний розмір `data/uploads/ReceiptsManager/{org_id}` (рекурсивно). Додано в `get_org_usage()` (поле `storage_mb`). `upload_attachment` перевіряє ліміт перед збереженням файлу → 403 `{'error':'limit_reached','resource':'storage','limit':...}` (пропускається для `zero` плану). Заодно виправлено SA.4 — `superadmin_list_orgs` рахував storage по неправильному шляху (`data/{org_id}` замість `data/uploads/ReceiptsManager/{org_id}`), тепер використовує той самий `get_org_storage_mb()`.
+
+Org picker — динамічний `{max}` ✅: `/auth/me` повертає `org_limit` (з `USER_ORG_LIMITS`, `null` для SA/zero). `js/app.js` org-info блок використовує `meData.org_limit` замість хардкодженого `2`; для `null` (SA або zero-план) рядок лімітів не показується.
+
+Frontend ✅: usage-бари в Settings → Організація тепер показують і storage (`limit.label_storage`, бар з `storage_mb`); `limit.section_title` і повідомлення `limit.members/records/companies/storage` генералізовані (прибрано "для безкоштовного плану" — ліміти тепер діють для всіх планів, не лише free). `uploadAttachment` (js/db.js) тепер парсить структуровану помилку (`e.data`), щоб `_errMsg()` міг показати `limit.storage`.
+
+Залишилось: нічого — Крок 3 завершено.
 
 ## Важливі правила
 
