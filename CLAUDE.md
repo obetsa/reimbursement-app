@@ -331,8 +331,9 @@ Drive sync вимкнено (`DRIVE_ENABLED = False`). Перед увімкне
 
 Реалізація (api.py): `USER_ORG_LIMITS`, `ORG_USAGE_LIMITS`, `check_org_limit()`, `check_free_limit()`, `get_org_limits()`. `migrations/migrate_012_plan_tiers.sql` — існуючі юзери з невалідним `plan` (стара `'premium'` тощо) → `pro`.
 
+SA UI ✅: dropdown 4 плани (free/pro/ultimate/zero) для org (`/superadmin/orgs/<id>/set-plan`, було toggle free/pro) і для users.plan (новий `/superadmin/users/<id>/set-plan`) — `js/admin.js` (`_planSelect`, `superadminSetOrgPlan`, `superadminSetUserPlan`), нова колонка "Plan" у списку users. Тести: `test_superadmin.py` 22/22 ✅.
+
 Залишилось (наступні кроки):
-- SA UI: dropdown 4 плани для org (зараз toggle тільки free/pro); новий SA-ендпоінт + UI для `users.plan`
 - Storage-лімит (`storage_mb`) — поки не enforced при завантаженні файлів
 - Org picker: текст лімітів org (`{max}`) хардкоджений як 2 — зробити динамічним за `USER_ORG_LIMITS`
 

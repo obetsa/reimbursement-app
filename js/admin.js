@@ -2,6 +2,16 @@
 // ADMIN PANEL — окремий модуль /admin
 // ══════════════════════════════════════════
 
+const PLAN_TIERS = ['free', 'pro', 'ultimate', 'zero'];
+
+function _planSelect(id, currentPlan, onchangeFn) {
+  const plan = currentPlan || 'free';
+  return `<select onchange="${onchangeFn}('${id}', this.value)"
+    style="font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg3);color:var(--text2)">
+    ${PLAN_TIERS.map(p => `<option value="${p}" ${plan === p ? 'selected' : ''}>${p.toUpperCase()}</option>`).join('')}
+  </select>`;
+}
+
 function showToast(msg, type = 'success') {
   const container = document.getElementById('toast-container');
   if (!container) return;
@@ -277,10 +287,11 @@ function _renderSAUsers(users) {
           </div>
           <span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;flex-shrink:0;${statusStyle[u.status]}">${statusLabel[u.status]}</span>
         </div>
-        <div style="font-size:11px;color:var(--text3);display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;margin-bottom:8px">
+        <div style="font-size:11px;color:var(--text3);display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px;margin-bottom:8px">
           ${u.is_superadmin ? `<span style="background:var(--accent);color:#fff;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600">SA</span>` : ''}
           ${u.orgs.length ? `<span>${u.orgs.join(', ')}</span>` : `<span style="color:var(--text3)">${t('superadmin.no_org')}</span>`}
           ${u.registered_at ? `<span>${u.registered_at.slice(0, 10)}</span>` : ''}
+          ${_planSelect(u.id, u.plan, 'superadminSetUserPlan')}
         </div>
         ${!u.is_superadmin ? `<div style="display:flex;gap:4px">
           ${u.is_suspended
@@ -299,6 +310,7 @@ function _renderSAUsers(users) {
             <th style="padding:10px 12px;text-align:left">${t('superadmin.col_fullname')}</th>
             <th style="padding:10px 12px;text-align:left">${t('superadmin.col_status')}</th>
             <th style="padding:10px 12px;text-align:left">${t('superadmin.col_orgs')}</th>
+            <th style="padding:10px 12px;text-align:left">${t('superadmin.col_plan')}</th>
             <th style="padding:10px 12px;text-align:left">${t('superadmin.col_registered')}</th>
             <th style="padding:10px 12px;text-align:center"></th>
           </tr>
@@ -314,6 +326,7 @@ function _renderSAUsers(users) {
             <td style="padding:10px 12px;color:var(--text2)">${u.full_name || '—'}</td>
             <td style="padding:10px 12px"><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;${statusStyle[u.status]}">${statusLabel[u.status]}</span></td>
             <td style="padding:10px 12px;color:var(--text2);font-size:12px">${u.orgs.length ? u.orgs.join(', ') : `<span style="color:var(--text3)">—</span>`}</td>
+            <td style="padding:10px 12px">${_planSelect(u.id, u.plan, 'superadminSetUserPlan')}</td>
             <td style="padding:10px 12px;color:var(--text3);font-size:11px">${u.registered_at ? u.registered_at.slice(0, 10) : '—'}</td>
             <td style="padding:6px 12px;text-align:center;white-space:nowrap">
               ${!u.is_superadmin ? `
@@ -390,8 +403,7 @@ function _renderSAOrgs(orgs) {
             ${o.is_suspended ? `<span style="font-size:10px;background:var(--red);color:#fff;border-radius:4px;padding:1px 5px;margin-left:6px">suspended</span>` : ''}
           </div>
           <div style="display:flex;gap:4px;flex-shrink:0">
-            <button class="btn" style="font-size:11px;padding:3px 8px;background:${(o.plan || 'free') === 'pro' ? 'var(--accent)' : 'var(--bg3)'};color:${(o.plan || 'free') === 'pro' ? '#fff' : 'var(--text2)'};border:1px solid var(--border)"
-              onclick="superadminToggleOrgPlan('${o.id}','${o.plan || 'free'}')">${(o.plan || 'free').toUpperCase()}</button>
+            ${_planSelect(o.id, o.plan, 'superadminSetOrgPlan')}
             ${o.is_suspended
               ? `<button class="btn btn-secondary" style="font-size:11px;padding:3px 8px"
                   onclick="superadminToggleSuspend('${o.id}',false,'${o.name.replace(/'/g, "\\'")}')">▶</button>`
@@ -440,8 +452,7 @@ function _renderSAOrgs(orgs) {
               <td style="padding:10px 12px;text-align:right;font-size:11px;color:var(--text3)">${o.storage_mb > 0 ? o.storage_mb + ' MB' : '—'}</td>
               <td style="padding:10px 12px;color:var(--text3);font-size:11px">${o.created_at ? o.created_at.slice(0, 10) : '—'}</td>
               <td style="padding:6px 12px;text-align:center;white-space:nowrap">
-                <button class="btn" style="font-size:11px;padding:3px 10px;margin-right:4px;background:${(o.plan || 'free') === 'pro' ? 'var(--accent)' : 'var(--bg3)'};color:${(o.plan || 'free') === 'pro' ? '#fff' : 'var(--text2)'};border:1px solid var(--border)"
-                  onclick="superadminToggleOrgPlan('${o.id}','${o.plan || 'free'}')">${(o.plan || 'free').toUpperCase()}</button>
+                <span style="margin-right:4px">${_planSelect(o.id, o.plan, 'superadminSetOrgPlan')}</span>
                 ${o.is_suspended
                   ? `<button class="btn btn-secondary" style="font-size:11px;padding:3px 8px;margin-right:4px"
                       onclick="superadminToggleSuspend('${o.id}',false,'${o.name.replace(/'/g, "\\'")}')">▶ ${t('superadmin.unsuspend_btn')}</button>`
@@ -528,16 +539,29 @@ function openCreateOrgModal() {
   setTimeout(() => orgInput.focus(), 50);
 }
 
-async function superadminToggleOrgPlan(orgId, currentPlan) {
-  const newPlan = currentPlan === 'pro' ? 'free' : 'pro';
+async function superadminSetOrgPlan(orgId, plan) {
   const res = await fetch(`/superadmin/orgs/${orgId}/set-plan`, {
     method: 'POST', credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ plan: newPlan }),
+    body: JSON.stringify({ plan }),
   });
   if (res.ok) {
-    showToast(t('superadmin.plan_changed_toast').replace('{plan}', newPlan.toUpperCase()), 'success');
+    showToast(t('superadmin.plan_changed_toast').replace('{plan}', plan.toUpperCase()), 'success');
     loadSuperadmin();
+  } else {
+    showToast(t('toast.error'), 'error');
+  }
+}
+
+async function superadminSetUserPlan(userId, plan) {
+  const res = await fetch(`/superadmin/users/${userId}/set-plan`, {
+    method: 'POST', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plan }),
+  });
+  if (res.ok) {
+    showToast(t('superadmin.plan_changed_toast').replace('{plan}', plan.toUpperCase()), 'success');
+    loadSAUsers();
   } else {
     showToast(t('toast.error'), 'error');
   }

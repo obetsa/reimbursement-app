@@ -114,6 +114,28 @@ if r and r.ok:
 else:
     check('SA: /superadmin/orgs відповідає', False, r.status_code if r else 'no session')
 
+# 2a. Plan tiers: SA sets org plan -> ultimate
+r = sa_session.post(BASE + f'/superadmin/orgs/{org_id}/set-plan', json={'plan': 'ultimate'}) if sa_session else None
+check('SA: set org plan -> ultimate', r is not None and r.ok and r.json().get('plan') == 'ultimate', f'status={r.status_code if r is not None else None}')
+conn.commit()
+cur.execute("SELECT plan FROM organizations WHERE id=%s", (org_id,))
+check('SA: org.plan = ultimate в БД', cur.fetchone()['plan'] == 'ultimate')
+
+# 2a-2. Plan tiers: SA rejects invalid org plan
+r = sa_session.post(BASE + f'/superadmin/orgs/{org_id}/set-plan', json={'plan': 'bogus'}) if sa_session else None
+check('SA: set org plan invalid -> 400', r is not None and r.status_code == 400, f'status={r.status_code if r is not None else None}')
+
+# 2a-3. Plan tiers: SA sets user plan -> zero
+r = sa_session.post(BASE + f'/superadmin/users/{memb_id}/set-plan', json={'plan': 'zero'}) if sa_session else None
+check('SA: set user plan -> zero', r is not None and r.ok and r.json().get('plan') == 'zero', f'status={r.status_code if r is not None else None}')
+conn.commit()
+cur.execute("SELECT plan FROM users WHERE id=%s", (memb_id,))
+check('SA: user.plan = zero в БД', cur.fetchone()['plan'] == 'zero')
+
+# 2a-4. Plan tiers: SA rejects invalid user plan
+r = sa_session.post(BASE + f'/superadmin/users/{memb_id}/set-plan', json={'plan': 'bogus'}) if sa_session else None
+check('SA: set user plan invalid -> 400', r is not None and r.status_code == 400, f'status={r.status_code if r is not None else None}')
+
 # 2b. B.1: SA tries to delete org owner → 409 is_org_owner, user not deleted
 r = sa_session.delete(BASE + f'/superadmin/users/{owner_id}') if sa_session else None
 check('B.1: DELETE /superadmin/users/{owner_id} → 409', r is not None and r.status_code == 409, f'status={r.status_code if r is not None else None}')

@@ -559,6 +559,22 @@ def superadmin_create_user():
         return jsonify({'ok': True, 'user_id': new_id})
 
 
+@app.route('/superadmin/users/<target_user_id>/set-plan', methods=['POST'])
+def superadmin_set_user_plan(target_user_id):
+    conn = get_db()
+    user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+    data = request.json or {}
+    plan = data.get('plan', 'free')
+    if plan not in ('free', 'pro', 'ultimate', 'zero'):
+        conn.close(); return jsonify({'error': 'invalid_plan'}), 400
+    target = conn.execute("SELECT id FROM users WHERE id=%s", (target_user_id,)).fetchone()
+    if not target: conn.close(); return jsonify({'error': 'not_found'}), 404
+    conn.execute("UPDATE users SET plan=%s WHERE id=%s", (plan, target_user_id))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True, 'plan': plan})
+
+
 @app.route('/superadmin/users/<target_user_id>/suspend', methods=['POST'])
 def superadmin_suspend_user(target_user_id):
     conn = get_db()
