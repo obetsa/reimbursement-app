@@ -88,6 +88,7 @@ DB_PATH = os.path.join('data', 'local.db')  # kept for backup/restore routes
 UPLOAD_FOLDER = os.path.join('data', 'uploads')
 DRIVE_ROOT = 'ReceiptsManager'
 DRIVE_ENABLED = False  # disabled until Drive sync is rebuilt
+PAYMENT_PROVIDER = None  # 'liqpay' | 'stripe' | None — підключити пізніше
 
 # ══════════════════════════════════════════
 # DATABASE INIT
@@ -948,6 +949,52 @@ def org_usage():
     })
 
 
+# ══════════════════════════════════════════
+# BILLING (Фаза 3) — без провайдера, підключення пізніше
+# ══════════════════════════════════════════
+@app.route('/billing/checkout', methods=['POST'])
+def billing_checkout():
+    if not PAYMENT_PROVIDER:
+        return jsonify({'error': 'payment_provider_not_configured'}), 503
+
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+
+    data = request.json or {}
+    target = data.get('target')
+    plan = data.get('plan')
+    if target not in ('org_plan', 'user_plan'):
+        return jsonify({'error': 'invalid_target'}), 400
+    if plan not in ('pro', 'ultimate'):
+        return jsonify({'error': 'invalid_plan'}), 400
+
+    conn = get_db()
+    org_id = None
+    if target == 'org_plan':
+        org_id, role, err = require_org(user_id, conn, min_role='admin')
+        if err: conn.close(); return err
+
+    payment_id = str(uuid.uuid4())
+    conn.execute(
+        "INSERT INTO payments (id, user_id, org_id, target, plan, provider, status) VALUES (%s,%s,%s,%s,%s,%s,'pending')",
+        (payment_id, user_id, org_id, target, plan, PAYMENT_PROVIDER)
+    )
+    conn.commit()
+    conn.close()
+
+    # TODO: створити checkout-сесію у провайдера і повернути checkout_url
+    return jsonify({'payment_id': payment_id})
+
+
+@app.route('/billing/webhook/<provider>', methods=['POST'])
+def billing_webhook(provider):
+    if not PAYMENT_PROVIDER or provider != PAYMENT_PROVIDER:
+        return jsonify({'error': 'payment_provider_not_configured'}), 503
+
+    # TODO: перевірка підпису вебхука конкретного провайдера
+    return jsonify({'error': 'not_implemented'}), 501
+
+
 @app.route('/org/create', methods=['POST'])
 def org_create():
     user_id = get_user_from_token(request)
@@ -1537,6 +1584,23 @@ def check_free_limit(org_id, resource, conn):
         return True
     usage = get_org_usage(org_id, conn)
     return usage[resource] < limits[resource]
+
+
+def apply_plan_payment(payment_id, conn):
+    """Mark a pending payment as completed and apply its plan to the user or org.
+    valid_until лишається NULL (план діє назавжди, поки SA не змінить вручну)."""
+    payment = conn.execute("SELECT * FROM payments WHERE id=%s AND status='pending'", (payment_id,)).fetchone()
+    if not payment:
+        return False
+    if payment['target'] == 'org_plan':
+        conn.execute("UPDATE organizations SET plan=%s WHERE id=%s", (payment['plan'], payment['org_id']))
+    else:
+        conn.execute("UPDATE users SET plan=%s WHERE id=%s", (payment['plan'], payment['user_id']))
+    conn.execute(
+        "UPDATE payments SET status='completed', completed_at=(now() AT TIME ZONE 'utc') WHERE id=%s",
+        (payment_id,)
+    )
+    return True
 
 
 def get_user_org(user_id, conn=None):

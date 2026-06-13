@@ -52,12 +52,14 @@ migrations/
   migrate_007_suspended.sql        # organizations.is_suspended
   migrate_008_registered_at.sql    # users.registered_at
   migrate_009_user_suspended.sql   # users.is_suspended
+  migrate_013_payments.sql         # payments — архітектура оплат (Фаза 3, Крок 1)
 tests/
   test_api.py                      # базові API тести (16/16)
   test_hierarchy.py                # тести ієрархії org (22/24)
   test_members.py                  # тести member management (47/47)
   test_isolation.py                # ізоляція org (45/45)
   test_superadmin.py               # SA: delete org + deletion notices (11/11)
+  test_billing.py                  # payments table + apply_plan_payment (21/21)
 requirements.txt
 Dockerfile
 docker-compose.yaml
@@ -239,9 +241,10 @@ unprocessed_imports           — необроблені файли з Drive
 
 | # | Задача | Деталі |
 |---|--------|--------|
-| 3.1 | Stripe або LiqPay | Webhook → оновлює `plan` |
-| 3.2 | Billing сторінка в settings | |
-| 3.3 | Plan upgrade flow | |
+| ✅ 3.0 | Архітектура оплат (без провайдера) | `migrations/migrate_013_payments.sql` — таблиця `payments`; `PAYMENT_PROVIDER = None` (флаг як `DRIVE_ENABLED`); `apply_plan_payment()`; `POST /billing/checkout` і `POST /billing/webhook/<provider>` — стаби, 503 поки провайдер не підключений. Тести: `tests/test_billing.py` 21/21 ✅ |
+| 3.1 | Stripe або LiqPay | Підключити провайдера (ключі, checkout-сесія, перевірка підпису вебхука) |
+| 3.2 | Billing сторінка в settings | Тарифи (org plan + user plan), кнопки "Перейти на Pro/Ultimate" → `/billing/checkout` |
+| 3.3 | Plan upgrade flow | Один платіж = план назавжди (без `plan_expires_at`); `valid_until` в `payments` підготовлено під майбутні періоди |
 
 ### Суміжно
 
