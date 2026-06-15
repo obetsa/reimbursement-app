@@ -169,6 +169,7 @@ unprocessed_imports           — необроблені файли з Drive
 - `organizations.name` unique + rename ✅ (15.06.2026, кроки 1-3 з "Шлях файлів: org_id vs org_name"): `migrate_014_org_name_unique.sql` — унікальний індекс по `lower(name)`. `/org/create` тепер також перевіряє унікальність (409 `org_name_taken`). Новий `PUT /org/rename` — тільки org-admin (`require_org(min_role='admin')`), case-insensitive перевірка дублікату (виключаючи себе). UI: Settings → Організація → рядок "Назва організації" з кнопкою "Перейменувати" (тільки admin) → модалка з полем назви. i18n: `org.name_label/rename_btn/rename_title/rename_success` (uk/de/en), помилка дубліката через існуючий `superadmin.err_name_taken`. Кроки 4-5 (модалка міграції файлів, перехід на org_name шляхи) — наступний реліз, деталі у "Відкриті питання"
 - SA.12 ✅ (15.06.2026): клік на назву org у списку `/admin` → модалка зі списком всіх активних членів org (email, ім'я, роль, статус). Новий ендпоінт `GET /superadmin/orgs/<org_id>/members` (за зразком `/org/members`, тільки активні — `left_at IS NULL`). `js/admin.js`: `openOrgMembersModal(orgId, orgName)`, назва org у таблиці/картках стала клікабельною. i18n: `superadmin.org_members_title/no_org_members` (uk/de/en), решта (ролі, статуси, колонки) — існуючі ключі. test_superadmin 22/22 ✅
 - Google OAuth login узгоджено з закритою реєстрацією ✅ (15.06.2026): `/auth/google` + `/auth/callback` вже існували (з гілки `web`, кнопка "Увійти через Google" в `index.html`), але `/auth/callback` створював нового юзера для будь-якого Google-акаунту — обхід `registration_closed`. Фікс у `/auth/callback`: невідомий email → редірект `/?google_error=registration_closed` (без створення юзера); `is_suspended` (не-SA) → `/?google_error=user_suspended`; `password_hash='PENDING'` (запрошений, не активований) → перший Google-логін = активація (`email_verified=TRUE, registered_at=now()`, мірор `/auth/activate`). Frontend: `js/app.js` ловить `?google_error=...`, показує тост (`auth.err_google_registration_closed` uk/de/en, для suspended — існуючий `error.user_suspended_desc`). Drive-scope в `/auth/google` (запит `…/auth/drive` при `DRIVE_ENABLED=False`) — лишився, окреме питання разом з Google Drive
+- Доступ до компаній з модалки "Компанії" ✅ (16.06.2026): у Settings → Компанії, при редагуванні або створенні компанії, в модалці тепер є секція "Доступ користувачів" — чіпи всіх не-admin членів org (manager/user, активні), клік перемикає `org_member_companies` (той самий механізм, що в Settings → Організація). Новий ендпоінт `GET /companies/<id>/access` (admin-only, повертає `user_id[]`). Для нової компанії: після "Зберегти" модалка лишається відкритою, заголовок змінюється на "Редагувати компанію", кнопка "Скасувати" → "Закрити", з'являється секція доступу (порожня, бо `org_member_companies` ще немає записів для нового `company_id`). i18n: `form.close`, `company.access_label`, `company.access_empty` (uk/de/en). Попутно виправлено баг (3 місця: `create_company`, `org_member_invite`, `create_record`) — `conn.close()` викликався ДО `get_org_limits(org_id, conn)` у гілці `limit_reached`, через що замість `403` повертався `500 psycopg2.InterfaceError: connection already closed`
 
 Відкладено / наступне: див. Roadmap нижче.
 
@@ -288,6 +289,14 @@ unprocessed_imports           — необроблені файли з Drive
 ### Відкриті питання
 
 > ⚠️ Ці питання не закриті — повернутись до них перед деплоєм або при появі відповідного контексту.
+
+**Пагінація — потрібно зробити перед цим релізом (15.06.2026)**
+Зараз списки (records у "Документи", org/users у SA-панелі) рендерять усе без обмежень.
+
+Що зробити:
+1. SA-панель (`/admin`): списки org та users — пагінація, максимум 20 записів на сторінку
+2. "Документи" (`index.html`, основний список records) — пагінація, теж 20 на сторінку (зараз пагінації немає взагалі)
+3. Мобільний вигляд (≤768px): замість пагінації — кнопка "Показати ще" (load more): спочатку 20 записів, по натисканню довантажується ще порція, до кінця списку
 
 **Шлях файлів: org_id vs org_name — рішення по кроках (15.06.2026)**
 Зараз: `ReceiptsManager/{org_id}/...` — унікально, але нечитабельно. Цей реліз — без змін, org_id лишається.

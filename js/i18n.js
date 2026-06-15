@@ -125,6 +125,7 @@ const TRANSLATIONS = {
     'form.status': 'Статус',
     'form.status_hint': '⚡ Статус оновлюється автоматично на основі повернень',
     'form.cancel': 'Скасувати',
+    'form.close': 'Закрити',
     'form.save': '💾 Зберегти запис',
     'form.update': '💾 Оновити запис',
 
@@ -237,6 +238,8 @@ const TRANSLATIONS = {
     'company.name': 'Назва компанії',
     'company.name_placeholder': 'Наприклад: Betsa GmbH',
     'company.shared': 'Розшарити з іншими користувачами',
+    'company.access_label': 'Доступ користувачів',
+    'company.access_empty': 'Немає інших учасників організації',
 
     // Модал інструменту
     'instrument.new': 'Новий платіжний інструмент',
@@ -801,6 +804,7 @@ const TRANSLATIONS = {
     'form.status': 'Status',
     'form.status_hint': '⚡ Status wird automatisch aktualisiert',
     'form.cancel': 'Abbrechen',
+    'form.close': 'Schließen',
     'form.save': '💾 Eintrag speichern',
     'form.update': '💾 Eintrag aktualisieren',
 
@@ -907,6 +911,8 @@ const TRANSLATIONS = {
     'company.name': 'Unternehmensname',
     'company.name_placeholder': 'z.B.: Betsa GmbH',
     'company.shared': 'Mit anderen Nutzern teilen',
+    'company.access_label': 'Benutzerzugriff',
+    'company.access_empty': 'Keine weiteren Mitglieder der Organisation',
 
     'instrument.new': 'Neues Zahlungsinstrument',
     'instrument.edit': 'Instrument bearbeiten',
@@ -1449,6 +1455,7 @@ const TRANSLATIONS = {
     'form.status': 'Status',
     'form.status_hint': '⚡ Status updates automatically based on reimbursements',
     'form.cancel': 'Cancel',
+    'form.close': 'Close',
     'form.save': '💾 Save record',
     'form.update': '💾 Update record',
 
@@ -1555,6 +1562,8 @@ const TRANSLATIONS = {
     'company.name': 'Company name',
     'company.name_placeholder': 'E.g.: Betsa GmbH',
     'company.shared': 'Share with other users',
+    'company.access_label': 'User access',
+    'company.access_empty': 'No other organization members',
 
     'instrument.new': 'New payment instrument',
     'instrument.edit': 'Edit instrument',

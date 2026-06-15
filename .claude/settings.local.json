@@ -110,7 +110,13 @@
       "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe tests/test_superadmin.py)",
       "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe tests/_tmp_test_oauth.py)",
       "PowerShell(Get-CimInstance *)",
-      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe tests/test_isolation.py)"
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe tests/test_isolation.py)",
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe tests/_tmp_test_smtp.py)",
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe -c ' *)",
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe tests/_tmp_test_company_access.py)",
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe api.py)",
+      "Bash(powershell *)",
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe *)"
     ]
   }
 }

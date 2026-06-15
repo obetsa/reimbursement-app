@@ -3576,14 +3576,19 @@ function openCompanyModal(id = null) {
   editingCompanyId = id;
   const title = document.getElementById('company-modal-title');
   const nameInput = document.getElementById('company-name-input');
+  const cancelBtn = document.getElementById('company-modal-cancel-btn');
 
   if(id) {
     const c = companiesCache.find(c => c.id === id);
     title.textContent = t('company.edit');
     nameInput.value = c.name;
+    cancelBtn.textContent = t('form.close');
+    loadCompanyAccessSection(id);
   } else {
     title.textContent = t('company.new');
     nameInput.value = '';
+    cancelBtn.textContent = t('form.cancel');
+    hideCompanyAccessSection();
   }
 
   document.getElementById('company-modal-overlay').classList.add('open');
@@ -3595,6 +3600,40 @@ function closeCompanyModal() {
   document.getElementById('company-modal-overlay').classList.remove('open');
   unlockScroll();
   editingCompanyId = null;
+  hideCompanyAccessSection();
+}
+
+function hideCompanyAccessSection() {
+  const section = document.getElementById('company-access-section');
+  if(section) section.style.display = 'none';
+}
+
+async function loadCompanyAccessSection(companyId) {
+  const section = document.getElementById('company-access-section');
+  const list = document.getElementById('company-access-list');
+  if(!section || !list) return;
+  section.style.display = '';
+  list.innerHTML = '';
+  try {
+    const [membersRes, accessRes] = await Promise.all([
+      fetch('/org/members', { credentials: 'include' }),
+      fetch(`/companies/${companyId}/access`, { credentials: 'include' })
+    ]);
+    const members = membersRes.ok ? await membersRes.json() : [];
+    const access  = accessRes.ok ? await accessRes.json() : [];
+    const eligible = members.filter(m => !m.left_at && m.role !== 'admin');
+    if(!eligible.length) {
+      list.innerHTML = `<span style="font-size:12px;color:var(--text3)">${t('company.access_empty')}</span>`;
+      return;
+    }
+    list.innerHTML = eligible.map(m => `
+      <span class="company-access-chip ${access.includes(m.user_id) ? 'granted' : ''}"
+        onclick="orgChipToggle(this,'${m.user_id}','${companyId}')">
+        ${m.full_name || m.email}
+      </span>`).join('');
+  } catch {
+    list.innerHTML = '';
+  }
 }
 
 async function saveCompanyModal() {
@@ -3612,13 +3651,16 @@ async function saveCompanyModal() {
       await apiPut('/companies/' + editingCompanyId, { name });
       showToast(t('toast.company_updated'), 'success');
     } else {
-      await apiPost('/companies', {
+      const created = await apiPost('/companies', {
         name,
         sort_order: companiesCache.length
       });
+      editingCompanyId = created.id;
+      document.getElementById('company-modal-title').textContent = t('company.edit');
+      document.getElementById('company-modal-cancel-btn').textContent = t('form.close');
+      loadCompanyAccessSection(editingCompanyId);
       showToast(t('toast.company_saved'), 'success');
     }
-    closeCompanyModal();
     await loadAndRenderCompanies();
     // Refresh dropdowns
     const companies = await loadCompanies();

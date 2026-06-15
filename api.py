@@ -1184,8 +1184,9 @@ def org_member_invite():
     org_id, admin_role, err = require_org(user_id, conn, min_role='admin')
     if err: conn.close(); return err
     if not check_free_limit(org_id, 'members', conn):
+        limit = get_org_limits(org_id, conn)['members']
         conn.close()
-        return jsonify({'error': 'limit_reached', 'resource': 'members', 'limit': get_org_limits(org_id, conn)['members']}), 403
+        return jsonify({'error': 'limit_reached', 'resource': 'members', 'limit': limit}), 403
     org      = conn.execute("SELECT name FROM organizations WHERE id=%s", (org_id,)).fetchone()
     org_name = org['name'] if org else ''
     existing = conn.execute("SELECT id, password_hash FROM users WHERE email=%s", (email,)).fetchone()
@@ -1785,8 +1786,9 @@ def create_company():
     org_id, role, err = require_org(user_id, conn, min_role='manager')
     if err: conn.close(); return err
     if not check_free_limit(org_id, 'companies', conn):
+        limit = get_org_limits(org_id, conn)['companies']
         conn.close()
-        return jsonify({'error': 'limit_reached', 'resource': 'companies', 'limit': get_org_limits(org_id, conn)['companies']}), 403
+        return jsonify({'error': 'limit_reached', 'resource': 'companies', 'limit': limit}), 403
     data = request.json
     company_id = str(uuid.uuid4())
     conn.execute(
@@ -1865,6 +1867,20 @@ def update_company(company_id):
 
     conn.close()
     return jsonify({'ok': True})
+
+@app.route('/companies/<company_id>/access', methods=['GET'])
+def company_get_access(company_id):
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='admin')
+    if err: conn.close(); return err
+    rows = conn.execute(
+        "SELECT user_id FROM org_member_companies WHERE company_id=%s AND org_id=%s",
+        (company_id, org_id)
+    ).fetchall()
+    conn.close()
+    return jsonify([r['user_id'] for r in rows])
 
 @app.route('/companies/<company_id>', methods=['DELETE'])
 def delete_company(company_id):
@@ -2133,8 +2149,9 @@ def create_record():
     org_id, role, err = require_org(user_id, conn, min_role='manager')
     if err: conn.close(); return err
     if not check_free_limit(org_id, 'records', conn):
+        limit = get_org_limits(org_id, conn)['records']
         conn.close()
-        return jsonify({'error': 'limit_reached', 'resource': 'records', 'limit': get_org_limits(org_id, conn)['records']}), 403
+        return jsonify({'error': 'limit_reached', 'resource': 'records', 'limit': limit}), 403
 
     data = request.json
     record_id = str(uuid.uuid4())
