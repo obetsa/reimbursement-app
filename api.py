@@ -930,6 +930,33 @@ def org_settings_update():
     return jsonify({'ok': True})
 
 
+@app.route('/org/rename', methods=['PUT'])
+def org_rename():
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='admin')
+    if err: conn.close(); return err
+
+    data = request.json or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        conn.close()
+        return jsonify({'error': 'name_required'}), 400
+
+    existing_org = conn.execute(
+        "SELECT id FROM organizations WHERE lower(name)=lower(%s) AND id!=%s", (name, org_id)
+    ).fetchone()
+    if existing_org:
+        conn.close()
+        return jsonify({'error': 'org_name_taken'}), 409
+
+    conn.execute("UPDATE organizations SET name=%s WHERE id=%s", (name, org_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True, 'name': name})
+
+
 @app.route('/org/usage', methods=['GET'])
 def org_usage():
     user_id = get_user_from_token(request)
@@ -1019,6 +1046,13 @@ def org_create():
     if not check_org_limit(user_id, conn):
         conn.close()
         return jsonify({'error': 'org_limit_reached'}), 403
+
+    existing_org = conn.execute(
+        "SELECT id FROM organizations WHERE lower(name)=lower(%s)", (name,)
+    ).fetchone()
+    if existing_org:
+        conn.close()
+        return jsonify({'error': 'org_name_taken'}), 409
 
     import secrets as _secrets
     org_id      = str(uuid.uuid4())

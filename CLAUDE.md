@@ -166,6 +166,7 @@ unprocessed_imports           — необроблені файли з Drive
 - "Вийти з організації" (manager/user) ✅: підтвердження паролем перед leave (модалка замість `confirm()`). `/auth/me` повертає `has_password` (`false` для Google OAuth юзерів — `password_hash='GOOGLE_AUTH'`); для них крок з паролем пропускається. `POST /org/leave` приймає `{password}`, перевіряє SHA256 проти `users.password_hash`, 403 `invalid_password` при невірному. i18n: `org.leave_title/leave_password_placeholder/leave_wrong_password`
 - `org.limit_create_hint` — прибрано хардкод "2" ("більше організацій" замість "більше 2 організацій") у uk/de/en, бо ліміт залежить від плану
 - Ліміт org для non-admin ролей ✅ (15.06.2026, варіант B): `check_org_limit(user_id, conn, role='admin')` рахує тільки org де юзер `admin` — `users.plan` обмежує лише кількість org-admin, а не загальну кількість org-членства. `/org/join` і invite manager/user — без ліміту. Frontend: `adminOrgCount`, i18n `org.limit_info` → "Ви адмін у {used} з {max} організацій". Деталі у "Відкриті питання"
+- `organizations.name` unique + rename ✅ (15.06.2026, кроки 1-3 з "Шлях файлів: org_id vs org_name"): `migrate_014_org_name_unique.sql` — унікальний індекс по `lower(name)`. `/org/create` тепер також перевіряє унікальність (409 `org_name_taken`). Новий `PUT /org/rename` — тільки org-admin (`require_org(min_role='admin')`), case-insensitive перевірка дублікату (виключаючи себе). UI: Settings → Організація → рядок "Назва організації" з кнопкою "Перейменувати" (тільки admin) → модалка з полем назви. i18n: `org.name_label/rename_btn/rename_title/rename_success` (uk/de/en), помилка дубліката через існуючий `superadmin.err_name_taken`. Кроки 4-5 (модалка міграції файлів, перехід на org_name шляхи) — наступний реліз, деталі у "Відкриті питання"
 
 Відкладено / наступне: див. Roadmap нижче.
 
@@ -289,14 +290,17 @@ unprocessed_imports           — необроблені файли з Drive
 **Шлях файлів: org_id vs org_name — рішення по кроках (15.06.2026)**
 Зараз: `ReceiptsManager/{org_id}/...` — унікально, але нечитабельно. Цей реліз — без змін, org_id лишається.
 
-План на наступний реліз (org_name шлях — сама ідея `ReceiptsManager/{org_name}/...` відкладена, але підготовчі умови можна робити раніше):
-1. `organizations.name` — UNIQUE constraint (заборонити однакові назви)
-2. Перейменування org — заборонено super admin; дозволено тільки org-admin своєї org (бо перейменування = міграція файлів)
-3. UI: кнопка "Перейменувати організацію" в Settings → Організація (тільки admin)
+Кроки 1-3 ✅ (15.06.2026) — підготовчі умови зроблено:
+1. ✅ `organizations.name` — UNIQUE constraint (case-insensitive, `migrate_014_org_name_unique.sql`, унікальний індекс по `lower(name)`)
+2. ✅ Перейменування org — `PUT /org/rename`, тільки org-admin своєї org (`require_org(min_role='admin')`); SA-панель такої можливості не має
+3. ✅ UI: кнопка "Перейменувати" в Settings → Організація (тільки admin), модалка з полем назви
+
+Залишилось на наступний реліз (org_name шлях — сама ідея `ReceiptsManager/{org_name}/...` відкладена):
 4. При перейменуванні — модалка з попередженням, що це триватиме якийсь час (іде міграція файлів):
    - на час міграції — погасити всі сесії учасників org
    - модалка адміна залишається відкритою (не дає закрити), поки міграція файлів не завершиться
-5. Тільки після 1-4 і коли назва стабільна як id → перехід шляхів на `org_name`
+   - **Поки шляхи на `org_id` — крок 4 не потрібен** (перейменування не зачіпає файли). Стане актуальним тільки разом з кроком 5.
+5. Тільки після кроку 4 і коли назва стабільна як id → перехід шляхів на `org_name`
 
 Поточний код використовує org_id. RLS (1.6) — теж наступний реліз.
 

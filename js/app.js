@@ -635,6 +635,13 @@ async function loadOrgMembers() {
           ${orgData.role !== 'admin' ? `<button onclick="leaveOrg()" class="btn btn-danger" style="font-size:12px">${t('org.leave_btn')}</button>` : ''}
           ${orgData.role === 'admin' ? `
           <div class="profile-row" style="flex-direction:column;align-items:flex-start;gap:8px;width:100%;border:none;padding-top:4px">
+            <div class="profile-label">${t('org.name_label')}</div>
+            <div style="display:flex;align-items:center;gap:8px;width:100%">
+              <div style="font-size:13px;color:var(--text1)">${orgData.name}</div>
+              <button onclick="openRenameOrgModal('${orgData.name.replace(/'/g,"\\'")}')" class="btn btn-ghost" style="font-size:12px">${t('org.rename_btn')}</button>
+            </div>
+          </div>
+          <div class="profile-row" style="flex-direction:column;align-items:flex-start;gap:8px;width:100%;border:none;padding-top:4px">
             <div class="profile-label">${t('org.currency_label')}</div>
             <select id="org-currency-select" onchange="updateOrgCurrency(this.value)"
               style="padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:13px">
@@ -1760,6 +1767,52 @@ function openDeleteOrgModal(orgName) {
     }
   };
   setTimeout(() => input.focus(), 50);
+}
+
+function openRenameOrgModal(currentName) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:400px;width:100%">
+      <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:16px">${t('org.rename_title')}</div>
+      <input id="_rename_org_input" type="text" autocomplete="off"
+        style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box;margin-bottom:8px">
+      <div id="_rename_org_error" style="font-size:12px;color:var(--red);margin-bottom:8px;display:none"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="_rename_org_cancel" class="btn btn-ghost">${t('org.delete_permanent_cancel')}</button>
+        <button id="_rename_org_confirm" class="btn btn-primary">${t('org.rename_btn')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const input      = overlay.querySelector('#_rename_org_input');
+  const errorEl    = overlay.querySelector('#_rename_org_error');
+  const cancelBtn  = overlay.querySelector('#_rename_org_cancel');
+  const confirmBtn = overlay.querySelector('#_rename_org_confirm');
+  input.value = currentName;
+  cancelBtn.onclick = () => overlay.remove();
+  overlay.addEventListener('click', e => { if(e.target === overlay) overlay.remove(); });
+  confirmBtn.onclick = async () => {
+    const name = input.value.trim();
+    if(!name || name === currentName) { overlay.remove(); return; }
+    confirmBtn.disabled = true;
+    errorEl.style.display = 'none';
+    const res = await fetch('/org/rename', {
+      method: 'PUT', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if(res.ok) {
+      overlay.remove();
+      showToast(t('org.rename_success'), 'success');
+      setTimeout(() => window.location.reload(), 800);
+    } else {
+      const d = await res.json();
+      errorEl.textContent = d.error === 'org_name_taken' ? t('superadmin.err_name_taken') : t('toast.error');
+      errorEl.style.display = '';
+      confirmBtn.disabled = false;
+    }
+  };
+  setTimeout(() => { input.focus(); input.select(); }, 50);
 }
 
 function restoreSettingsTab() {
