@@ -345,7 +345,7 @@ def me():
         return jsonify({'error': 'Unauthorized'}), 401
     conn = get_db()
     row  = conn.execute(
-        "SELECT email_verified, is_superadmin, plan, is_suspended FROM users WHERE id=%s", (user_id,)
+        "SELECT email_verified, is_superadmin, plan, is_suspended, password_hash FROM users WHERE id=%s", (user_id,)
     ).fetchone()
     if row and row['is_suspended'] and not row['is_superadmin']:
         conn.close(); flask_session.clear()
@@ -371,6 +371,7 @@ def me():
         'full_name':        flask_session.get('full_name', ''),
         'email_verified':   bool(row['email_verified'])  if row else False,
         'is_superadmin':    bool(row['is_superadmin'])   if row else False,
+        'has_password':     (row['password_hash'] != 'GOOGLE_AUTH') if row else True,
         'plan':             (row['plan'] or 'free')       if row else 'free',
         'org_limit':        None if (row and row['is_superadmin']) else USER_ORG_LIMITS.get((row['plan'] or 'free') if row else 'free', USER_ORG_LIMITS['free']),
         'deletion_notice':  notice['org_name']            if notice else None,
@@ -1119,7 +1120,7 @@ def org_member_invite():
     if existing:
         new_user_id  = existing['id']
         # Check org limit for the invited user
-        if not check_org_limit(new_user_id, conn):
+        if not check_org_limit(new_user_id, conn, role=role):
             conn.close()
             return jsonify({'error': 'invitee_org_limit_reached'}), 403
         active_m = conn.execute(
@@ -1357,7 +1358,7 @@ def org_join():
         return jsonify({'error': 'org_name_and_token_required'}), 400
 
     conn = get_db()
-    if not check_org_limit(user_id, conn):
+    if not check_org_limit(user_id, conn, role='user'):
         conn.close()
         return jsonify({'error': 'org_limit_reached'}), 403
 
@@ -1513,6 +1514,16 @@ def org_leave():
     if role == 'admin':
         conn.close()
         return jsonify({'error': 'admin_cannot_leave'}), 403
+
+    user = conn.execute("SELECT password_hash FROM users WHERE id=%s", (user_id,)).fetchone()
+    if user and user['password_hash'] != 'GOOGLE_AUTH':
+        data     = request.json or {}
+        password = data.get('password') or ''
+        pwd_hash = hashlib.sha256(password.encode()).hexdigest()
+        if pwd_hash != user['password_hash']:
+            conn.close()
+            return jsonify({'error': 'invalid_password'}), 403
+
     conn.execute(
         "UPDATE org_members SET left_at=now() WHERE user_id=%s AND org_id=%s AND left_at IS NULL",
         (user_id, org_id)
@@ -1530,8 +1541,11 @@ def org_leave():
 USER_ORG_LIMITS = {'free': 1, 'pro': 3, 'ultimate': 10, 'zero': None}
 
 
-def check_org_limit(user_id, conn):
-    """Returns True if user can join/create more orgs."""
+def check_org_limit(user_id, conn, role='admin'):
+    """Returns True if user can join/create more orgs with the given role.
+    users.plan обмежує тільки кількість org, де юзер admin (15.06.2026)."""
+    if role != 'admin':
+        return True
     row = conn.execute(
         "SELECT is_superadmin, plan FROM users WHERE id=%s", (user_id,)
     ).fetchone()
@@ -1541,7 +1555,7 @@ def check_org_limit(user_id, conn):
     if limit is None:
         return True
     count = conn.execute(
-        "SELECT COUNT(*) as c FROM org_members WHERE user_id=%s AND left_at IS NULL",
+        "SELECT COUNT(*) as c FROM org_members WHERE user_id=%s AND left_at IS NULL AND role='admin'",
         (user_id,)
     ).fetchone()['c']
     return count < limit

@@ -84,7 +84,21 @@
       "Bash(taskkill //F //PID 19744)",
       "Bash(PYTHONIOENCODING=utf-8 python tests/test_members.py)",
       "Bash(taskkill *)",
-      "Bash(disown)"
+      "Bash(disown)",
+      "Bash(PYTHONIOENCODING=utf-8 python *)",
+      "Bash(where node *)",
+      "Bash(where chrome *)",
+      "Read(//c/Program Files/Google/Chrome/Application//**)",
+      "Read(//c/Program Files \\(x86\\)/Microsoft/Edge/Application//**)",
+      "Bash(npm ls *)",
+      "Bash(node -e \"require\\('puppeteer'\\)\")",
+      "Bash(\"/c/Program Files/Google/Chrome/Application/chrome.exe\" --headless=new --disable-gpu --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-profile --window-size=1400,1000 about:blank)",
+      "Bash(node *)",
+      "Bash(\"/c/Program Files/Google/Chrome/Application/chrome.exe\" --headless=new --disable-gpu --remote-debugging-port=9223 --user-data-dir=/tmp/chrome-profile-leave --window-size=1400,1000 about:blank)",
+      "Bash(tasklist)",
+      "Bash(PYTHONIOENCODING=utf-8 nohup python api.py)",
+      "Bash(\"/c/Program Files/Google/Chrome/Application/chrome.exe\" --headless=new --remote-debugging-port=9333 --user-data-dir=/tmp/chrome_optb --no-sandbox)",
+      "Bash(\"/c/Program Files/Google/Chrome/Application/chrome.exe\" --headless=new --remote-debugging-port=9333 --remote-allow-origins=* --user-data-dir=/tmp/chrome_optb --no-sandbox)"
     ]
   }
 }

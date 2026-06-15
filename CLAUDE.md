@@ -128,7 +128,7 @@ unprocessed_imports           — необроблені файли з Drive
 | `manager` | свої записи + компанії, які має доступ       |
 | `user`    | тільки перегляд (viewer)                     |
 
-## Поточний стан (станом на 13.06.2026)
+## Поточний стан (станом на 15.06.2026)
 
 **Гілка `feature/org-roles`** — активна розробка.
 
@@ -163,6 +163,9 @@ unprocessed_imports           — необроблені файли з Drive
 - Фаза 2.1 (частково) ✅: `organizations.settings JSONB` (`migrate_011_org_settings.sql`) — `default_currency` (EUR/UAH/USD), `GET /org/me` повертає `settings`, `PUT /org/settings` (admin). Нові записи отримують currency з org-дефолту (без select у формі, без конвертації — старі записи не змінюються). UI: Settings → Організація, select валюти (admin); відображення суми/деталей запису тепер показує реальну валюту запису (€/₴/$)
 - План-тіари ✅: `migrate_012_plan_tiers.sql` + `USER_ORG_LIMITS`/`ORG_USAGE_LIMITS`/`get_org_limits()`/`get_org_usage()`/`get_org_storage_mb()` в api.py — 4 тіари (free/pro/ultimate/zero) для `users.plan` і `organizations.plan`. SA UI: dropdown планів для org і users. Storage-лімит enforced при завантаженні файлів (+ фікс SA.4 storage path). Org picker: динамічний `{max}` через `/auth/me.org_limit`. Деталі у "Відкриті питання" → "Бізнес-модель free/pro"
 - Фаза 3, Крок 1+2 ✅ (Монетизація): таблиця `payments`, `PAYMENT_PROVIDER=None`, `apply_plan_payment()`, `/billing/checkout` + `/billing/webhook/<provider>` (стаби 503). UI: Settings → "💳 Тариф" — `GET /billing/plans` віддає тіри free/pro/ultimate, дві секції (свій план юзера + план org), кнопки "Перейти на PRO/ULTIMATE" → checkout (зараз тост "недоступно"). Тести: test_billing 21/21 ✅
+- "Вийти з організації" (manager/user) ✅: підтвердження паролем перед leave (модалка замість `confirm()`). `/auth/me` повертає `has_password` (`false` для Google OAuth юзерів — `password_hash='GOOGLE_AUTH'`); для них крок з паролем пропускається. `POST /org/leave` приймає `{password}`, перевіряє SHA256 проти `users.password_hash`, 403 `invalid_password` при невірному. i18n: `org.leave_title/leave_password_placeholder/leave_wrong_password`
+- `org.limit_create_hint` — прибрано хардкод "2" ("більше організацій" замість "більше 2 організацій") у uk/de/en, бо ліміт залежить від плану
+- Ліміт org для non-admin ролей ✅ (15.06.2026, варіант B): `check_org_limit(user_id, conn, role='admin')` рахує тільки org де юзер `admin` — `users.plan` обмежує лише кількість org-admin, а не загальну кількість org-членства. `/org/join` і invite manager/user — без ліміту. Frontend: `adminOrgCount`, i18n `org.limit_info` → "Ви адмін у {used} з {max} організацій". Деталі у "Відкриті питання"
 
 Відкладено / наступне: див. Roadmap нижче.
 
@@ -217,6 +220,7 @@ unprocessed_imports           — необроблені файли з Drive
 | ✅ SA.9 | Список всіх користувачів (email, ім'я, org(и), статус, дата реєстрації) | Готово |
 | ✅ SA.10 | Створити користувача від SA (invite link або пароль одразу, без org) | Готово |
 | ✅ SA.11 | Фільтри + сортування в списку користувачів (пошук, статус, дата) | Готово |
+| ⬜ SA.12 | Клік на org у списку → модалка зі списком всіх користувачів цієї org | Backlog (15.06) |
 
 ### Фаза 2 — Tenant features
 
@@ -251,10 +255,10 @@ unprocessed_imports           — необроблені файли з Drive
 
 | Задача | Коли |
 |--------|------|
-| Supabase cloud | Після Фази 0, перед деплоєм |
+| Supabase cloud | Після Фази 0, перед деплоєм (відкладено на наступний реліз) |
 | OWASP ZAP scan | Перед першим публічним деплоєм |
 | Hypothesis tests | Після Multi-org |
-| Перехід на Google OAuth | Після Фази 1 |
+| Google OAuth login + звичайна реєстрація лишається | Backlog (15.06) — додати OAuth як альтернативу, не заміну email+password |
 
 ---
 
@@ -282,22 +286,33 @@ unprocessed_imports           — необроблені файли з Drive
 
 > ⚠️ Ці питання не закриті — повернутись до них перед деплоєм або при появі відповідного контексту.
 
-**Шлях файлів: org_id vs org_name**
-Зараз: `ReceiptsManager/{org_id}/...` — унікально, але нечитабельно.
-Альтернатива: `ReceiptsManager/{org_name}/...` — читабельно, але потрібні умови:
+**Шлях файлів: org_id vs org_name — рішення по кроках (15.06.2026)**
+Зараз: `ReceiptsManager/{org_id}/...` — унікально, але нечитабельно. Цей реліз — без змін, org_id лишається.
+
+План на наступний реліз (org_name шлях — сама ідея `ReceiptsManager/{org_name}/...` відкладена, але підготовчі умови можна робити раніше):
 1. `organizations.name` — UNIQUE constraint (заборонити однакові назви)
-2. Перейменування org — заборонено super admin, дозволено тільки org-admin своєї org
+2. Перейменування org — заборонено super admin; дозволено тільки org-admin своєї org (бо перейменування = міграція файлів)
+3. UI: кнопка "Перейменувати організацію" в Settings → Організація (тільки admin)
+4. При перейменуванні — модалка з попередженням, що це триватиме якийсь час (іде міграція файлів):
+   - на час міграції — погасити всі сесії учасників org
+   - модалка адміна залишається відкритою (не дає закрити), поки міграція файлів не завершиться
+5. Тільки після 1-4 і коли назва стабільна як id → перехід шляхів на `org_name`
 
-Якщо обидві умови виконані → назва стабільна як id, можна перейти на org_name в шляхах.
-Рішення відкладено. Поточний код використовує org_id.
+Поточний код використовує org_id. RLS (1.6) — теж наступний реліз.
 
-**"Вийти з організації" для manager/user — поведінка під питанням**
-Зараз кнопка "Вийти" для non-admin робить soft-leave (left_at = now()) — та сама операція що і "Виключити" від адміна.
-Проблема: юзер/менеджер може сам себе виключити, обходячи контроль адміна.
-Варіанти для обговорення:
-- Повністю прибрати кнопку (тільки адмін може виключати)
-- Замінити на "Запит на вихід" → адмін підтверджує
-- Залишити як є (юзер відповідальний за свої дії)
+**Ліміт організацій (`users.plan`) для non-admin ролей — вирішено, реалізовано (15.06.2026)**
+Було: напис "X з Y організацій активно. Ліміт досягнуто" показувався в Settings → Організація для всіх ролей, як тільки free-юзер є членом >1 org — навіть якщо в цих org він тільки `user`/`manager`.
+
+Обрано варіант B: `check_org_limit(user_id, conn, role='admin')` тепер приймає роль і одразу повертає `True`, якщо `role != 'admin'`. Для `role='admin'` рахує тільки `org_members WHERE role='admin' AND left_at IS NULL` і порівнює з `USER_ORG_LIMITS[plan]`. Тобто `users.plan` обмежує лише кількість org, де юзер — admin.
+
+Виклики:
+- `/org/create` — без змін (дефолт `role='admin'`, бо створення org завжди робить creator admin)
+- `/org/join` — `check_org_limit(user_id, conn, role='user')` (приєднання по invite-токену завжди дає роль `user`) → ефективно завжди `True`
+- `org_member_invite` (`/org/members/invite`) — `check_org_limit(new_user_id, conn, role=role)`, де `role` — вже валідована `manager`/`user` → ефективно завжди `True`, `invitee_org_limit_reached` більше не виникає для manager/user інвайтів
+
+Frontend (`js/app.js`, `loadOrgMembers`): `adminOrgCount = orgList.filter(o => o.role === 'admin').length`, `atLimit = adminOrgCount >= orgLimit`. i18n `org.limit_info` змінено з "{used} з {max} організацій активно" на "Ви адмін у {used} з {max} організацій" (uk/de/en) — точніше відображає нову семантику.
+
+Теоретична дірка (підвищення non-admin до admin понад ліміт) — не актуальна: `/org/members/<id>/role` дозволяє тільки `new_role in ('manager','user')`, admin-роль ніде не призначається крім `/org/create`.
 
 **Валюта в записах — вирішено (12.06.2026)**
 `organizations.settings.default_currency` (EUR/UAH/USD, дефолт EUR), встановлює org-admin в Settings → Організація. Нові записи отримують цю валюту автоматично, без select у формі. **Конвертації немає** — старі записи зберігають свою валюту, суми не перераховуються при зміні org-валюти. Якщо знадобиться реальна конвертація (курси, перерахунок) — окрема велика фіча, не планується.

@@ -575,10 +575,11 @@ async function loadOrgMembers() {
       const orgList   = listRes.ok  ? await listRes.json()  : [];
       const meData    = meRes.ok    ? await meRes.json()    : {};
       const usageData = usageRes.ok ? await usageRes.json() : null;
-      const isSA      = meData.is_superadmin;
-      const orgLimit  = meData.org_limit;
-      const showLimit = !isSA && orgLimit !== null && orgLimit !== undefined;
-      const atLimit   = showLimit && orgList.length >= orgLimit;
+      const isSA         = meData.is_superadmin;
+      const orgLimit     = meData.org_limit;
+      const adminOrgCount = orgList.filter(o => o.role === 'admin').length;
+      const showLimit    = !isSA && orgLimit !== null && orgLimit !== undefined;
+      const atLimit      = showLimit && adminOrgCount >= orgLimit;
 
       // Org switcher rows
       const switcherHtml = orgList.map(o => `
@@ -596,7 +597,7 @@ async function loadOrgMembers() {
       // Limit info
       const limitHtml = !showLimit ? '' : `
         <div style="font-size:11px;color:var(--text3);margin-top:4px">
-          ${t('org.limit_info').replace('{used}', orgList.length).replace('{max}', orgLimit)}
+          ${t('org.limit_info').replace('{used}', adminOrgCount).replace('{max}', orgLimit)}
           ${atLimit ? `<span style="color:var(--red);margin-left:6px">${t('org.limit_reached')}</span>` : ''}
         </div>`;
 
@@ -1529,20 +1530,63 @@ async function _loadCurrentInvite() {
   if(res.ok) _renderInviteToken(await res.json());
 }
 
-async function leaveOrg() {
-  if(!confirm(t('org.leave_confirm'))) return;
-  try {
-    const res = await fetch('/org/leave', { method: 'POST', credentials: 'include' });
-    if(!res.ok) {
-      const d = await res.json();
-      showToast(d.error === 'admin_cannot_leave' ? t('toast.forbidden') : t('toast.error'), 'error');
-      return;
+function leaveOrg() {
+  const needsPassword = !currentUser || currentUser.has_password !== false;
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:380px;width:100%">
+      <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:8px">${t('org.leave_title')}</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:16px">${t('org.leave_confirm')}</div>
+      ${needsPassword ? `
+      <input id="_leave_password_input" type="password" autocomplete="current-password" placeholder="${t('org.leave_password_placeholder')}"
+        style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box;margin-bottom:8px">
+      <div id="_leave_error" style="font-size:12px;color:var(--red);margin-bottom:8px;display:none">${t('org.leave_wrong_password')}</div>
+      ` : ''}
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="_leave_cancel_btn" class="btn btn-ghost">${t('org.delete_permanent_cancel')}</button>
+        <button id="_leave_confirm_btn" class="btn btn-danger">${t('org.leave_btn')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const cancelBtn   = overlay.querySelector('#_leave_cancel_btn');
+  const confirmBtn  = overlay.querySelector('#_leave_confirm_btn');
+  const input       = overlay.querySelector('#_leave_password_input');
+  const errorEl     = overlay.querySelector('#_leave_error');
+
+  cancelBtn.onclick = () => overlay.remove();
+  overlay.addEventListener('click', e => { if(e.target === overlay) overlay.remove(); });
+
+  confirmBtn.onclick = async () => {
+    confirmBtn.disabled = true;
+    try {
+      const res = await fetch('/org/leave', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: input ? input.value : '' }),
+      });
+      if(!res.ok) {
+        const d = await res.json();
+        if(d.error === 'invalid_password') {
+          errorEl.style.display = '';
+          confirmBtn.disabled = false;
+          return;
+        }
+        overlay.remove();
+        showToast(d.error === 'admin_cannot_leave' ? t('toast.forbidden') : t('toast.error'), 'error');
+        return;
+      }
+      overlay.remove();
+      showToast(t('org.leave_success'), 'success');
+      setTimeout(() => window.location.reload(), 800);
+    } catch {
+      overlay.remove();
+      showToast(t('toast.error'), 'error');
     }
-    showToast(t('org.leave_success'), 'success');
-    setTimeout(() => window.location.reload(), 800);
-  } catch {
-    showToast(t('toast.error'), 'error');
-  }
+  };
+
+  if(input) setTimeout(() => input.focus(), 50);
 }
 
 async function orgSwitchTo(orgId) {
