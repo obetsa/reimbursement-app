@@ -194,19 +194,24 @@ def auth_callback():
     full_name = user_info.get('name', '')
 
     conn = get_db()
-    user = conn.execute("select id from users where email=%s", (email,)).fetchone()
-    if user:
-        user_id = user['id']
-        if refresh_token:
-            conn.execute("update users set refresh_token=%s where id=%s", (refresh_token, user_id))
-            conn.commit()
-    else:
-        user_id = str(uuid.uuid4())
-        conn.execute(
-            "insert into users (id, email, password_hash, full_name, refresh_token, email_verified) values (%s,%s,%s,%s,%s,TRUE)",
-            (user_id, email, 'GOOGLE_AUTH', full_name, refresh_token)
-        )
-        conn.commit()
+    user = conn.execute(
+        "select id, password_hash, is_suspended, is_superadmin from users where email=%s", (email,)
+    ).fetchone()
+    if not user:
+        # Реєстрація закрита — Google-логін не створює нових юзерів, тільки існуючих
+        conn.close()
+        return redirect('/?google_error=registration_closed')
+    if user['is_suspended'] and not user['is_superadmin']:
+        conn.close()
+        return redirect('/?google_error=user_suspended')
+
+    user_id = user['id']
+    if refresh_token:
+        conn.execute("update users set refresh_token=%s where id=%s", (refresh_token, user_id))
+    if user['password_hash'] == 'PENDING':
+        # Перший Google-логін для запрошеного юзера = активація (мірор /auth/activate)
+        conn.execute("update users set email_verified=TRUE, registered_at=now() where id=%s", (user_id,))
+    conn.commit()
     conn.close()
 
     flask_session['user_id']   = user_id

@@ -107,7 +107,10 @@
       "Bash(PowerShell -Command \"Stop-Process -Id 21204 -Force\")",
       "Bash(tasklist //FI \"IMAGENAME eq chrome.exe\" //FO CSV)",
       "Bash(.venv/Scripts/python.exe tests/test_superadmin.py)",
-      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe tests/test_superadmin.py)"
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe tests/test_superadmin.py)",
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe tests/_tmp_test_oauth.py)",
+      "PowerShell(Get-CimInstance *)",
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe tests/test_isolation.py)"
     ]
   }
 }

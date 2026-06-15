@@ -431,6 +431,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     history.replaceState(null, '', '/');
     sessionStorage.setItem('_verify_error', '1');
   }
+  if(_vp.get('google_error')) {
+    history.replaceState(null, '', '/');
+    sessionStorage.setItem('_google_error', _vp.get('google_error'));
+  }
 
   const dateEl = document.getElementById('field-date');
   if(dateEl) dateEl.value = new Date().toISOString().split('T')[0];
@@ -489,6 +493,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   } else {
     showAuthScreen();
+    const googleError = sessionStorage.getItem('_google_error');
+    if(googleError) {
+      sessionStorage.removeItem('_google_error');
+      const msgs = {
+        registration_closed: t('auth.err_google_registration_closed'),
+        user_suspended:      t('error.user_suspended_desc'),
+      };
+      showToast(msgs[googleError] || t('auth.err_generic'), 'error');
+    }
   }
 });
 
