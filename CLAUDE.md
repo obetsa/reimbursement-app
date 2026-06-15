@@ -167,6 +167,7 @@ unprocessed_imports           — необроблені файли з Drive
 - `org.limit_create_hint` — прибрано хардкод "2" ("більше організацій" замість "більше 2 організацій") у uk/de/en, бо ліміт залежить від плану
 - Ліміт org для non-admin ролей ✅ (15.06.2026, варіант B): `check_org_limit(user_id, conn, role='admin')` рахує тільки org де юзер `admin` — `users.plan` обмежує лише кількість org-admin, а не загальну кількість org-членства. `/org/join` і invite manager/user — без ліміту. Frontend: `adminOrgCount`, i18n `org.limit_info` → "Ви адмін у {used} з {max} організацій". Деталі у "Відкриті питання"
 - `organizations.name` unique + rename ✅ (15.06.2026, кроки 1-3 з "Шлях файлів: org_id vs org_name"): `migrate_014_org_name_unique.sql` — унікальний індекс по `lower(name)`. `/org/create` тепер також перевіряє унікальність (409 `org_name_taken`). Новий `PUT /org/rename` — тільки org-admin (`require_org(min_role='admin')`), case-insensitive перевірка дублікату (виключаючи себе). UI: Settings → Організація → рядок "Назва організації" з кнопкою "Перейменувати" (тільки admin) → модалка з полем назви. i18n: `org.name_label/rename_btn/rename_title/rename_success` (uk/de/en), помилка дубліката через існуючий `superadmin.err_name_taken`. Кроки 4-5 (модалка міграції файлів, перехід на org_name шляхи) — наступний реліз, деталі у "Відкриті питання"
+- SA.12 ✅ (15.06.2026): клік на назву org у списку `/admin` → модалка зі списком всіх активних членів org (email, ім'я, роль, статус). Новий ендпоінт `GET /superadmin/orgs/<org_id>/members` (за зразком `/org/members`, тільки активні — `left_at IS NULL`). `js/admin.js`: `openOrgMembersModal(orgId, orgName)`, назва org у таблиці/картках стала клікабельною. i18n: `superadmin.org_members_title/no_org_members` (uk/de/en), решта (ролі, статуси, колонки) — існуючі ключі. test_superadmin 22/22 ✅
 
 Відкладено / наступне: див. Roadmap нижче.
 
@@ -221,7 +222,7 @@ unprocessed_imports           — необроблені файли з Drive
 | ✅ SA.9 | Список всіх користувачів (email, ім'я, org(и), статус, дата реєстрації) | Готово |
 | ✅ SA.10 | Створити користувача від SA (invite link або пароль одразу, без org) | Готово |
 | ✅ SA.11 | Фільтри + сортування в списку користувачів (пошук, статус, дата) | Готово |
-| ⬜ SA.12 | Клік на org у списку → модалка зі списком всіх користувачів цієї org | Backlog (15.06) |
+| ✅ SA.12 | Клік на org у списку → модалка зі списком всіх користувачів цієї org | Готово |
 
 ### Фаза 2 — Tenant features
 

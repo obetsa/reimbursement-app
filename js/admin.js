@@ -399,7 +399,7 @@ function _renderSAOrgs(orgs) {
       <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px">
           <div>
-            <span style="font-size:14px;font-weight:600;color:var(--text)">${o.name}</span>
+            <span style="font-size:14px;font-weight:600;color:var(--text);cursor:pointer;text-decoration:underline" onclick="openOrgMembersModal('${o.id}','${o.name.replace(/'/g, "\\'")}')">${o.name}</span>
             ${o.is_suspended ? `<span style="font-size:10px;background:var(--red);color:#fff;border-radius:4px;padding:1px 5px;margin-left:6px">suspended</span>` : ''}
           </div>
           <div style="display:flex;gap:4px;flex-shrink:0">
@@ -443,7 +443,7 @@ function _renderSAOrgs(orgs) {
         <tbody>
           ${orgs.map(o => `
             <tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:10px 12px;font-weight:500;color:var(--text)">${o.name}</td>
+              <td style="padding:10px 12px;font-weight:500;color:var(--text);cursor:pointer;text-decoration:underline" onclick="openOrgMembersModal('${o.id}','${o.name.replace(/'/g, "\\'")}')">${o.name}</td>
               <td style="padding:10px 12px;color:var(--text2)">${o.owner_email}</td>
               <td style="padding:10px 12px;text-align:center">${o.members_count}</td>
               <td style="padding:10px 12px;text-align:center">${o.pending_count > 0 ? `<span style="color:var(--yellow,#f59e0b);font-weight:600">${o.pending_count}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
@@ -537,6 +537,57 @@ function openCreateOrgModal() {
     finally  { submitBtn.disabled = false; }
   };
   setTimeout(() => orgInput.focus(), 50);
+}
+
+async function openOrgMembersModal(orgId, orgName) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:560px;width:100%;max-height:80vh;overflow-y:auto">
+      <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:16px">${t('superadmin.org_members_title').replace('{name}', orgName)}</div>
+      <div id="_sa_org_members_body">${t('loading.text')}</div>
+      <div style="display:flex;justify-content:flex-end;margin-top:16px">
+        <button id="_sa_org_members_close" class="btn btn-ghost">${t('org.delete_permanent_cancel')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#_sa_org_members_close').onclick = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  const body = overlay.querySelector('#_sa_org_members_body');
+  try {
+    const res = await fetch(`/superadmin/orgs/${orgId}/members`, { credentials: 'include' });
+    const members = await res.json();
+    if (!res.ok || !members.length) {
+      body.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text3)">${t('superadmin.no_org_members')}</div>`;
+      return;
+    }
+    const roleLabel   = { admin: t('org.role_admin'), manager: t('org.role_manager'), user: t('org.role_user') };
+    const statusStyle = { active: 'background:#dcfce7;color:#16a34a', pending: 'background:#fef9c3;color:#b45309', unverified: 'background:var(--bg3);color:var(--text3)' };
+    const statusLabel = { active: t('superadmin.status_active'), pending: t('superadmin.status_pending'), unverified: t('superadmin.status_unverified') };
+    body.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="border-bottom:2px solid var(--border);color:var(--text3);font-size:11px;font-weight:600">
+            <th style="padding:8px 10px;text-align:left">${t('superadmin.col_email')}</th>
+            <th style="padding:8px 10px;text-align:left">${t('superadmin.col_fullname')}</th>
+            <th style="padding:8px 10px;text-align:left">${t('org.role_label')}</th>
+            <th style="padding:8px 10px;text-align:left">${t('superadmin.col_status')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${members.map(m => `
+            <tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:8px 10px;color:var(--text)">${m.email}${m.is_suspended ? ` <span style="font-size:10px;background:var(--red);color:#fff;border-radius:4px;padding:1px 5px">⏸</span>` : ''}</td>
+              <td style="padding:8px 10px;color:var(--text2)">${m.full_name || '—'}</td>
+              <td style="padding:8px 10px;color:var(--text2)">${roleLabel[m.role] || m.role}</td>
+              <td style="padding:8px 10px"><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;${statusStyle[m.status]}">${statusLabel[m.status]}</span></td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+  } catch {
+    body.innerHTML = `<div style="padding:20px;text-align:center;color:var(--red)">${t('toast.error')}</div>`;
+  }
 }
 
 async function superadminSetOrgPlan(orgId, plan) {

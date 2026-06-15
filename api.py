@@ -662,6 +662,39 @@ def superadmin_list_orgs():
     return jsonify(result)
 
 
+@app.route('/superadmin/orgs/<org_id>/members', methods=['GET'])
+def superadmin_org_members(org_id):
+    conn = get_db()
+    user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+    rows = conn.execute(
+        "SELECT u.id, u.email, u.full_name, u.password_hash, u.email_verified, u.is_suspended, "
+        "m.role, m.joined_at "
+        "FROM org_members m JOIN users u ON m.user_id=u.id "
+        "WHERE m.org_id=%s AND m.left_at IS NULL "
+        "ORDER BY m.joined_at",
+        (org_id,)
+    ).fetchall()
+    conn.close()
+    result = []
+    for r in rows:
+        if r['password_hash'] == 'PENDING':
+            status = 'pending'
+        elif r['email_verified']:
+            status = 'active'
+        else:
+            status = 'unverified'
+        result.append({
+            'id':           r['id'],
+            'email':        r['email'],
+            'full_name':    r['full_name'] or '',
+            'role':         r['role'],
+            'status':       status,
+            'is_suspended': bool(r['is_suspended']),
+        })
+    return jsonify(result)
+
+
 @app.route('/superadmin/stats', methods=['GET'])
 def superadmin_stats():
     conn = get_db()

@@ -99,7 +99,15 @@
       "Bash(PYTHONIOENCODING=utf-8 nohup python api.py)",
       "Bash(\"/c/Program Files/Google/Chrome/Application/chrome.exe\" --headless=new --remote-debugging-port=9333 --user-data-dir=/tmp/chrome_optb --no-sandbox)",
       "Bash(\"/c/Program Files/Google/Chrome/Application/chrome.exe\" --headless=new --remote-debugging-port=9333 --remote-allow-origins=* --user-data-dir=/tmp/chrome_optb --no-sandbox)",
-      "Bash(\"/c/Program Files/Google/Chrome/Application/chrome.exe\" --headless=new --remote-debugging-port=9334 --remote-allow-origins=* --user-data-dir=/tmp/chrome_ren --no-sandbox)"
+      "Bash(\"/c/Program Files/Google/Chrome/Application/chrome.exe\" --headless=new --remote-debugging-port=9334 --remote-allow-origins=* --user-data-dir=/tmp/chrome_ren --no-sandbox)",
+      "Bash(where chrome.exe)",
+      "Bash(tasklist //FI \"IMAGENAME eq python.exe\" //FO CSV)",
+      "Bash(wmic process *)",
+      "Bash(PowerShell -Command \"\\(Get-Process -Id 21204\\).Path\")",
+      "Bash(PowerShell -Command \"Stop-Process -Id 21204 -Force\")",
+      "Bash(tasklist //FI \"IMAGENAME eq chrome.exe\" //FO CSV)",
+      "Bash(.venv/Scripts/python.exe tests/test_superadmin.py)",
+      "Bash(PYTHONIOENCODING=utf-8 .venv/Scripts/python.exe tests/test_superadmin.py)"
     ]
   }
 }
