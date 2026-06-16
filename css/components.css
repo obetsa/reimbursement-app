@@ -268,6 +268,29 @@
   .company-access-chip.granted { background: var(--green-bg); color: var(--green); border-color: transparent; }
   .company-access-chip.granted:hover { opacity: 0.8; }
 
+  /* ── PAGINATION ── */
+  .pagination-bar {
+    display: flex; align-items: center; justify-content: center;
+    gap: 14px; padding: 16px 0;
+  }
+  .pagination-btn {
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--bg2); color: var(--text2);
+    width: 32px; height: 32px; font-size: 15px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: all 0.12s;
+  }
+  .pagination-btn:hover:not(:disabled) { background: var(--bg3); color: var(--text); border-color: var(--border2); }
+  .pagination-btn:disabled { opacity: 0.4; cursor: default; }
+  .pagination-info { font-size: 13px; color: var(--text3); }
+  .pagination-load-more {
+    display: block; width: 100%; margin-top: 12px;
+    padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--bg2); color: var(--text2);
+    font-size: 13px; font-weight: 500; cursor: pointer; text-align: center;
+  }
+  .pagination-load-more:hover { background: var(--bg3); color: var(--text); }
+
   /* ── VERIFY EMAIL BANNER ── */
   .verify-banner {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;

@@ -4,6 +4,37 @@
 
 const PLAN_TIERS = ['free', 'pro', 'ultimate', 'zero'];
 
+// ── Pagination ──
+const SA_PAGE_SIZE = 20;
+let saOrgsPage = 1, saOrgsMobileLimit = SA_PAGE_SIZE;
+let saUsersPage = 1, saUsersMobileLimit = SA_PAGE_SIZE;
+
+function _paginateSA(items, page, mobileLimit) {
+  if (window.innerWidth <= 768) return items.slice(0, mobileLimit);
+  const start = (page - 1) * SA_PAGE_SIZE;
+  return items.slice(start, start + SA_PAGE_SIZE);
+}
+
+function _renderSAPagination(containerId, totalItems, page, mobileLimit, onPageFn, onLoadMoreFn) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  if (window.innerWidth <= 768) {
+    el.innerHTML = mobileLimit < totalItems
+      ? `<button class="pagination-load-more" onclick="${onLoadMoreFn}()">${t('pagination.show_more')}</button>`
+      : '';
+    return;
+  }
+
+  const totalPages = Math.ceil(totalItems / SA_PAGE_SIZE);
+  if (totalPages <= 1) { el.innerHTML = ''; return; }
+  el.innerHTML = `
+    <button class="pagination-btn" title="${t('pagination.prev')}" ${page <= 1 ? 'disabled' : ''} onclick="${onPageFn}(${page - 1})">‹</button>
+    <span class="pagination-info">${t('pagination.page_of').replace('{page}', page).replace('{total}', totalPages)}</span>
+    <button class="pagination-btn" title="${t('pagination.next')}" ${page >= totalPages ? 'disabled' : ''} onclick="${onPageFn}(${page + 1})">›</button>
+  `;
+}
+
 function _planSelect(id, currentPlan, onchangeFn) {
   const plan = currentPlan || 'free';
   return `<select onchange="${onchangeFn}('${id}', this.value)"
@@ -267,18 +298,30 @@ function superadminUsersFilter() {
     return (b.registered_at || '').localeCompare(a.registered_at || '');
   });
 
+  saUsersPage = 1;
+  saUsersMobileLimit = SA_PAGE_SIZE;
   _renderSAUsers(list);
 }
+
+let _saUsersFiltered = [];
+
+function goToSAUsersPage(n) { saUsersPage = n; _renderSAUsers(_saUsersFiltered); }
+function loadMoreSAUsers() { saUsersMobileLimit += SA_PAGE_SIZE; _renderSAUsers(_saUsersFiltered); }
 
 function _renderSAUsers(users) {
   const el = document.getElementById('superadmin-users-list');
   if (!el) return;
+  _saUsersFiltered = users;
+  _renderSAPagination('sa-users-pagination', users.length, saUsersPage, saUsersMobileLimit, 'goToSAUsersPage', 'loadMoreSAUsers');
   if (!users.length) { el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text3)">${t('superadmin.no_users')}</div>`; return; }
+  const totalPages = Math.ceil(users.length / SA_PAGE_SIZE);
+  if (saUsersPage > totalPages) saUsersPage = totalPages || 1;
+  const pageUsers = _paginateSA(users, saUsersPage, saUsersMobileLimit);
   const statusStyle = { active: 'background:#dcfce7;color:#16a34a', pending: 'background:#fef9c3;color:#b45309', unverified: 'background:var(--bg3);color:var(--text3)' };
   const statusLabel = { active: t('superadmin.status_active'), pending: t('superadmin.status_pending'), unverified: t('superadmin.status_unverified') };
   const isMobile = window.innerWidth <= 768;
   if (isMobile) {
-    el.innerHTML = users.map(u => `
+    el.innerHTML = pageUsers.map(u => `
       <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px">
           <div>
@@ -316,7 +359,7 @@ function _renderSAUsers(users) {
           </tr>
         </thead>
         <tbody>
-          ${users.map(u => `
+          ${pageUsers.map(u => `
           <tr style="border-bottom:1px solid var(--border)">
             <td style="padding:10px 12px;color:var(--text)">
               ${u.is_superadmin ? `<span style="background:var(--accent);color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700;margin-right:5px">SA</span>` : ''}
@@ -381,21 +424,33 @@ async function loadSuperadmin() {
 
 function superadminFilter(q) {
   const f = q.trim().toLowerCase();
+  saOrgsPage = 1;
+  saOrgsMobileLimit = SA_PAGE_SIZE;
   _renderSAOrgs(f ? _saOrgs.filter(o =>
     o.name.toLowerCase().includes(f) || o.owner_email.toLowerCase().includes(f)
   ) : _saOrgs);
 }
 
+let _saOrgsFiltered = [];
+
+function goToSAOrgsPage(n) { saOrgsPage = n; _renderSAOrgs(_saOrgsFiltered); }
+function loadMoreSAOrgs() { saOrgsMobileLimit += SA_PAGE_SIZE; _renderSAOrgs(_saOrgsFiltered); }
+
 function _renderSAOrgs(orgs) {
   const el = document.getElementById('superadmin-orgs-list');
   if (!el) return;
+  _saOrgsFiltered = orgs;
+  _renderSAPagination('sa-orgs-pagination', orgs.length, saOrgsPage, saOrgsMobileLimit, 'goToSAOrgsPage', 'loadMoreSAOrgs');
   if (!orgs.length) {
     el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text3)">${t('superadmin.no_orgs')}</div>`;
     return;
   }
+  const totalPages = Math.ceil(orgs.length / SA_PAGE_SIZE);
+  if (saOrgsPage > totalPages) saOrgsPage = totalPages || 1;
+  const pageOrgs = _paginateSA(orgs, saOrgsPage, saOrgsMobileLimit);
   const isMobile = window.innerWidth <= 768;
   if (isMobile) {
-    el.innerHTML = orgs.map(o => `
+    el.innerHTML = pageOrgs.map(o => `
       <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px">
           <div>
@@ -441,7 +496,7 @@ function _renderSAOrgs(orgs) {
           </tr>
         </thead>
         <tbody>
-          ${orgs.map(o => `
+          ${pageOrgs.map(o => `
             <tr style="border-bottom:1px solid var(--border)">
               <td style="padding:10px 12px;font-weight:500;color:var(--text);cursor:pointer;text-decoration:underline" onclick="openOrgMembersModal('${o.id}','${o.name.replace(/'/g, "\\'")}')">${o.name}</td>
               <td style="padding:10px 12px;color:var(--text2)">${o.owner_email}</td>

@@ -377,6 +377,10 @@ let filteredArchived = [];
 let currentView = window.innerWidth <= 768 ? 'cards' : (localStorage.getItem('docView') || 'table');
 let filteredDocs = sampleDocs.filter(d => !d.isArchived && !d.isDeleted);
 
+const DOCS_PAGE_SIZE = 20;
+let docsPage = 1;
+let docsMobileLimit = DOCS_PAGE_SIZE;
+
 // ── NAVIGATION ──
 function showPage(name, el) {
   // hide all pages
@@ -2254,6 +2258,45 @@ function renderDocs() {
   renderTable();
   renderCards();
   renderArchiveSection();
+  renderDocsPagination();
+}
+
+function getDocsPage() {
+  if (window.innerWidth <= 768) return filteredDocs.slice(0, docsMobileLimit);
+  const start = (docsPage - 1) * DOCS_PAGE_SIZE;
+  return filteredDocs.slice(start, start + DOCS_PAGE_SIZE);
+}
+
+function renderDocsPagination() {
+  const el = document.getElementById('docs-pagination');
+  if (!el) return;
+
+  if (window.innerWidth <= 768) {
+    el.innerHTML = docsMobileLimit < filteredDocs.length
+      ? `<button class="pagination-load-more" onclick="loadMoreDocs()">${t('pagination.show_more')}</button>`
+      : '';
+    return;
+  }
+
+  const totalPages = Math.ceil(filteredDocs.length / DOCS_PAGE_SIZE);
+  if (totalPages <= 1) { el.innerHTML = ''; return; }
+  if (docsPage > totalPages) docsPage = totalPages;
+
+  el.innerHTML = `
+    <button class="pagination-btn" title="${t('pagination.prev')}" ${docsPage <= 1 ? 'disabled' : ''} onclick="goToDocsPage(${docsPage - 1})">‹</button>
+    <span class="pagination-info">${t('pagination.page_of').replace('{page}', docsPage).replace('{total}', totalPages)}</span>
+    <button class="pagination-btn" title="${t('pagination.next')}" ${docsPage >= totalPages ? 'disabled' : ''} onclick="goToDocsPage(${docsPage + 1})">›</button>
+  `;
+}
+
+function goToDocsPage(n) {
+  docsPage = n;
+  renderDocs();
+}
+
+function loadMoreDocs() {
+  docsMobileLimit += DOCS_PAGE_SIZE;
+  renderDocs();
 }
 
 function renderArchiveSection() {
@@ -2350,7 +2393,7 @@ function renderTable() {
     tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text3)">${t('docs.not_found')}</td></tr>`;
     return;
   }
-  tbody.innerHTML = filteredDocs.map(d => `
+  tbody.innerHTML = getDocsPage().map(d => `
     <tr onclick="openDetail('${d.id}')">
       <td class="td-date">${formatDate(d.date)}</td>
       <td class="td-title"><strong style="font-weight:500">${d.title}</strong></td>
@@ -2378,7 +2421,7 @@ function renderCards() {
     grid.innerHTML = `<div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">${t('docs.not_found')}</div></div>`;
     return;
   }
-  grid.innerHTML = filteredDocs.map(d => `
+  grid.innerHTML = getDocsPage().map(d => `
     <div class="doc-card" onclick="openDetail('${d.id}')">
       <div class="doc-card-top">
         <div class="doc-card-title">${d.title}</div>
@@ -2445,6 +2488,7 @@ function applyFilters() {
   if(status === 'archived') {
     document.getElementById('table-view').style.display = 'none';
     document.getElementById('cards-view').style.display = 'none';
+    document.getElementById('docs-pagination').innerHTML = '';
     filteredDocs = [];
     filteredArchived = archivedDocs.filter(d => !d.isDeleted).filter(d => {
       if(!search) return true;
@@ -2501,6 +2545,8 @@ function sortDocs(val) {
     'status': (a,b) => a.status.localeCompare(b.status),
   };
   if(map[val]) filteredDocs.sort(map[val]);
+  docsPage = 1;
+  docsMobileLimit = DOCS_PAGE_SIZE;
   renderDocs();
 }
 

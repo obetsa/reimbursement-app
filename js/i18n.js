@@ -62,6 +62,11 @@ const TRANSLATIONS = {
     'docs.sort_status': 'Статус',
     'docs.not_found': 'Записів не знайдено',
 
+    'pagination.page_of': 'Сторінка {page} з {total}',
+    'pagination.prev': 'Попередня сторінка',
+    'pagination.next': 'Наступна сторінка',
+    'pagination.show_more': 'Показати ще',
+
     // Таблиця
     'table.date': 'Дата',
     'table.title': 'Назва',
@@ -744,6 +749,11 @@ const TRANSLATIONS = {
     'docs.sort_status': 'Status',
     'docs.not_found': 'Keine Einträge gefunden',
 
+    'pagination.page_of': 'Seite {page} von {total}',
+    'pagination.prev': 'Vorherige Seite',
+    'pagination.next': 'Nächste Seite',
+    'pagination.show_more': 'Mehr anzeigen',
+
     'table.date': 'Datum',
     'table.title': 'Bezeichnung',
     'table.company': 'Unternehmen',
@@ -1394,6 +1404,11 @@ const TRANSLATIONS = {
     'docs.sort_company': 'Company',
     'docs.sort_status': 'Status',
     'docs.not_found': 'No records found',
+
+    'pagination.page_of': 'Page {page} of {total}',
+    'pagination.prev': 'Previous page',
+    'pagination.next': 'Next page',
+    'pagination.show_more': 'Show more',
 
     'table.date': 'Date',
     'table.title': 'Title',
