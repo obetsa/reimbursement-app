@@ -1208,6 +1208,39 @@
 <!-- TOAST -->
 <div class="toast-container" id="toast-container"></div>
 
+<!-- ── DRIVE SYNC PROGRESS OVERLAY ── -->
+<div class="drive-sync-overlay hidden" id="drive-sync-overlay">
+  <div class="drive-sync-box">
+
+    <!-- Cloud icon -->
+    <div class="drive-sync-cloud" id="drive-sync-cloud">
+      <svg width="72" height="52" viewBox="0 0 72 52" fill="none">
+        <path d="M58 42H14C7.37 42 2 36.63 2 30c0-5.8 4.1-10.65 9.6-11.75A18 18 0 0 1 30 6a18 18 0 0 1 17.1 12.4A12 12 0 0 1 70 30c0 6.63-5.37 12-12 12z"
+              fill="#4285f4" opacity="0.9"/>
+        <path d="M36 50V28M36 28l-8 8M36 28l8 8" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="0" id="drive-sync-arrow"/>
+      </svg>
+    </div>
+
+    <!-- Flying files animation -->
+    <div class="drive-sync-files" id="drive-sync-files">
+      <span class="drive-sync-file">📄</span>
+      <span class="drive-sync-file">🖼️</span>
+      <span class="drive-sync-file">📄</span>
+    </div>
+
+    <div class="drive-sync-status" id="drive-sync-status" data-i18n="drive.sync_running">Синхронізація...</div>
+    <div class="drive-sync-sub" id="drive-sync-sub"></div>
+
+    <!-- Result (shown after done) -->
+    <div class="drive-sync-result" id="drive-sync-result" style="display:none">
+      <div class="drive-sync-result-row" id="drive-sync-row-uploaded"></div>
+      <div class="drive-sync-result-row" id="drive-sync-row-errors" style="display:none"></div>
+    </div>
+
+    <button class="btn btn-primary" id="drive-sync-close-btn" style="display:none;width:100%" onclick="closeDriveSyncModal()" data-i18n="form.close">Закрити</button>
+  </div>
+</div>
+
 <!-- ── MODAL: DRIVE CHECK ── -->
 <div class="modal-overlay drive-only" id="drive-check-overlay" onclick="if(event.target===this)closeDriveCheckModal()">
   <div class="modal" style="max-width:560px">

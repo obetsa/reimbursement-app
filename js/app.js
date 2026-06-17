@@ -2608,19 +2608,67 @@ function userCardClick() {
 
 // ── DRIVE (нова архітектура: тільки ручна синхронізація) ──
 
+function openDriveSyncModal() {
+  const overlay = document.getElementById('drive-sync-overlay');
+  overlay.classList.remove('hidden');
+  // reset to loading state
+  document.getElementById('drive-sync-cloud').classList.remove('done');
+  document.getElementById('drive-sync-files').classList.remove('done');
+  document.getElementById('drive-sync-status').textContent = t('drive.sync_running');
+  document.getElementById('drive-sync-sub').textContent = '';
+  document.getElementById('drive-sync-result').style.display = 'none';
+  document.getElementById('drive-sync-close-btn').style.display = 'none';
+}
+
+function closeDriveSyncModal() {
+  document.getElementById('drive-sync-overlay').classList.add('hidden');
+}
+
 async function driveSyncNow() {
-  showToast(t('drive.sync_running'), 'info');
+  openDriveSyncModal();
   try {
     const res  = await fetch('/drive/sync', { method: 'POST', credentials: 'include' });
     const data = await res.json();
+
     if(!res.ok || !data.ok) {
       const errKey = data.error === 'no_drive_token' ? 'drive.no_token' : 'toast.sync_error';
-      showToast(t(errKey), 'error');
+      document.getElementById('drive-sync-status').textContent = t(errKey);
+      document.getElementById('drive-sync-files').classList.add('done');
+      document.getElementById('drive-sync-close-btn').style.display = '';
       return;
     }
-    showToast(t('drive.sync_done').replace('{n}', data.uploaded || 0), 'success');
+
+    const uploaded = data.uploaded || 0;
+    const errors   = data.errors   || 0;
+
+    // transition to done state
+    document.getElementById('drive-sync-cloud').classList.add('done');
+    document.getElementById('drive-sync-files').classList.add('done');
+    document.getElementById('drive-sync-status').textContent = uploaded === 0
+      ? t('drive.sync_nothing')
+      : t('drive.sync_done').replace('{n}', uploaded);
+    document.getElementById('drive-sync-sub').textContent = '';
+
+    // show result rows
+    const rowUploaded = document.getElementById('drive-sync-row-uploaded');
+    rowUploaded.textContent = uploaded === 0
+      ? '✅ ' + t('drive.sync_already_up_to_date')
+      : '✅ ' + t('drive.sync_done').replace('{n}', uploaded);
+
+    const rowErrors = document.getElementById('drive-sync-row-errors');
+    if(errors > 0) {
+      rowErrors.textContent = '⚠️ ' + t('drive.sync_errors').replace('{n}', errors);
+      rowErrors.style.display = '';
+    } else {
+      rowErrors.style.display = 'none';
+    }
+
+    document.getElementById('drive-sync-result').style.display = '';
+    document.getElementById('drive-sync-close-btn').style.display = '';
   } catch {
-    showToast(t('toast.error'), 'error');
+    document.getElementById('drive-sync-status').textContent = t('toast.error');
+    document.getElementById('drive-sync-files').classList.add('done');
+    document.getElementById('drive-sync-close-btn').style.display = '';
   }
 }
 

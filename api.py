@@ -2599,7 +2599,7 @@ def drive_upload_file(access_token, folder_id, filename, file_bytes, mime_type):
     import json as _json
     meta = _json.dumps({'name': filename, 'parents': [folder_id] if folder_id else []})
     resp = http_requests.post(
-        'https://www.googleapis.com/upload/drive/v3/files%suploadType=multipart',
+        'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
         headers={'Authorization': f'Bearer {access_token}'},
         files={
             'metadata': ('metadata', meta, 'application/json; charset=UTF-8'),
@@ -2677,7 +2677,8 @@ def drive_sync_route():
         SELECT a.id, a.file_name, a.file_path, a.file_type
         FROM attachments a
         JOIN records r ON a.record_id = r.id
-        WHERE r.org_id = %s AND r.is_deleted = 0 AND a.file_path IS NOT NULL
+        WHERE r.org_id = %s AND r.is_deleted = 0
+          AND a.file_path IS NOT NULL AND a.drive_id IS NULL
     ''', (org_id,)).fetchall()
     uploaded = 0
     errors = 0
