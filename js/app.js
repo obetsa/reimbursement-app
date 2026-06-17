@@ -1,4 +1,4 @@
-const DRIVE_ENABLED = false;
+const DRIVE_ENABLED = true;
 
 function _errMsg(e) {
   const m = (e && e.message) || '';
@@ -10,9 +10,9 @@ function _errMsg(e) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  if(!DRIVE_ENABLED) {
-    document.querySelectorAll('.drive-only').forEach(el => el.style.display = 'none');
-  }
+  // Drive panel visibility is set in initApp based on has_password (Google user check)
+  // Initially hide until we know the user type
+  document.querySelectorAll('.drive-only').forEach(el => el.style.display = 'none');
 });
 
 // ══════════════════════════════════════════
@@ -79,6 +79,13 @@ async function initApp(user) {
     await updateBadges();
     loadUnprocessed();
     applyRoleRestrictions();
+
+    // Show Drive sidebar panel only for Google OAuth users
+    const isGoogleUser = DRIVE_ENABLED && (user.has_password === false);
+    document.querySelectorAll('.drive-only').forEach(el => {
+      el.style.display = isGoogleUser ? '' : 'none';
+    });
+
     showApp();
   } catch(e) {
     console.error('initApp error', e);
@@ -410,6 +417,7 @@ function showPage(name, el) {
   if(name === 'settings') { restoreSettingsTab(); loadProfile(); }
   if(name === 'unprocessed') { applyTranslations(); loadUnprocessed(); }
   if(name === 'gallery') { applyTranslations(); loadGallery(); }
+  if(name === 'drive') { applyTranslations(); }
   // if(name === 'superadmin') loadSuperadmin(); // SA moved to admin.html
 
   localStorage.setItem('currentPage', name);
@@ -2598,89 +2606,96 @@ function userCardClick() {
   }
 }
 
-// ── SYNC ──
-function syncNow() {
-  if(!DRIVE_ENABLED) return;
-  confirmSync();
-}
+// ── DRIVE (нова архітектура: тільки ручна синхронізація) ──
 
-function closeSyncPreview() {
-  document.getElementById('sync-preview-overlay').classList.remove('open');
-}
-
-async function confirmSync() {
-  if(!DRIVE_ENABLED) return;
-  setBusy(true, 'sync.busy');
+async function driveSyncNow() {
+  showToast(t('drive.sync_running'), 'info');
   try {
-    const res  = await fetch('/sync', { method: 'POST', credentials: 'include' });
+    const res  = await fetch('/drive/sync', { method: 'POST', credentials: 'include' });
     const data = await res.json();
     if(!res.ok || !data.ok) {
-      showToast(t('toast.sync_error'), 'error');
+      const errKey = data.error === 'no_drive_token' ? 'drive.no_token' : 'toast.sync_error';
+      showToast(t(errKey), 'error');
       return;
     }
-    const uploaded = data.uploaded || 0;
-    if(uploaded === 0) {
-      showToast(t('toast.sync_nothing'), 'info');
-    } else {
-      showToast(t('toast.sync_done').replace('{n}', uploaded), 'success');
-    }
+    showToast(t('drive.sync_done').replace('{n}', data.uploaded || 0), 'success');
   } catch {
-    showToast(t('toast.sync_error'), 'error');
-  } finally {
-    setBusy(false);
+    showToast(t('toast.error'), 'error');
   }
 }
 
-async function runDriveCleanup() {
-  if(!DRIVE_ENABLED) return;
-  setBusy(true, 'sync.drive_cleanup_busy');
+function driveImport() {
+  showToast(t('drive.import_wip'), 'info');
+}
+
+async function driveClean() {
+  showToast(t('drive.clean_running'), 'info');
   try {
-    const res  = await fetch('/drive-cleanup', { method: 'POST', credentials: 'include' });
+    const res  = await fetch('/drive/clean', { method: 'POST', credentials: 'include' });
     const data = await res.json();
     if(!res.ok || !data.ok) {
-      showToast(t(data.message === 'no_drive_token' ? 'toast.sync_no_drive' : 'toast.sync_error'), 'error');
+      const errKey = data.error === 'no_drive_token' ? 'drive.no_token' : 'toast.sync_error';
+      showToast(t(errKey), 'error');
       return;
     }
-    const f = data.deleted_files   || 0;
-    const d = data.deleted_folders || 0;
-    if(f === 0 && d === 0) {
-      showToast(t('sync.drive_cleanup_nothing'), 'info');
-    } else {
-      showToast(t('sync.drive_cleanup_done').replace('{f}', f).replace('{d}', d), 'success');
-    }
+    showToast(
+      t('drive.clean_done').replace('{files}', data.deleted_files || 0).replace('{folders}', data.deleted_folders || 0),
+      'success'
+    );
   } catch {
-    showToast(t('toast.sync_error'), 'error');
-  } finally {
-    setBusy(false);
+    showToast(t('toast.error'), 'error');
   }
 }
 
-async function importFromDrive() {
-  if(!DRIVE_ENABLED) return;
-  setBusy(true, 'sync.importing');
+async function driveCheck() {
   try {
-    const res  = await fetch('/import-from-drive', { method: 'POST', credentials: 'include' });
+    const res  = await fetch('/drive/check', { credentials: 'include' });
     const data = await res.json();
     if(!res.ok || !data.ok) {
-      showToast(t(data.message === 'no_drive_token' ? 'toast.sync_no_drive' : 'toast.sync_error'), 'error');
+      const errKey = data.error === 'no_drive_token' ? 'drive.no_token' : 'toast.sync_error';
+      showToast(t(errKey), 'error');
       return;
     }
-    const imported = data.imported || 0;
-    const cleaned  = data.cleaned  || 0;
-    if(imported === 0 && cleaned === 0) {
-      showToast(t('sync.import_nothing'), 'info');
-    } else {
-      if(imported > 0) showToast(t('toast.sync_imported').replace('{n}', imported), 'success');
-      if(cleaned  > 0) showToast(t('sync.import_cleaned').replace('{n}', cleaned), 'info');
-      loadUnprocessed();
-      updateUnprocessedBadge();
-    }
+    openDriveCheckModal(data);
   } catch {
-    showToast(t('toast.sync_error'), 'error');
-  } finally {
-    setBusy(false);
+    showToast(t('toast.error'), 'error');
   }
 }
+
+function openDriveCheckModal(data) {
+  const list = document.getElementById('drive-check-list');
+  const missing = data.missing_on_drive || [];
+  if(missing.length === 0) {
+    list.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text3);font-size:13px">${t('drive.check_empty')}</div>`;
+  } else {
+    list.innerHTML = missing.map(item => {
+      const localIcon = item.local_exists ? '✅' : '❌';
+      return `<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 4px;border-bottom:1px solid var(--border)">
+        <span style="flex-shrink:0;font-size:15px">${localIcon}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;color:var(--text1);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.file_name || ''}</div>
+          <div style="font-size:12px;color:var(--text3)">${item.record_title || ''} · ${item.record_date || ''}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('drive-check-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeDriveCheckModal() {
+  document.getElementById('drive-check-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+// ── OLD SYNC FUNCTIONS (disabled, kept for reference) ──
+/*
+function syncNow() { if(!DRIVE_ENABLED) return; confirmSync(); }
+function closeSyncPreview() { document.getElementById('sync-preview-overlay').classList.remove('open'); }
+async function confirmSync() { ... }
+async function runDriveCleanup() { ... }
+async function importFromDrive() { ... }
+*/
 
 // ══════════════════════════════════════════
 // EXPORT
@@ -4417,22 +4432,7 @@ function closeStatsModal() {
   document.body.style.overflow = '';
 }
 
-async function runVerifyDrive() {
-  if(!DRIVE_ENABLED) return;
-  const btn = document.getElementById('verify-drive-btn');
-  if(btn) { btn.disabled = true; btn.textContent = 'Перевірка...'; }
-  try {
-    const res = await fetch('/sync/verify-drive', { method: 'POST', credentials: 'include' });
-    const d = await res.json();
-    if(!d.ok) { showToast(d.message || 'Помилка', 'error'); return; }
-    if(d.fixed > 0) showToast(`Виправлено ${d.fixed} файл(ів) — тепер синхронізуйте`, 'success');
-    else showToast('Розбіжностей не знайдено', 'success');
-  } catch(e) {
-    showToast('Помилка', 'error');
-  } finally {
-    if(btn) { btn.disabled = false; btn.textContent = '🔍 Перевірити Drive і виправити розбіжності'; }
-  }
-}
+/* runVerifyDrive — removed, replaced by driveCheck() */
 
 async function runStorageCleanup() {
   const btn = document.getElementById('cleanup-btn');
@@ -4453,98 +4453,5 @@ async function runStorageCleanup() {
   }
 }
 
-// ══════════════════════════════════════════
-// DRIVE PICKER
-// ══════════════════════════════════════════
-let _drivePickerContext = null;
-let _drivePickerTimer   = null;
-
-function openDrivePicker(context) {
-  if(!DRIVE_ENABLED) return;
-  _drivePickerContext = context;
-  document.getElementById('drive-picker-search').value = '';
-  document.getElementById('drive-picker-overlay').classList.add('open');
-  _loadDriveFiles('');
-}
-
-function closeDrivePicker() {
-  document.getElementById('drive-picker-overlay').classList.remove('open');
-  _drivePickerContext = null;
-}
-
-function onDrivePickerSearch(val) {
-  clearTimeout(_drivePickerTimer);
-  _drivePickerTimer = setTimeout(() => _loadDriveFiles(val.trim()), 400);
-}
-
-async function _loadDriveFiles(query) {
-  const list = document.getElementById('drive-picker-list');
-  list.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text3);font-size:13px">${t('drive.loading')}</div>`;
-  try {
-    const url = query ? `/drive/files?q=${encodeURIComponent(query)}` : '/drive/files';
-    const resp = await fetch(url, { credentials: 'include' });
-    if(!resp.ok) {
-      list.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text3);font-size:13px">${t('drive.no_drive')}</div>`;
-      return;
-    }
-    const files = await resp.json();
-    if(!files.length) {
-      list.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text3);font-size:13px">${t('drive.empty')}</div>`;
-      return;
-    }
-    list.innerHTML = files.map(f => {
-      const icon = f.mimeType && f.mimeType.includes('pdf') ? '📄' :
-                   f.mimeType && f.mimeType.startsWith('image/') ? '🖼️' : '📎';
-      const name = f.name || '';
-      const shortName = name.length > 48 ? name.substring(0, 46) + '…' : name;
-      const safeId   = f.id.replace(/'/g, '');
-      const safeMime = (f.mimeType || '').replace(/'/g, '');
-      const safeName = name.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$');
-      return `<div onclick="selectDriveFile('${safeId}',\`${safeName}\`,'${safeMime}')"
-                style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-sm);cursor:pointer;transition:background 0.12s"
-                onmouseover="this.style.background='var(--bg3)'"
-                onmouseout="this.style.background=''">
-        <span style="font-size:16px;flex-shrink:0">${icon}</span>
-        <span style="font-size:13px;color:var(--text1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${shortName}</span>
-      </div>`;
-    }).join('');
-  } catch(e) {
-    list.innerHTML = `<div style="text-align:center;padding:24px;color:var(--red);font-size:13px">${t('toast.error')}</div>`;
-  }
-}
-
-async function selectDriveFile(driveId, fileName, mimeType) {
-  const ctx = _drivePickerContext;
-  closeDrivePicker();
-
-  if(ctx === 'form') {
-    pendingDriveFiles.push({ drive_id: driveId, file_name: fileName, mime_type: mimeType });
-    renderFilesPreview();
-    return;
-  }
-
-  // context is a record_id — attach directly
-  setBusy(true, 'busy.drive_download');
-  try {
-    const resp = await fetch(`/records/${ctx}/attach-from-drive`, {
-      method: 'POST', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ drive_id: driveId, file_name: fileName, mime_type: mimeType }),
-    });
-    if(!resp.ok) throw new Error();
-    const att  = await resp.json();
-    const doc  = sampleDocs.find(d => d.id === ctx) || archivedDocs.find(d => d.id === ctx);
-    if(doc) {
-      if(!doc.attachments) doc.attachments = [];
-      doc.attachments.push({ id: att.id, name: att.file_name, type: att.file_type, storageType: att.storage_type });
-      doc.files = doc.attachments.length;
-      renderAttachments(doc);
-      renderDocs();
-    }
-    showToast(t('toast.drive_attached'), 'success');
-  } catch(e) {
-    showToast(t('toast.drive_error'), 'error');
-  } finally {
-    setBusy(false);
-  }
-}
+/* Drive Picker — removed. Old functions: openDrivePicker, closeDrivePicker, onDrivePickerSearch,
+   _loadDriveFiles, selectDriveFile — not needed in new Drive architecture. */
