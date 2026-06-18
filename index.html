@@ -536,7 +536,7 @@
           </div>
           <div style="padding:12px 18px 18px;display:flex;flex-direction:column;gap:10px">
             <div style="font-size:13px;color:var(--text3)" data-i18n="drive.clean_desc">Видаляє порожні папки в ReceiptsManager</div>
-            <div><button class="btn btn-ghost" onclick="driveClean()" data-i18n="nav.drive_clean">🧹 Очистити Drive</button></div>
+            <div><button class="btn btn-danger" onclick="driveClean()" data-i18n="nav.drive_clean">🧹 Очистити Drive</button></div>
           </div>
         </div>
 
@@ -1238,6 +1238,38 @@
     </div>
 
     <button class="btn btn-primary" id="drive-sync-close-btn" style="display:none;width:100%" onclick="closeDriveSyncModal()" data-i18n="form.close">Закрити</button>
+  </div>
+</div>
+
+<!-- ── DRIVE CLEAN PROGRESS OVERLAY ── -->
+<div class="drive-sync-overlay hidden" id="drive-clean-overlay">
+  <div class="drive-sync-box">
+
+    <!-- Falling files animation -->
+    <div class="drive-clean-files" id="drive-clean-files">
+      <span class="drive-clean-file">📄</span>
+      <span class="drive-clean-file">🖼️</span>
+      <span class="drive-clean-file">📄</span>
+    </div>
+
+    <!-- Trash icon -->
+    <div class="drive-clean-trash" id="drive-clean-trash">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none">
+        <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="var(--red)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M10 11v6M14 11v6" stroke="var(--red)" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </div>
+
+    <div class="drive-sync-status" id="drive-clean-status" data-i18n="drive.clean_running">Очищення...</div>
+    <div class="drive-sync-sub" id="drive-clean-sub"></div>
+
+    <!-- Result (shown after done) -->
+    <div class="drive-sync-result" id="drive-clean-result" style="display:none">
+      <div class="drive-sync-result-row" id="drive-clean-row-files"></div>
+      <div class="drive-sync-result-row" id="drive-clean-row-folders"></div>
+    </div>
+
+    <button class="btn btn-primary" id="drive-clean-close-btn" style="display:none;width:100%" onclick="closeDriveCleanModal()" data-i18n="form.close">Закрити</button>
   </div>
 </div>
 

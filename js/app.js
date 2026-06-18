@@ -2676,22 +2676,51 @@ function driveImport() {
   showToast(t('drive.import_wip'), 'info');
 }
 
+function openDriveCleanModal() {
+  const overlay = document.getElementById('drive-clean-overlay');
+  overlay.classList.remove('hidden');
+  document.getElementById('drive-clean-trash').classList.remove('done');
+  document.getElementById('drive-clean-files').classList.remove('done');
+  document.getElementById('drive-clean-status').textContent = t('drive.clean_running');
+  document.getElementById('drive-clean-sub').textContent = '';
+  document.getElementById('drive-clean-result').style.display = 'none';
+  document.getElementById('drive-clean-close-btn').style.display = 'none';
+}
+
+function closeDriveCleanModal() {
+  document.getElementById('drive-clean-overlay').classList.add('hidden');
+}
+
 async function driveClean() {
-  showToast(t('drive.clean_running'), 'info');
+  openDriveCleanModal();
   try {
     const res  = await fetch('/drive/clean', { method: 'POST', credentials: 'include' });
     const data = await res.json();
+
     if(!res.ok || !data.ok) {
       const errKey = data.error === 'no_drive_token' ? 'drive.no_token' : 'toast.sync_error';
-      showToast(t(errKey), 'error');
+      document.getElementById('drive-clean-status').textContent = t(errKey);
+      document.getElementById('drive-clean-files').classList.add('done');
+      document.getElementById('drive-clean-close-btn').style.display = '';
       return;
     }
-    showToast(
-      t('drive.clean_done').replace('{files}', data.deleted_files || 0).replace('{folders}', data.deleted_folders || 0),
-      'success'
-    );
+
+    const files   = data.deleted_files   || 0;
+    const folders = data.deleted_folders || 0;
+
+    document.getElementById('drive-clean-trash').classList.add('done');
+    document.getElementById('drive-clean-files').classList.add('done');
+    document.getElementById('drive-clean-status').textContent =
+      (files === 0 && folders === 0) ? t('drive.clean_nothing') : t('drive.clean_done').replace('{files}', files).replace('{folders}', folders);
+
+    document.getElementById('drive-clean-row-files').textContent   = '🗑️ ' + t('drive.clean_files').replace('{n}', files);
+    document.getElementById('drive-clean-row-folders').textContent = '📁 ' + t('drive.clean_folders').replace('{n}', folders);
+    document.getElementById('drive-clean-result').style.display = '';
+    document.getElementById('drive-clean-close-btn').style.display = '';
   } catch {
-    showToast(t('toast.error'), 'error');
+    document.getElementById('drive-clean-status').textContent = t('toast.error');
+    document.getElementById('drive-clean-files').classList.add('done');
+    document.getElementById('drive-clean-close-btn').style.display = '';
   }
 }
 

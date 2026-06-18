@@ -420,3 +420,41 @@
     border-radius: var(--radius-sm);
     padding: 8px 12px;
   }
+
+  /* ── DRIVE CLEAN MODAL ── */
+  @keyframes driveFileFall {
+    0%   { opacity: 0;   transform: translateY(-48px) scale(0.75); }
+    18%  { opacity: 1;   transform: translateY(-28px) scale(1); }
+    75%  { opacity: 0.9; transform: translateY(4px)   scale(0.9); }
+    100% { opacity: 0;   transform: translateY(24px)  scale(0.7); }
+  }
+  .drive-clean-files {
+    position: relative;
+    width: 120px;
+    height: 56px;
+    margin: 0 auto 4px;
+  }
+  .drive-clean-file {
+    position: absolute;
+    font-size: 20px;
+    animation: driveFileFall 2.1s ease-in-out infinite;
+    top: 0;
+  }
+  .drive-clean-file:nth-child(1) { left: 10px;  animation-delay: 0s; }
+  .drive-clean-file:nth-child(2) { left: 50px;  animation-delay: 0.7s; }
+  .drive-clean-file:nth-child(3) { left: 88px;  animation-delay: 1.4s; }
+
+  .drive-clean-files.done .drive-clean-file { animation: none; opacity: 0; }
+
+  @keyframes driveTrashPulse {
+    0%, 100% { filter: drop-shadow(0 0 4px rgba(247,111,111,0.3)); transform: scale(1); }
+    50%       { filter: drop-shadow(0 0 14px rgba(247,111,111,0.7)); transform: scale(1.08); }
+  }
+  .drive-clean-trash {
+    animation: driveTrashPulse 1.8s ease-in-out infinite;
+    margin-bottom: 16px;
+  }
+  .drive-clean-trash.done {
+    animation: none;
+    filter: drop-shadow(0 0 8px rgba(52,211,153,0.5));
+  }
