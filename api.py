@@ -41,6 +41,17 @@ SMTP_FROM = os.environ.get('SMTP_FROM', SMTP_USER)
 ADMIN_TOKEN = os.environ.get('ADMIN_TOKEN', '')
 
 
+@app.after_request
+def set_security_headers(response):
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
+    response.headers['Server'] = 'reimbursement-app'
+    return response
+
+
 def send_verification_email(to_email, verify_url):
     if not SMTP_USER or not SMTP_PASS:
         print('[SMTP] credentials not configured')
