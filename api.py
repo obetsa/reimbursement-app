@@ -2352,7 +2352,7 @@ def delete_record_permanent(record_id):
     if err: conn.close(); return err
 
     exists = conn.execute(
-        "select id from records where id=%s and org_id=%s and (is_deleted=0 or is_deleted is null)",
+        "select id from records where id=%s and org_id=%s",
         (record_id, org_id)
     ).fetchone()
     if not exists:
@@ -2993,66 +2993,188 @@ def _do_assign(imp_id, record_id, user_id):
 # ══════════════════════════════════════════
 # BACKUP
 # ══════════════════════════════════════════
+import json as _json
+
+def _rows_to_list(conn, query, params=()):
+    import decimal, uuid as _uuid
+    rows = conn.execute(query, params).fetchall()
+    result = []
+    for row in rows:
+        d = {}
+        for k, v in row.items():
+            if hasattr(v, 'isoformat'):
+                v = v.isoformat()
+            elif isinstance(v, decimal.Decimal):
+                v = float(v)
+            elif isinstance(v, _uuid.UUID):
+                v = str(v)
+            d[k] = v
+        result.append(d)
+    return result
+
 @app.route('/backup/download', methods=['GET'])
 def backup_download():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn)
+    if err: conn.close(); return err
 
-    buf = io.BytesIO()
-    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-        if os.path.exists(DB_PATH):
-            zf.write(DB_PATH, 'local.db')
-        if os.path.exists(UPLOAD_FOLDER):
-            for dirpath, _, filenames in os.walk(UPLOAD_FOLDER):
-                for fname in filenames:
-                    full    = os.path.join(dirpath, fname)
-                    arcname = os.path.relpath(full, os.path.dirname(UPLOAD_FOLDER))
-                    zf.write(full, arcname)
-    buf.seek(0)
-    from flask import Response
-    return Response(
-        buf.getvalue(),
-        mimetype='application/zip',
-        headers={'Content-Disposition': f'attachment; filename=backup_{timestamp}.zip'}
-    )
+    try:
+        import datetime as _dt
+        now = _dt.datetime.now(_dt.timezone.utc)
+        timestamp = now.strftime('%Y%m%d_%H%M%S')
+        data = {
+            'version': 1,
+            'created_at': now.isoformat(),
+            'org_id': org_id,
+            'tables': {
+                'organizations':      _rows_to_list(conn, "SELECT * FROM organizations WHERE id=%s", (org_id,)),
+                'org_members':        _rows_to_list(conn, "SELECT * FROM org_members WHERE org_id=%s", (org_id,)),
+                'org_member_companies': _rows_to_list(conn,
+                    "SELECT omc.* FROM org_member_companies omc "
+                    "JOIN org_members om ON omc.user_id=om.user_id AND omc.org_id=om.org_id "
+                    "WHERE om.org_id=%s", (org_id,)),
+                'companies':          _rows_to_list(conn, "SELECT * FROM companies WHERE org_id=%s", (org_id,)),
+                'payment_instruments': _rows_to_list(conn, "SELECT * FROM payment_instruments WHERE org_id=%s", (org_id,)),
+                'records':            _rows_to_list(conn,
+                    "SELECT * FROM records WHERE org_id=%s AND is_deleted=0", (org_id,)),
+                'return_events':      _rows_to_list(conn,
+                    "SELECT re.* FROM return_events re "
+                    "JOIN records r ON re.record_id=r.id "
+                    "WHERE r.org_id=%s AND r.is_deleted=0", (org_id,)),
+                'attachments':        _rows_to_list(conn,
+                    "SELECT a.* FROM attachments a "
+                    "JOIN records r ON a.record_id=r.id "
+                    "WHERE r.org_id=%s AND r.is_deleted=0", (org_id,)),
+            },
+            'users_ref': _rows_to_list(conn,
+                "SELECT u.id, u.email, u.full_name FROM users u "
+                "JOIN org_members om ON u.id=om.user_id "
+                "WHERE om.org_id=%s AND om.left_at IS NULL", (org_id,)),
+        }
+        json_bytes = _json.dumps(data, ensure_ascii=False, indent=2).encode('utf-8')
+
+        buf = io.BytesIO()
+        org_upload_dir = os.path.join('data', 'uploads', 'ReceiptsManager', org_id)
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr('backup.json', json_bytes)
+            if os.path.exists(org_upload_dir):
+                for dirpath, _, filenames in os.walk(org_upload_dir):
+                    for fname in filenames:
+                        full = os.path.join(dirpath, fname)
+                        arcname = os.path.relpath(full, os.path.join('data', 'uploads'))
+                        zf.write(full, arcname.replace(os.sep, '/'))
+        buf.seek(0)
+        conn.close()
+        from flask import Response
+        return Response(
+            buf.getvalue(),
+            mimetype='application/zip',
+            headers={'Content-Disposition': f'attachment; filename=backup_{timestamp}.zip'}
+        )
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/backup/restore', methods=['POST'])
 def backup_restore():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='admin')
+    if err: conn.close(); return err
 
     if 'file' not in request.files:
+        conn.close()
         return jsonify({'ok': False, 'message': 'no_file'}), 400
     f = request.files['file']
     if not f.filename.endswith('.zip'):
+        conn.close()
         return jsonify({'ok': False, 'message': 'invalid_file'}), 400
 
     try:
         buf = io.BytesIO(f.read())
         with zipfile.ZipFile(buf, 'r') as zf:
             names = zf.namelist()
-            if 'local.db' not in names:
+            if 'backup.json' not in names:
+                conn.close()
                 return jsonify({'ok': False, 'message': 'invalid_backup'}), 400
 
-            # Restore DB
-            with zf.open('local.db') as src:
-                with open(DB_PATH, 'wb') as dst:
-                    dst.write(src.read())
+            bdata = _json.loads(zf.open('backup.json').read().decode('utf-8'))
+            if bdata.get('version') != 1 or 'tables' not in bdata or 'org_id' not in bdata:
+                conn.close()
+                return jsonify({'ok': False, 'message': 'invalid_backup'}), 400
+            if bdata['org_id'] != org_id:
+                conn.close()
+                return jsonify({'ok': False, 'message': 'org_mismatch'}), 400
 
-            # Restore uploads
-            upload_prefix = 'uploads/'
+            tables = bdata['tables']
+
+            def upsert(table, rows, conflict_col='id'):
+                for row in rows:
+                    cols = list(row.keys())
+                    vals = [_json.dumps(v) if isinstance(v, (dict, list)) else v for v in (row[c] for c in cols)]
+                    ph = ','.join(['%s'] * len(cols))
+                    set_clause = ','.join([f"{c}=EXCLUDED.{c}" for c in cols if c != conflict_col])
+                    conn.execute(
+                        f"INSERT INTO {table} ({','.join(cols)}) VALUES ({ph}) "
+                        f"ON CONFLICT ({conflict_col}) DO UPDATE SET {set_clause}",
+                        vals
+                    )
+
+            # Delete in reverse FK order
+            conn.execute("DELETE FROM return_events WHERE record_id IN (SELECT id FROM records WHERE org_id=%s)", (org_id,))
+            conn.execute("DELETE FROM attachments WHERE record_id IN (SELECT id FROM records WHERE org_id=%s)", (org_id,))
+            conn.execute("DELETE FROM records WHERE org_id=%s", (org_id,))
+            conn.execute("DELETE FROM org_member_companies WHERE org_id=%s", (org_id,))
+            conn.execute("DELETE FROM payment_instruments WHERE org_id=%s", (org_id,))
+            conn.execute("DELETE FROM companies WHERE org_id=%s", (org_id,))
+
+            # Restore in FK order
+            upsert('organizations', tables.get('organizations', []))
+
+            # org_members: тільки якщо user існує
+            for row in tables.get('org_members', []):
+                exists = conn.execute("SELECT id FROM users WHERE id=%s", (row['user_id'],)).fetchone()
+                if exists:
+                    cols = list(row.keys())
+                    vals = [row[c] for c in cols]
+                    ph = ','.join(['%s'] * len(cols))
+                    set_clause = ','.join([f"{c}=EXCLUDED.{c}" for c in cols if c != 'id'])
+                    conn.execute(
+                        f"INSERT INTO org_members ({','.join(cols)}) VALUES ({ph}) "
+                        f"ON CONFLICT (id) DO UPDATE SET {set_clause}", vals
+                    )
+
+            upsert('companies', tables.get('companies', []))
+            upsert('payment_instruments', tables.get('payment_instruments', []))
+            upsert('records', tables.get('records', []))
+            upsert('return_events', tables.get('return_events', []))
+            upsert('attachments', tables.get('attachments', []))
+            upsert('org_member_companies', tables.get('org_member_companies', []))
+
+            conn.commit()
+
+            # Restore files
+            org_upload_dir = os.path.join('data', 'uploads', 'ReceiptsManager', org_id)
+            if os.path.exists(org_upload_dir):
+                shutil.rmtree(org_upload_dir)
+            file_prefix = f'ReceiptsManager/{org_id}/'
             for name in names:
-                if name.startswith(upload_prefix) and not name.endswith('/'):
-                    dest = os.path.join('data', name.replace('/', os.sep))
+                if name.startswith(file_prefix) and not name.endswith('/'):
+                    dest = os.path.join('data', 'uploads', name.replace('/', os.sep))
                     os.makedirs(os.path.dirname(dest), exist_ok=True)
                     with zf.open(name) as src:
                         with open(dest, 'wb') as dst:
                             dst.write(src.read())
+
     except Exception as e:
+        conn.close()
         return jsonify({'ok': False, 'message': str(e)}), 500
 
+    conn.close()
     return jsonify({'ok': True})
 
 
