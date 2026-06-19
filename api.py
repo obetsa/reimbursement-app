@@ -143,7 +143,7 @@ def init_db():
         conn.commit()
     conn.close()
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-    print("✅ Database initialized")
+    print("Database initialized")
 
 # ══════════════════════════════════════════
 # AUTH
@@ -276,6 +276,125 @@ border-radius:8px;text-decoration:none;font-size:14px;font-weight:600">
     except Exception as e:
         print(f'[SMTP] {e}')
         return False
+
+
+def send_reset_password_email(to_email, full_name, reset_url):
+    if not SMTP_USER or not SMTP_PASS:
+        print('[SMTP] credentials not configured')
+        return False
+    try:
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = 'Скидання паролю — Reimbursement App'
+        msg['From']    = SMTP_FROM
+        msg['To']      = to_email
+        name_str = full_name or to_email
+        html = f"""<div style="font-family:sans-serif;max-width:480px;margin:40px auto;padding:32px;
+background:#16213e;border:1px solid #2d2d4e;border-radius:14px">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:28px">
+    <div style="width:44px;height:44px;background:#6c63ff;border-radius:10px;
+display:flex;align-items:center;justify-content:center;font-size:22px">💳</div>
+    <div>
+      <div style="color:#fff;font-size:17px;font-weight:600">Reimbursement App</div>
+      <div style="color:#888;font-size:11px">Управління витратами</div>
+    </div>
+  </div>
+  <p style="color:#ccc;font-size:14px;margin:0 0 8px">Привіт, {name_str}!</p>
+  <p style="color:#ccc;font-size:14px;margin:0 0 24px">
+    Ми отримали запит на скидання паролю для вашого акаунту.<br>
+    Натисни кнопку нижче щоб встановити новий пароль:
+  </p>
+  <a href="{reset_url}"
+    style="display:inline-block;padding:12px 28px;background:#6c63ff;color:#fff;
+border-radius:8px;text-decoration:none;font-size:14px;font-weight:600">
+    Встановити новий пароль
+  </a>
+  <p style="color:#555;font-size:11px;margin-top:24px">
+    Посилання дійсне 1 годину.<br>
+    Якщо ти не запитував скидання паролю — проігноруй цей лист. Твій пароль залишається незмінним.
+  </p>
+</div>"""
+        msg.attach(MIMEText(html, 'html', 'utf-8'))
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as s:
+            s.ehlo(); s.starttls(); s.login(SMTP_USER, SMTP_PASS)
+            s.sendmail(SMTP_FROM, to_email, msg.as_string())
+        return True
+    except Exception as e:
+        print(f'[SMTP] {e}')
+        return False
+
+
+def send_google_login_hint_email(to_email, full_name):
+    if not SMTP_USER or not SMTP_PASS:
+        return False
+    try:
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = 'Відновлення паролю — Reimbursement App'
+        msg['From']    = SMTP_FROM
+        msg['To']      = to_email
+        name_str = full_name or to_email
+        html = f"""<div style="font-family:sans-serif;max-width:480px;margin:40px auto;padding:32px;
+background:#16213e;border:1px solid #2d2d4e;border-radius:14px">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:28px">
+    <div style="width:44px;height:44px;background:#6c63ff;border-radius:10px;
+display:flex;align-items:center;justify-content:center;font-size:22px">💳</div>
+    <div>
+      <div style="color:#fff;font-size:17px;font-weight:600">Reimbursement App</div>
+      <div style="color:#888;font-size:11px">Управління витратами</div>
+    </div>
+  </div>
+  <p style="color:#ccc;font-size:14px;margin:0 0 8px">Привіт, {name_str}!</p>
+  <p style="color:#ccc;font-size:14px;margin:0 0 24px">
+    Ваш акаунт прив'язаний до Google — пароль не встановлено.<br>
+    Для входу використовуйте кнопку <strong style="color:#fff">«Увійти через Google»</strong>.
+  </p>
+  <p style="color:#555;font-size:11px;margin-top:24px">
+    Якщо ти не запитував скидання паролю — проігноруй цей лист.
+  </p>
+</div>"""
+        msg.attach(MIMEText(html, 'html', 'utf-8'))
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as s:
+            s.ehlo(); s.starttls(); s.login(SMTP_USER, SMTP_PASS)
+            s.sendmail(SMTP_FROM, to_email, msg.as_string())
+        return True
+    except Exception as e:
+        print(f'[SMTP] {e}')
+        return False
+
+
+# ── First-run setup ──
+@app.route('/setup', methods=['POST'])
+def setup_first_superadmin():
+    conn = get_db()
+    count = conn.execute("SELECT COUNT(*) AS c FROM users WHERE is_superadmin=TRUE").fetchone()['c']
+    if count > 0:
+        conn.close()
+        return jsonify({'error': 'already_setup'}), 403
+    data      = request.json or {}
+    email     = (data.get('email') or '').strip().lower()
+    password  = data.get('password') or ''
+    full_name = (data.get('full_name') or '').strip()
+    if not email or len(password) < 6:
+        conn.close()
+        return jsonify({'error': 'invalid_input'}), 400
+    existing = conn.execute("SELECT id FROM users WHERE email=%s", (email,)).fetchone()
+    if existing:
+        # Upgrade existing user to superadmin
+        pwd_hash = hashlib.sha256(password.encode()).hexdigest()
+        conn.execute(
+            "UPDATE users SET is_superadmin=TRUE, password_hash=%s, email_verified=TRUE, registered_at=now() WHERE id=%s",
+            (pwd_hash, existing['id'])
+        )
+        conn.commit(); conn.close()
+        return jsonify({'ok': True})
+    new_id   = str(uuid.uuid4())
+    pwd_hash = hashlib.sha256(password.encode()).hexdigest()
+    conn.execute(
+        "INSERT INTO users (id, email, password_hash, full_name, email_verified, is_superadmin, registered_at) "
+        "VALUES (%s,%s,%s,%s,TRUE,TRUE,now())",
+        (new_id, email, pwd_hash, full_name or email)
+    )
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
 
 
 @app.route('/auth/register', methods=['POST'])
@@ -455,19 +574,28 @@ def auth_activate_post():
         return jsonify({'error': 'invalid_input'}), 400
     conn = get_db()
     row  = conn.execute(
-        "SELECT ev.user_id, u.email, u.full_name "
+        "SELECT ev.user_id, ev.token_type, u.email, u.full_name, u.password_hash "
         "FROM email_verifications ev JOIN users u ON ev.user_id=u.id "
-        "WHERE ev.token=%s AND ev.expires_at > (now() AT TIME ZONE 'utc') AND u.password_hash='PENDING'",
+        "WHERE ev.token=%s AND ev.expires_at > (now() AT TIME ZONE 'utc')",
         (token,)
     ).fetchone()
     if not row:
         conn.close()
         return jsonify({'error': 'invalid_or_expired_token'}), 400
+    token_type = row['token_type'] or 'activation'
+    # Activation tokens only work for PENDING users
+    if token_type == 'activation' and row['password_hash'] != 'PENDING':
+        conn.close()
+        return jsonify({'error': 'invalid_or_expired_token'}), 400
     pwd_hash = hashlib.sha256(password.encode()).hexdigest()
-    conn.execute(
-        "UPDATE users SET password_hash=%s, email_verified=TRUE, registered_at=now() WHERE id=%s",
-        (pwd_hash, row['user_id'])
-    )
+    if token_type == 'activation':
+        conn.execute(
+            "UPDATE users SET password_hash=%s, email_verified=TRUE, registered_at=now() WHERE id=%s",
+            (pwd_hash, row['user_id'])
+        )
+    else:
+        # Reset token — just update password, keep email_verified/registered_at
+        conn.execute("UPDATE users SET password_hash=%s WHERE id=%s", (pwd_hash, row['user_id']))
     conn.execute("DELETE FROM email_verifications WHERE token=%s", (token,))
     conn.commit()
     conn.close()
@@ -476,6 +604,79 @@ def auth_activate_post():
     flask_session['full_name'] = row['full_name']
     flask_session.permanent    = True
     return jsonify({'ok': True})
+
+
+@app.route('/auth/forgot-password', methods=['POST'])
+def auth_forgot_password():
+    data  = request.json or {}
+    email = (data.get('email') or '').strip().lower()
+    if not email:
+        return jsonify({'error': 'email_required'}), 400
+    conn = get_db()
+    user = conn.execute(
+        "SELECT id, full_name, password_hash FROM users WHERE email=%s", (email,)
+    ).fetchone()
+    if not user:
+        conn.close()
+        return jsonify({'ok': True})  # Don't reveal if email exists
+    if user['password_hash'] == 'GOOGLE_AUTH':
+        conn.close()
+        send_google_login_hint_email(email, user['full_name'])
+        return jsonify({'ok': True})
+    if user['password_hash'] == 'PENDING':
+        # Resend activation link
+        conn.execute("DELETE FROM email_verifications WHERE user_id=%s", (user['id'],))
+        token      = secrets.token_urlsafe(32)
+        expires_at = datetime.utcnow() + __import__('datetime').timedelta(hours=48)
+        conn.execute(
+            "INSERT INTO email_verifications (id, user_id, token, expires_at, token_type) VALUES (%s,%s,%s,%s,'activation')",
+            (str(uuid.uuid4()), user['id'], token, expires_at)
+        )
+        conn.commit(); conn.close()
+        activate_url = request.host_url.rstrip('/') + f'/auth/activate?token={token}'
+        send_activation_email(email, user['full_name'], None, activate_url)
+        return jsonify({'ok': True})
+    # Normal user — generate reset token
+    conn.execute("DELETE FROM email_verifications WHERE user_id=%s AND token_type='reset'", (user['id'],))
+    token      = secrets.token_urlsafe(32)
+    expires_at = datetime.utcnow() + __import__('datetime').timedelta(hours=1)
+    conn.execute(
+        "INSERT INTO email_verifications (id, user_id, token, expires_at, token_type) VALUES (%s,%s,%s,%s,'reset')",
+        (str(uuid.uuid4()), user['id'], token, expires_at)
+    )
+    conn.commit(); conn.close()
+    reset_url = request.host_url.rstrip('/') + f'/auth/activate?token={token}'
+    send_reset_password_email(email, user['full_name'], reset_url)
+    return jsonify({'ok': True})
+
+
+@app.route('/auth/change-password', methods=['PUT'])
+def auth_change_password():
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    data        = request.json or {}
+    old_password = data.get('old_password') or ''
+    new_password = data.get('new_password') or ''
+    if len(new_password) < 6:
+        return jsonify({'error': 'password_too_short'}), 400
+    conn = get_db()
+    user = conn.execute("SELECT password_hash FROM users WHERE id=%s", (user_id,)).fetchone()
+    if not user:
+        conn.close(); return jsonify({'error': 'not_found'}), 404
+    if user['password_hash'] == 'GOOGLE_AUTH':
+        conn.close(); return jsonify({'error': 'google_auth_no_password'}), 400
+    if user['password_hash'] == 'PENDING':
+        conn.close(); return jsonify({'error': 'account_not_activated'}), 400
+    # Verify old password
+    old_hash = hashlib.sha256(old_password.encode()).hexdigest()
+    if user['password_hash'] != old_hash:
+        conn.close(); return jsonify({'error': 'invalid_old_password'}), 403
+    new_hash = hashlib.sha256(new_password.encode()).hexdigest()
+    conn.execute("UPDATE users SET password_hash=%s WHERE id=%s", (new_hash, user_id))
+    conn.commit(); conn.close()
+    flask_session.clear()  # Force logout
+    return jsonify({'ok': True})
+
 
 # ══════════════════════════════════════════
 # SUPERADMIN API
@@ -578,6 +779,87 @@ def superadmin_create_user():
         return jsonify({'ok': True, 'user_id': new_id})
 
 
+@app.route('/superadmin/users/<target_user_id>/details', methods=['GET'])
+def superadmin_user_details(target_user_id):
+    conn = get_db()
+    user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+    user = conn.execute(
+        "SELECT id, email, full_name, password_hash, email_verified, is_superadmin, plan, is_suspended, registered_at "
+        "FROM users WHERE id=%s", (target_user_id,)
+    ).fetchone()
+    if not user:
+        conn.close(); return jsonify({'error': 'not_found'}), 404
+    orgs = conn.execute(
+        "SELECT o.id, o.name, m.role FROM org_members m "
+        "JOIN organizations o ON o.id=m.org_id "
+        "WHERE m.user_id=%s AND m.left_at IS NULL ORDER BY m.joined_at",
+        (target_user_id,)
+    ).fetchall()
+    conn.close()
+    if user['password_hash'] == 'PENDING':
+        status = 'pending'
+    elif user['email_verified']:
+        status = 'active'
+    else:
+        status = 'unverified'
+    return jsonify({
+        'id':           user['id'],
+        'email':        user['email'],
+        'full_name':    user['full_name'] or '',
+        'status':       status,
+        'is_superadmin': bool(user['is_superadmin']),
+        'plan':         user['plan'] or 'free',
+        'is_suspended': bool(user['is_suspended']),
+        'has_password': user['password_hash'] not in ('GOOGLE_AUTH', 'PENDING'),
+        'registered_at': user['registered_at'].isoformat() if user['registered_at'] else None,
+        'orgs': [{'id': o['id'], 'name': o['name'], 'role': o['role']} for o in orgs],
+    })
+
+
+@app.route('/superadmin/users/<target_user_id>/set-superadmin', methods=['PUT'])
+def superadmin_set_superadmin(target_user_id):
+    conn = get_db()
+    user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+    if target_user_id == user_id:
+        conn.close(); return jsonify({'error': 'cannot_change_own_sa'}), 400
+    data = request.json or {}
+    is_sa = bool(data.get('is_superadmin', False))
+    target = conn.execute("SELECT id FROM users WHERE id=%s", (target_user_id,)).fetchone()
+    if not target:
+        conn.close(); return jsonify({'error': 'not_found'}), 404
+    conn.execute("UPDATE users SET is_superadmin=%s WHERE id=%s", (is_sa, target_user_id))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True, 'is_superadmin': is_sa})
+
+
+@app.route('/superadmin/users/<target_user_id>/reset-password', methods=['POST'])
+def superadmin_reset_user_password(target_user_id):
+    conn = get_db()
+    user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+    target = conn.execute(
+        "SELECT id, email, full_name, password_hash FROM users WHERE id=%s", (target_user_id,)
+    ).fetchone()
+    if not target:
+        conn.close(); return jsonify({'error': 'not_found'}), 404
+    if target['password_hash'] == 'GOOGLE_AUTH':
+        conn.close(); return jsonify({'error': 'google_auth_no_password'}), 400
+    # Generate reset token (1-time, 48h)
+    conn.execute("DELETE FROM email_verifications WHERE user_id=%s AND token_type='reset'", (target_user_id,))
+    token      = secrets.token_urlsafe(32)
+    expires_at = datetime.utcnow() + __import__('datetime').timedelta(hours=48)
+    conn.execute(
+        "INSERT INTO email_verifications (id, user_id, token, expires_at, token_type) VALUES (%s,%s,%s,%s,'reset')",
+        (str(uuid.uuid4()), target_user_id, token, expires_at)
+    )
+    conn.commit(); conn.close()
+    reset_url = request.host_url.rstrip('/') + f'/auth/activate?token={token}'
+    send_reset_password_email(target['email'], target['full_name'], reset_url)
+    return jsonify({'ok': True})
+
+
 @app.route('/superadmin/users/<target_user_id>/set-plan', methods=['POST'])
 def superadmin_set_user_plan(target_user_id):
     conn = get_db()
@@ -599,9 +881,20 @@ def superadmin_suspend_user(target_user_id):
     conn = get_db()
     user_id, err = require_superadmin(request, conn)
     if err: conn.close(); return err
+    if target_user_id == user_id:
+        conn.close(); return jsonify({'error': 'cannot_suspend_self'}), 400
     target = conn.execute("SELECT is_superadmin FROM users WHERE id=%s", (target_user_id,)).fetchone()
-    if target and target['is_superadmin']:
-        conn.close(); return jsonify({'error': 'cannot_act_on_superadmin'}), 400
+    if not target:
+        conn.close(); return jsonify({'error': 'not_found'}), 404
+    # Suspending another SA requires password confirmation
+    if target['is_superadmin']:
+        data     = request.json or {}
+        password = data.get('password') or ''
+        if not password:
+            conn.close(); return jsonify({'error': 'password_required'}), 400
+        sa_row = conn.execute("SELECT password_hash FROM users WHERE id=%s", (user_id,)).fetchone()
+        if not sa_row or sa_row['password_hash'] != hashlib.sha256(password.encode()).hexdigest():
+            conn.close(); return jsonify({'error': 'invalid_password'}), 403
     conn.execute("UPDATE users SET is_suspended=TRUE WHERE id=%s", (target_user_id,))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
@@ -3420,7 +3713,7 @@ if __name__ == '__main__':
     os.makedirs('data', exist_ok=True)
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     init_db()
-    print("🚀 Starting Reimbursement App server...")
-    print("📍 Open: http://localhost:5500")
-    print("─" * 40)
+    print("Starting Reimbursement App server...")
+    print("Open: http://localhost:5500")
+    print("-" * 40)
     app.run(host='0.0.0.0', port=5500, debug=False)

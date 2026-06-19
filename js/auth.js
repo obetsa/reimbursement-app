@@ -65,6 +65,61 @@ async function authSubmit() {
   }
 }
 
+// ── FORGOT PASSWORD ──
+
+function showForgotPassword() {
+  const mainForm = document.getElementById('auth-main-form');
+  const forgotForm = document.getElementById('auth-forgot-form');
+  if(mainForm) mainForm.style.display = 'none';
+  if(forgotForm) forgotForm.style.display = '';
+  const emailInput = document.getElementById('auth-forgot-email');
+  if(emailInput) {
+    const existingEmail = document.getElementById('auth-email')?.value || '';
+    emailInput.value = existingEmail;
+    emailInput.focus();
+  }
+  const errEl = document.getElementById('auth-forgot-error');
+  const successEl = document.getElementById('auth-forgot-success');
+  if(errEl) errEl.style.display = 'none';
+  if(successEl) successEl.style.display = 'none';
+  const submitBtn = document.getElementById('auth-forgot-submit');
+  if(submitBtn) submitBtn.style.display = '';
+}
+
+function showLoginFormFromForgot() {
+  const mainForm = document.getElementById('auth-main-form');
+  const forgotForm = document.getElementById('auth-forgot-form');
+  if(mainForm) mainForm.style.display = '';
+  if(forgotForm) forgotForm.style.display = 'none';
+}
+
+async function forgotPasswordSubmit() {
+  const email  = (document.getElementById('auth-forgot-email')?.value || '').trim();
+  const errEl  = document.getElementById('auth-forgot-error');
+  const successEl = document.getElementById('auth-forgot-success');
+  const btn    = document.getElementById('auth-forgot-submit');
+  if(errEl) errEl.style.display = 'none';
+  if(!email) {
+    if(errEl) { errEl.textContent = t('auth.err_enter_email_password'); errEl.style.display = ''; }
+    return;
+  }
+  if(btn) btn.disabled = true;
+  try {
+    await fetch('/auth/forgot-password', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    // Always show success (don't reveal if email exists)
+    if(successEl) successEl.style.display = '';
+    if(btn) btn.style.display = 'none';
+  } catch {
+    if(errEl) { errEl.textContent = t('auth.err_connection'); errEl.style.display = ''; }
+  } finally {
+    if(btn) btn.disabled = false;
+  }
+}
+
 async function authGetCurrentUser() {
   try {
     const res = await fetch('/auth/me', { credentials: 'include' });

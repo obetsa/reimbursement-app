@@ -322,7 +322,8 @@ function _renderSAUsers(users) {
   const isMobile = window.innerWidth <= 768;
   if (isMobile) {
     el.innerHTML = pageUsers.map(u => `
-      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px">
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px;cursor:pointer"
+        onclick="openUserDetailModal('${u.id}')">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px">
           <div>
             <div style="font-size:13px;font-weight:600;color:var(--text)">${u.email}${u.is_suspended ? ` <span style="font-size:10px;background:var(--red);color:#fff;border-radius:4px;padding:1px 5px">blocked</span>` : ''}</div>
@@ -330,19 +331,12 @@ function _renderSAUsers(users) {
           </div>
           <span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;flex-shrink:0;${statusStyle[u.status]}">${statusLabel[u.status]}</span>
         </div>
-        <div style="font-size:11px;color:var(--text3);display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px;margin-bottom:8px">
+        <div style="font-size:11px;color:var(--text3);display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
           ${u.is_superadmin ? `<span style="background:var(--accent);color:#fff;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600">SA</span>` : ''}
           ${u.orgs.length ? `<span>${u.orgs.join(', ')}</span>` : `<span style="color:var(--text3)">${t('superadmin.no_org')}</span>`}
           ${u.registered_at ? `<span>${u.registered_at.slice(0, 10)}</span>` : ''}
           ${_planSelect(u.id, u.plan, 'superadminSetUserPlan')}
         </div>
-        ${!u.is_superadmin ? `<div style="display:flex;gap:4px">
-          ${u.is_suspended
-            ? `<button class="btn btn-secondary" style="font-size:11px;padding:3px 8px" onclick="superadminToggleUserSuspend('${u.id}',false,'${u.email.replace(/'/g, "\\'")}')">▶ ${t('superadmin.unsuspend_user_btn')}</button>`
-            : `<button class="btn btn-secondary" style="font-size:11px;padding:3px 8px;opacity:0.7" onclick="superadminToggleUserSuspend('${u.id}',true,'${u.email.replace(/'/g, "\\'")}')">⏸ ${t('superadmin.suspend_user_btn')}</button>`
-          }
-          <button class="btn btn-danger" style="font-size:11px;padding:3px 8px" onclick="superadminDeleteUser('${u.id}','${u.email.replace(/'/g, "\\'")}')">🗑</button>
-        </div>` : ''}
       </div>`).join('');
   } else {
     el.innerHTML = `
@@ -355,12 +349,12 @@ function _renderSAUsers(users) {
             <th style="padding:10px 12px;text-align:left">${t('superadmin.col_orgs')}</th>
             <th style="padding:10px 12px;text-align:left">${t('superadmin.col_plan')}</th>
             <th style="padding:10px 12px;text-align:left">${t('superadmin.col_registered')}</th>
-            <th style="padding:10px 12px;text-align:center"></th>
           </tr>
         </thead>
         <tbody>
           ${pageUsers.map(u => `
-          <tr style="border-bottom:1px solid var(--border)">
+          <tr style="border-bottom:1px solid var(--border);cursor:pointer" onclick="openUserDetailModal('${u.id}')"
+            onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''">
             <td style="padding:10px 12px;color:var(--text)">
               ${u.is_superadmin ? `<span style="background:var(--accent);color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700;margin-right:5px">SA</span>` : ''}
               ${u.email}
@@ -371,18 +365,175 @@ function _renderSAUsers(users) {
             <td style="padding:10px 12px;color:var(--text2);font-size:12px">${u.orgs.length ? u.orgs.join(', ') : `<span style="color:var(--text3)">—</span>`}</td>
             <td style="padding:10px 12px">${_planSelect(u.id, u.plan, 'superadminSetUserPlan')}</td>
             <td style="padding:10px 12px;color:var(--text3);font-size:11px">${u.registered_at ? u.registered_at.slice(0, 10) : '—'}</td>
-            <td style="padding:6px 12px;text-align:center;white-space:nowrap">
-              ${!u.is_superadmin ? `
-              ${u.is_suspended
-                ? `<button class="btn btn-secondary" style="font-size:11px;padding:3px 8px;margin-right:4px" onclick="superadminToggleUserSuspend('${u.id}',false,'${u.email.replace(/'/g, "\\'")}')">▶ ${t('superadmin.unsuspend_user_btn')}</button>`
-                : `<button class="btn btn-secondary" style="font-size:11px;padding:3px 8px;margin-right:4px;opacity:0.7" onclick="superadminToggleUserSuspend('${u.id}',true,'${u.email.replace(/'/g, "\\'")}')">⏸ ${t('superadmin.suspend_user_btn')}</button>`
-              }
-              <button class="btn btn-danger" style="font-size:11px;padding:3px 8px" onclick="superadminDeleteUser('${u.id}','${u.email.replace(/'/g, "\\'")}')">🗑</button>
-              ` : '—'}
-            </td>
           </tr>`).join('')}
         </tbody>
       </table>`;
+  }
+}
+
+// ── User Detail Modal ──
+
+async function openUserDetailModal(userId) {
+  const res = await fetch(`/superadmin/users/${userId}/details`, { credentials: 'include' });
+  if (!res.ok) { showToast(t('toast.error'), 'error'); return; }
+  const u = await res.json();
+
+  const roleLabel = { admin: t('superadmin.role_admin'), manager: t('superadmin.role_manager'), user: t('superadmin.role_user') };
+  const statusStyle = { active: 'background:#dcfce7;color:#16a34a', pending: 'background:#fef9c3;color:#b45309', unverified: 'background:var(--bg3);color:var(--text3)' };
+  const statusLabel = { active: t('superadmin.status_active'), pending: t('superadmin.status_pending'), unverified: t('superadmin.status_unverified') };
+
+  const orgsHtml = u.orgs.length
+    ? u.orgs.map(o => `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+          <span style="font-size:13px;color:var(--text)">${o.name}</span>
+          <span style="font-size:11px;color:var(--text3)">${roleLabel[o.role] || o.role}</span>
+        </div>`).join('')
+    : `<div style="font-size:13px;color:var(--text3);padding:8px 0">${t('superadmin.no_org')}</div>`;
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto';
+  overlay.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:460px;width:100%;margin:auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <div style="font-size:15px;font-weight:600;color:var(--text)">${t('superadmin.user_detail_title')}</div>
+        <button onclick="this.closest('.ud-overlay').remove()" class="btn btn-ghost" style="font-size:18px;padding:2px 8px">×</button>
+      </div>
+
+      <div style="margin-bottom:16px">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:2px">Email</div>
+        <div style="font-size:14px;font-weight:600;color:var(--text)">${u.email}</div>
+      </div>
+      ${u.full_name ? `<div style="margin-bottom:16px">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:2px">${t('superadmin.col_fullname')}</div>
+        <div style="font-size:13px;color:var(--text2)">${u.full_name}</div>
+      </div>` : ''}
+      <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:2px">${t('superadmin.col_status')}</div>
+          <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;${statusStyle[u.status]}">${statusLabel[u.status]}</span>
+        </div>
+        <div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:2px">${t('superadmin.col_plan')}</div>
+          <span style="font-size:13px;color:var(--text2)">${(u.plan || 'free').toUpperCase()}</span>
+        </div>
+        ${u.registered_at ? `<div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:2px">${t('superadmin.col_registered')}</div>
+          <span style="font-size:13px;color:var(--text2)">${u.registered_at.slice(0, 10)}</span>
+        </div>` : ''}
+      </div>
+
+      <div style="margin-bottom:16px">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:6px">${t('superadmin.col_orgs')}</div>
+        ${orgsHtml}
+      </div>
+
+      <div style="border-top:1px solid var(--border);padding-top:16px;margin-bottom:16px">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+          <input id="_ud_sa_checkbox" type="checkbox" ${u.is_superadmin ? 'checked' : ''}
+            style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent)"
+            onchange="superadminToggleSA('${u.id}', this.checked, this)">
+          <div>
+            <div style="font-size:13px;font-weight:600;color:var(--text)">${t('superadmin.sa_label')}</div>
+            <div style="font-size:11px;color:var(--text3)">${t('superadmin.sa_label_hint')}</div>
+          </div>
+        </label>
+      </div>
+
+      <div id="_ud_suspend_pwd_block" style="display:none;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:4px">${t('superadmin.suspend_sa_pwd_label')}</div>
+        <input id="_ud_suspend_pwd" type="password" placeholder="${t('superadmin.suspend_sa_pwd_placeholder')}"
+          style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:13px;box-sizing:border-box">
+        <div id="_ud_suspend_err" style="display:none;font-size:12px;color:var(--red);margin-top:4px"></div>
+      </div>
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${u.is_suspended
+          ? `<button class="btn btn-secondary" onclick="superadminUnsuspendFromModal('${u.id}', this)">${t('superadmin.unsuspend_user_btn')}</button>`
+          : `<button class="btn btn-secondary" style="opacity:0.8" id="_ud_suspend_btn" onclick="superadminSuspendFromModal('${u.id}', ${u.is_superadmin}, this)">${t('superadmin.suspend_user_btn')}</button>`
+        }
+        ${u.has_password ? `<button class="btn btn-ghost" onclick="superadminResetPasswordFromModal('${u.id}', this)">${t('superadmin.reset_password_btn')}</button>` : ''}
+        <button class="btn btn-danger" style="margin-left:auto" onclick="superadminDeleteUser('${u.id}','${u.email.replace(/'/g, "\\'")}');this.closest('.ud-overlay').remove()">${t('superadmin.delete_user_btn')}</button>
+      </div>
+    </div>`;
+  overlay.classList.add('ud-overlay');
+  // Close on backdrop click
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+
+async function superadminToggleSA(userId, isSA, checkbox) {
+  const res = await fetch(`/superadmin/users/${userId}/set-superadmin`, {
+    method: 'PUT', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ is_superadmin: isSA }),
+  });
+  if (res.ok) {
+    showToast(isSA ? t('superadmin.sa_granted_toast') : t('superadmin.sa_revoked_toast'), 'success');
+    loadSAUsers();
+  } else {
+    const d = await res.json().catch(() => ({}));
+    checkbox.checked = !isSA; // revert
+    if (d.error === 'cannot_change_own_sa') showToast(t('superadmin.sa_cannot_change_own'), 'error');
+    else showToast(t('toast.error'), 'error');
+  }
+}
+
+async function superadminSuspendFromModal(userId, isSuperadmin, btn) {
+  const overlay = btn.closest('.ud-overlay');
+  if (isSuperadmin) {
+    // Show password field first
+    const pwdBlock = overlay.querySelector('#_ud_suspend_pwd_block');
+    const pwdInput = overlay.querySelector('#_ud_suspend_pwd');
+    const errEl    = overlay.querySelector('#_ud_suspend_err');
+    if (pwdBlock.style.display === 'none') {
+      pwdBlock.style.display = '';
+      pwdInput.focus();
+      btn.textContent = t('superadmin.suspend_confirm_btn');
+      return;
+    }
+    const password = pwdInput.value;
+    if (!password) { errEl.textContent = t('superadmin.suspend_sa_pwd_label'); errEl.style.display = ''; return; }
+    btn.disabled = true;
+    const res = await fetch(`/superadmin/users/${userId}/suspend`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    btn.disabled = false;
+    if (res.ok) {
+      overlay.remove(); showToast(t('superadmin.suspend_user_toast'), 'success'); loadSAUsers();
+    } else {
+      const d = await res.json().catch(() => ({}));
+      errEl.textContent = d.error === 'invalid_password' ? t('superadmin.suspend_sa_wrong_pwd') : t('toast.error');
+      errEl.style.display = '';
+    }
+  } else {
+    btn.disabled = true;
+    const res = await fetch(`/superadmin/users/${userId}/suspend`, { method: 'POST', credentials: 'include' });
+    btn.disabled = false;
+    if (res.ok) { overlay.remove(); showToast(t('superadmin.suspend_user_toast'), 'success'); loadSAUsers(); }
+    else showToast(t('toast.error'), 'error');
+  }
+}
+
+async function superadminUnsuspendFromModal(userId, btn) {
+  const overlay = btn.closest('.ud-overlay');
+  btn.disabled = true;
+  const res = await fetch(`/superadmin/users/${userId}/unsuspend`, { method: 'POST', credentials: 'include' });
+  btn.disabled = false;
+  if (res.ok) { overlay.remove(); showToast(t('superadmin.unsuspend_user_toast'), 'success'); loadSAUsers(); }
+  else showToast(t('toast.error'), 'error');
+}
+
+async function superadminResetPasswordFromModal(userId, btn) {
+  const overlay = btn.closest('.ud-overlay');
+  btn.disabled = true;
+  const res = await fetch(`/superadmin/users/${userId}/reset-password`, { method: 'POST', credentials: 'include' });
+  btn.disabled = false;
+  if (res.ok) { overlay.remove(); showToast(t('superadmin.reset_password_toast'), 'success'); }
+  else {
+    const d = await res.json().catch(() => ({}));
+    showToast(d.error === 'google_auth_no_password' ? t('superadmin.reset_pwd_google_error') : t('toast.error'), 'error');
   }
 }
 

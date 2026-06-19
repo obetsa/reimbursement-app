@@ -426,9 +426,10 @@ function showPage(name, el) {
 // ── INIT ──
 document.addEventListener('DOMContentLoaded', async () => {
   const _vp = new URLSearchParams(window.location.search);
-  if(_vp.get('activate_token')) {
+  if(_vp.get('activate_token') || _vp.get('reset_token')) {
+    const tok = _vp.get('activate_token') || _vp.get('reset_token');
     history.replaceState(null, '', '/');
-    showActivateScreen(_vp.get('activate_token'));
+    showActivateScreen(tok);
     return;
   }
   if(_vp.get('activate_error') === '1') {
@@ -536,15 +537,36 @@ async function loadProfile() {
   const container = document.getElementById('profile-content');
   if(!container) return;
   try {
-    const [res, orgRes] = await Promise.all([
+    const [res, orgRes, meRes] = await Promise.all([
       fetch('/profile', { credentials: 'include' }),
       fetch('/org/me',  { credentials: 'include' }),
+      fetch('/auth/me', { credentials: 'include' }),
     ]);
-    const data = await res.json();
+    const data   = await res.json();
     if(!res.ok) return;
-    const org = orgRes.ok ? await orgRes.json() : null;
+    const org    = orgRes.ok ? await orgRes.json() : null;
+    const meData = meRes.ok ? await meRes.json() : {};
 
-    const roleLabel = { admin: 'Адміністратор', manager: 'Менеджер', user: 'Користувач' };
+    const roleLabel = { admin: t('org.role_admin'), manager: t('org.role_manager'), user: t('org.role_user') };
+    const hasPassword = meData.has_password !== false;
+
+    const pwdSection = hasPassword ? `
+      <div style="border-top:1px solid var(--border);padding-top:16px;margin-top:4px">
+        <div class="profile-label" style="margin-bottom:12px">${t('profile.change_password_title')}</div>
+        <div style="display:flex;flex-direction:column;gap:8px;max-width:320px">
+          <input id="prof-old-pwd" type="password" placeholder="${t('profile.old_password')}"
+            style="padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:13px">
+          <input id="prof-new-pwd" type="password" placeholder="${t('profile.new_password')}"
+            style="padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:13px">
+          <input id="prof-new-pwd2" type="password" placeholder="${t('profile.new_password2')}"
+            style="padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:13px">
+          <div id="prof-pwd-err" style="display:none;font-size:12px;color:var(--red)"></div>
+          <button class="btn btn-primary" style="width:fit-content" onclick="changePassword()">${t('profile.save_password')}</button>
+        </div>
+      </div>` : `
+      <div style="border-top:1px solid var(--border);padding-top:16px;margin-top:4px">
+        <div style="font-size:12px;color:var(--text3)">${t('profile.google_no_password')}</div>
+      </div>`;
 
     container.innerHTML = `
       <div class="profile-row">
@@ -565,9 +587,46 @@ async function loadProfile() {
         <div class="profile-value">${roleLabel[org.role] || org.role}</div>
       </div>
       ` : ''}
+      ${pwdSection}
     `;
   } catch {
     if(container) container.innerHTML = '';
+  }
+}
+
+async function changePassword() {
+  const oldPwd  = document.getElementById('prof-old-pwd')?.value  || '';
+  const newPwd  = document.getElementById('prof-new-pwd')?.value  || '';
+  const newPwd2 = document.getElementById('prof-new-pwd2')?.value || '';
+  const errEl   = document.getElementById('prof-pwd-err');
+  if(errEl) errEl.style.display = 'none';
+
+  if(newPwd.length < 6) { if(errEl) { errEl.textContent = t('auth.err_password_too_short'); errEl.style.display = ''; } return; }
+  if(newPwd !== newPwd2) { if(errEl) { errEl.textContent = t('profile.password_mismatch'); errEl.style.display = ''; } return; }
+
+  const btn = document.querySelector('[onclick="changePassword()"]');
+  if(btn) btn.disabled = true;
+  try {
+    const res = await fetch('/auth/change-password', {
+      method: 'PUT', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ old_password: oldPwd, new_password: newPwd }),
+    });
+    const data = await res.json();
+    if(data.ok) {
+      showToast(t('profile.password_changed'), 'success');
+      setTimeout(() => signOut(), 1500);
+    } else {
+      const msgs = {
+        invalid_old_password: t('profile.wrong_old_password'),
+        password_too_short:   t('auth.err_password_too_short'),
+      };
+      if(errEl) { errEl.textContent = msgs[data.error] || t('toast.error'); errEl.style.display = ''; }
+    }
+  } catch {
+    if(errEl) { errEl.textContent = t('auth.err_connection'); errEl.style.display = ''; }
+  } finally {
+    if(btn) btn.disabled = false;
   }
 }
 

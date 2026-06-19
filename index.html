@@ -39,6 +39,7 @@
     </div>
 
     <!-- Email/password form -->
+    <div id="auth-main-form">
     <div id="auth-tabs" style="display:none">
       <button id="tab-login" onclick="authShowTab('login')"></button>
       <button id="tab-register" onclick="authShowTab('register')"></button>
@@ -60,9 +61,12 @@
     </div>
     <div id="auth-error" style="display:none;color:var(--red,#e05555);font-size:12px;margin-bottom:10px;text-align:center"></div>
     <button onclick="authSubmit()" id="auth-submit-btn"
-      style="width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);font-size:14px;font-weight:600;cursor:pointer;margin-bottom:16px" data-i18n="auth.login_btn">
+      style="width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);font-size:14px;font-weight:600;cursor:pointer;margin-bottom:10px" data-i18n="auth.login_btn">
       Увійти
     </button>
+    <div style="text-align:right;margin-bottom:12px">
+      <button onclick="showForgotPassword()" style="background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;padding:0;text-decoration:underline" data-i18n="auth.forgot_password">Забули пароль?</button>
+    </div>
 
     <!-- Divider -->
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
@@ -80,6 +84,23 @@
       </svg>
       <span data-i18n="auth.google_btn">Увійти через Google</span>
     </button>
+    </div><!-- end auth-main-form -->
+
+    <!-- Forgot password form -->
+    <div id="auth-forgot-form" style="display:none">
+      <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:8px" data-i18n="auth.forgot_password_title">Відновлення паролю</div>
+      <p style="font-size:13px;color:var(--text2);margin:0 0 16px" data-i18n="auth.forgot_password_desc">Введіть ваш email і ми надішлемо посилання для скидання паролю.</p>
+      <input id="auth-forgot-email" type="email" placeholder="Email"
+        style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);color:var(--text1);font-size:14px;box-sizing:border-box;margin-bottom:10px"
+        onkeydown="if(event.key==='Enter')forgotPasswordSubmit()">
+      <div id="auth-forgot-error" style="display:none;color:var(--red,#e05555);font-size:12px;margin-bottom:10px;text-align:center"></div>
+      <div id="auth-forgot-success" style="display:none;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;color:#16a34a;margin-bottom:12px" data-i18n="auth.forgot_success">Якщо цей email зареєстровано — ми надіслали лист із посиланням.</div>
+      <button id="auth-forgot-submit" onclick="forgotPasswordSubmit()"
+        style="width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);font-size:14px;font-weight:600;cursor:pointer;margin-bottom:12px" data-i18n="auth.forgot_submit_btn">
+        Надіслати посилання
+      </button>
+      <button onclick="showLoginFormFromForgot()" style="background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;padding:0;text-decoration:underline" data-i18n="auth.forgot_back">← Повернутись до входу</button>
+    </div>
   </div>
 </div>
 
