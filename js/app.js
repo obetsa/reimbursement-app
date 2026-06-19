@@ -550,22 +550,12 @@ async function loadProfile() {
     const roleLabel = { admin: t('org.role_admin'), manager: t('org.role_manager'), user: t('org.role_user') };
     const hasPassword = meData.has_password !== false;
 
-    const pwdSection = hasPassword ? `
+    const pwdSection = `
       <div style="border-top:1px solid var(--border);padding-top:16px;margin-top:4px">
-        <div class="profile-label" style="margin-bottom:12px">${t('profile.change_password_title')}</div>
-        <div style="display:flex;flex-direction:column;gap:8px;max-width:320px">
-          <input id="prof-old-pwd" type="password" placeholder="${t('profile.old_password')}"
-            style="padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:13px">
-          <input id="prof-new-pwd" type="password" placeholder="${t('profile.new_password')}"
-            style="padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:13px">
-          <input id="prof-new-pwd2" type="password" placeholder="${t('profile.new_password2')}"
-            style="padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:13px">
-          <div id="prof-pwd-err" style="display:none;font-size:12px;color:var(--red)"></div>
-          <button class="btn btn-primary" style="width:fit-content" onclick="changePassword()">${t('profile.save_password')}</button>
-        </div>
-      </div>` : `
-      <div style="border-top:1px solid var(--border);padding-top:16px;margin-top:4px">
-        <div style="font-size:12px;color:var(--text3)">${t('profile.google_no_password')}</div>
+        ${hasPassword
+          ? `<button class="btn btn-ghost" style="font-size:13px" onclick="openChangePasswordModal()">${t('profile.change_password_title')}</button>`
+          : `<div style="font-size:12px;color:var(--text3)">${t('profile.google_no_password')}</div>`
+        }
       </div>`;
 
     container.innerHTML = `
@@ -594,40 +584,68 @@ async function loadProfile() {
   }
 }
 
-async function changePassword() {
-  const oldPwd  = document.getElementById('prof-old-pwd')?.value  || '';
-  const newPwd  = document.getElementById('prof-new-pwd')?.value  || '';
-  const newPwd2 = document.getElementById('prof-new-pwd2')?.value || '';
-  const errEl   = document.getElementById('prof-pwd-err');
-  if(errEl) errEl.style.display = 'none';
+function openChangePasswordModal() {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:380px;width:100%">
+      <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:20px">${t('profile.change_password_title')}</div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+        <input id="_cpwd_old" type="password" placeholder="${t('profile.old_password')}" autocomplete="current-password"
+          style="padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:13px">
+        <input id="_cpwd_new" type="password" placeholder="${t('profile.new_password')}" autocomplete="new-password"
+          style="padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:13px">
+        <input id="_cpwd_new2" type="password" placeholder="${t('profile.new_password2')}" autocomplete="new-password"
+          style="padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:13px">
+      </div>
+      <div id="_cpwd_err" style="display:none;font-size:12px;color:var(--red);margin-bottom:12px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="_cpwd_cancel" class="btn btn-ghost">${t('form.cancel')}</button>
+        <button id="_cpwd_submit" class="btn btn-primary">${t('profile.save_password')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
 
-  if(newPwd.length < 6) { if(errEl) { errEl.textContent = t('auth.err_password_too_short'); errEl.style.display = ''; } return; }
-  if(newPwd !== newPwd2) { if(errEl) { errEl.textContent = t('profile.password_mismatch'); errEl.style.display = ''; } return; }
+  const errEl  = overlay.querySelector('#_cpwd_err');
+  const submit = overlay.querySelector('#_cpwd_submit');
+  overlay.querySelector('#_cpwd_cancel').onclick = () => overlay.remove();
+  overlay.addEventListener('click', e => { if(e.target === overlay) overlay.remove(); });
 
-  const btn = document.querySelector('[onclick="changePassword()"]');
-  if(btn) btn.disabled = true;
-  try {
-    const res = await fetch('/auth/change-password', {
-      method: 'PUT', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ old_password: oldPwd, new_password: newPwd }),
-    });
-    const data = await res.json();
-    if(data.ok) {
-      showToast(t('profile.password_changed'), 'success');
-      setTimeout(() => signOut(), 1500);
-    } else {
-      const msgs = {
-        invalid_old_password: t('profile.wrong_old_password'),
-        password_too_short:   t('auth.err_password_too_short'),
-      };
-      if(errEl) { errEl.textContent = msgs[data.error] || t('toast.error'); errEl.style.display = ''; }
+  // Enter key on last field submits
+  overlay.querySelector('#_cpwd_new2').addEventListener('keydown', e => { if(e.key === 'Enter') submit.click(); });
+
+  submit.onclick = async () => {
+    const oldPwd  = overlay.querySelector('#_cpwd_old').value  || '';
+    const newPwd  = overlay.querySelector('#_cpwd_new').value  || '';
+    const newPwd2 = overlay.querySelector('#_cpwd_new2').value || '';
+    errEl.style.display = 'none';
+    if(newPwd.length < 6) { errEl.textContent = t('auth.err_password_too_short'); errEl.style.display = ''; return; }
+    if(newPwd !== newPwd2) { errEl.textContent = t('profile.password_mismatch'); errEl.style.display = ''; return; }
+    submit.disabled = true;
+    try {
+      const res = await fetch('/auth/change-password', {
+        method: 'PUT', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ old_password: oldPwd, new_password: newPwd }),
+      });
+      const data = await res.json();
+      if(data.ok) {
+        overlay.remove();
+        showToast(t('profile.password_changed'), 'success');
+        setTimeout(() => signOut(), 1500);
+      } else {
+        const msgs = { invalid_old_password: t('profile.wrong_old_password'), password_too_short: t('auth.err_password_too_short') };
+        errEl.textContent = msgs[data.error] || t('toast.error');
+        errEl.style.display = '';
+      }
+    } catch {
+      errEl.textContent = t('auth.err_connection');
+      errEl.style.display = '';
+    } finally {
+      submit.disabled = false;
     }
-  } catch {
-    if(errEl) { errEl.textContent = t('auth.err_connection'); errEl.style.display = ''; }
-  } finally {
-    if(btn) btn.disabled = false;
-  }
+  };
+  setTimeout(() => overlay.querySelector('#_cpwd_old').focus(), 50);
 }
 
 async function loadOrgMembers() {
