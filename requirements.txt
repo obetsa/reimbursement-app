@@ -3,3 +3,5 @@ flask-cors==6.0.2
 python-dotenv==1.0.1
 requests==2.32.3
 psycopg2-binary
+hypothesis==6.155.5
+pytest==9.1.1

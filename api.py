@@ -2164,7 +2164,17 @@ def create_record():
         conn.close()
         return jsonify({'error': 'limit_reached', 'resource': 'records', 'limit': limit}), 403
 
-    data = request.json
+    data = request.json or {}
+    missing = [f for f in ('title', 'date', 'amount', 'pay_type', 'pay_method') if not data.get(f) and data.get(f) != 0]
+    if missing:
+        conn.close()
+        return jsonify({'error': 'missing_fields', 'fields': missing}), 400
+    try:
+        float(data['amount'])
+    except (TypeError, ValueError):
+        conn.close()
+        return jsonify({'error': 'invalid_amount'}), 400
+
     record_id = str(uuid.uuid4())
     org_row = conn.execute("SELECT settings FROM organizations WHERE id=%s", (org_id,)).fetchone()
     default_currency = (org_row['settings'] or {}).get('default_currency', 'EUR') if org_row else 'EUR'
