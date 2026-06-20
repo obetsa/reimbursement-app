@@ -182,7 +182,7 @@ function openCreateSAUserModal() {
     const errEl    = overlay.querySelector('#_sau_error');
     errEl.style.display = 'none';
     if (!email) { errEl.textContent = t('superadmin.err_email_required'); errEl.style.display = ''; return; }
-    if (mode === 'password' && password.length < 6) { errEl.textContent = t('superadmin.err_pwd_short'); errEl.style.display = ''; return; }
+    if (mode === 'password' && (password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || /[^\x00-\x7F]/.test(password))) { errEl.textContent = t('superadmin.err_pwd_short'); errEl.style.display = ''; return; }
     const btn = overlay.querySelector('#_sau_submit');
     btn.disabled = true;
     const res = await fetch('/superadmin/users', {

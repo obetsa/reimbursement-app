@@ -142,6 +142,8 @@
 
   /* ── SETTINGS ── */
   .settings-layout { display: flex !important; flex-direction: column; }
+  #profile-content .profile-value { font-size: 12px; }
+  #profile-content .profile-label { width: 80px; }
   .settings-nav {
     display: grid;
     grid-template-columns: 1fr 1fr;

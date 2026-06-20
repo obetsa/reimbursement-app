@@ -129,6 +129,14 @@ class _PGConn:
 def get_db():
     return _PGConn()
 
+def validate_password(password):
+    if len(password) < 8: return 'password_too_short'
+    if re.search(r'[^\x00-\x7F]', password): return 'password_too_short'
+    if not re.search(r'[A-Z]', password): return 'password_too_short'
+    if not re.search(r'[a-z]', password): return 'password_too_short'
+    if not re.search(r'[0-9]', password): return 'password_too_short'
+    return None
+
 def init_db():
     # Tables are created via schema_pg.sql — here we only ensure defaults exist
     conn = get_db()
@@ -373,7 +381,7 @@ def setup_first_superadmin():
     email     = (data.get('email') or '').strip().lower()
     password  = data.get('password') or ''
     full_name = (data.get('full_name') or '').strip()
-    if not email or len(password) < 6:
+    if not email or validate_password(password):
         conn.close()
         return jsonify({'error': 'invalid_input'}), 400
     existing = conn.execute("SELECT id FROM users WHERE email=%s", (email,)).fetchone()
@@ -570,7 +578,7 @@ def auth_activate_post():
     data     = request.json or {}
     token    = (data.get('token') or '').strip()
     password = data.get('password') or ''
-    if not token or len(password) < 6:
+    if not token or validate_password(password):
         return jsonify({'error': 'invalid_input'}), 400
     conn = get_db()
     row  = conn.execute(
@@ -657,7 +665,7 @@ def auth_change_password():
     data        = request.json or {}
     old_password = data.get('old_password') or ''
     new_password = data.get('new_password') or ''
-    if len(new_password) < 6:
+    if validate_password(new_password):
         return jsonify({'error': 'password_too_short'}), 400
     conn = get_db()
     user = conn.execute("SELECT password_hash FROM users WHERE id=%s", (user_id,)).fetchone()
@@ -748,7 +756,7 @@ def superadmin_create_user():
         conn.close(); return jsonify({'error': 'email_required'}), 400
     if mode not in ('invite', 'password'):
         conn.close(); return jsonify({'error': 'invalid_mode'}), 400
-    if mode == 'password' and len(password) < 6:
+    if mode == 'password' and validate_password(password):
         conn.close(); return jsonify({'error': 'password_too_short'}), 400
     existing = conn.execute("SELECT id FROM users WHERE email=%s", (email,)).fetchone()
     if existing:

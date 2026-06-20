@@ -270,6 +270,7 @@ unprocessed_imports           — необроблені файли з Drive
 1. **Drive sync** — перевірити OAuth scopes і права в Google Console перед увімкненням `DRIVE_ENABLED` (деталі: "Відкриті питання" → "Google Drive")
 2. **OWASP ZAP scan** — перед першим публічним деплоєм
 3. **Hypothesis tests** — property-based тести для критичної логіки (org isolation, ролі, ліміти)
+4. **Відновити пароль** — flow "Забули пароль?" прихований (`display:none` у `index.html`). Потребує: SMTP-шаблон листа, `/auth/forgot-password` і `/auth/reset-password` ендпоінти, токен з TTL у `email_verifications`. Показати кнопку після реалізації.
 
 ---
 

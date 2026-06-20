@@ -619,7 +619,7 @@ function openChangePasswordModal() {
     const newPwd  = overlay.querySelector('#_cpwd_new').value  || '';
     const newPwd2 = overlay.querySelector('#_cpwd_new2').value || '';
     errEl.style.display = 'none';
-    if(newPwd.length < 6) { errEl.textContent = t('auth.err_password_too_short'); errEl.style.display = ''; return; }
+    if(newPwd.length < 8 || !/[A-Z]/.test(newPwd) || !/[a-z]/.test(newPwd) || !/[0-9]/.test(newPwd) || /[^\x00-\x7F]/.test(newPwd)) { errEl.textContent = t('auth.err_password_too_short'); errEl.style.display = ''; return; }
     if(newPwd !== newPwd2) { errEl.textContent = t('profile.password_mismatch'); errEl.style.display = ''; return; }
     submit.disabled = true;
     try {
@@ -653,16 +653,16 @@ async function loadOrgMembers() {
   const orgInfoEl = document.getElementById('org-info-content');
   if(!container) return;
   try {
-    const [membersRes, companiesRes, orgRes] = await Promise.all([
-      fetch('/org/members',  { credentials: 'include' }),
-      fetch('/companies',    { credentials: 'include' }),
-      fetch('/org/me',       { credentials: 'include' }),
+    const [orgRes, companiesRes] = await Promise.all([
+      fetch('/org/me',    { credentials: 'include' }),
+      fetch('/companies', { credentials: 'include' }),
     ]);
     const orgData   = orgRes.ok ? await orgRes.json() : null;
     const isAdmin   = orgData && orgData.role === 'admin';
     const companies = companiesRes.ok ? await companiesRes.json() : [];
     // Members only for admin — non-admin still gets org-info section
-    const members   = membersRes.ok ? await membersRes.json() : [];
+    const membersRes = isAdmin ? await fetch('/org/members', { credentials: 'include' }) : null;
+    const members    = membersRes?.ok ? await membersRes.json() : [];
     const membersSection = document.getElementById('org-members-section');
     if(membersSection) membersSection.style.display = isAdmin ? '' : 'none';
     if(!isAdmin) { container.innerHTML = ''; }
@@ -1150,7 +1150,7 @@ function openCreateSAUserModal() {
     const errEl    = overlay.querySelector('#_sau_error');
     errEl.style.display = 'none';
     if(!email) { errEl.textContent = t('superadmin.err_email_required'); errEl.style.display = ''; return; }
-    if(mode === 'password' && password.length < 6) { errEl.textContent = t('superadmin.err_pwd_short'); errEl.style.display = ''; return; }
+    if(mode === 'password' && (password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || /[^\x00-\x7F]/.test(password))) { errEl.textContent = t('superadmin.err_pwd_short'); errEl.style.display = ''; return; }
     const btn = overlay.querySelector('#_sau_submit');
     btn.disabled = true;
     const res = await fetch('/superadmin/users', {
@@ -2676,11 +2676,10 @@ function initSidebarSwipe() {
 initSidebarSwipe();
 
 function userCardClick() {
-  if (window.innerWidth <= 768) {
-    toggleMobSidebar();
-  } else {
-    showLogoutMenu();
-  }
+  const settingsNavEl = document.querySelector('.nav-item[onclick*="settings"]');
+  showPage('settings', settingsNavEl);
+  const profileTabEl = document.querySelector('.settings-nav-item[onclick*="profile"]');
+  if(profileTabEl) showSettingsTab('profile', profileTabEl);
 }
 
 // ── DRIVE (нова архітектура: тільки ручна синхронізація) ──

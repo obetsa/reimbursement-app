@@ -330,7 +330,7 @@ async function activateSubmit() {
   const err  = document.getElementById('activate-error');
   const btn  = document.getElementById('activate-submit-btn');
   err.style.display = 'none';
-  if(pwd.length < 6)  { err.textContent = t('auth.err_password_too_short'); err.style.display=''; return; }
+  if(pwd.length < 8 || !/[A-Z]/.test(pwd) || !/[a-z]/.test(pwd) || !/[0-9]/.test(pwd) || /[^\x00-\x7F]/.test(pwd)) { err.textContent = t('auth.err_password_too_short'); err.style.display=''; return; }
   if(pwd !== pwd2)    { err.textContent = t('activate.err_mismatch');        err.style.display=''; return; }
   btn.disabled = true;
   try {
