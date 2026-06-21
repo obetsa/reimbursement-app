@@ -3720,6 +3720,8 @@ def static_files(path):
 if __name__ == '__main__':
     os.makedirs('data', exist_ok=True)
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    from migrations.runner import run_pending_migrations
+    run_pending_migrations(DATABASE_URL)
     init_db()
     print("Starting Reimbursement App server...")
     print("Open: http://localhost:5500")

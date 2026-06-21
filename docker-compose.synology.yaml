@@ -2,14 +2,16 @@ services:
 
   db:
     image: postgres:16-alpine
+    container_name: reimbursement-db
     restart: unless-stopped
     environment:
       POSTGRES_DB: reimbursement
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-12345678}
     volumes:
-      - db-data:/var/lib/postgresql/data
-      # Міграції більше не монтуються сюди — їх накатує сам app при старті (migrations/runner.py)
+      - /volume1/docker/reimbursement-app/db-data:/var/lib/postgresql/data
+      # Міграції більше не монтуються сюди — їх накатує сам app при старті (migrations/runner.py),
+      # нічого окремо копіювати на NAS не треба.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d reimbursement"]
       interval: 5s
@@ -18,8 +20,9 @@ services:
 
   app:
     image: obetsa/reimbursement-app:latest
+    container_name: reimbursement-app
     ports:
-      - "5500:5500"
+      - "8743:5500"
     depends_on:
       db:
         condition: service_healthy
@@ -34,7 +37,7 @@ services:
       # Google OAuth
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
-      REDIRECT_URI: ${REDIRECT_URI:-http://localhost:5500/auth/callback}
+      REDIRECT_URI: ${REDIRECT_URI}
 
       # SMTP (Gmail)
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
@@ -46,8 +49,4 @@ services:
       # Superadmin panel token
       ADMIN_TOKEN: ${ADMIN_TOKEN}
     volumes:
-      - app-data:/app/data
-
-volumes:
-  db-data:
-  app-data:
+      - /volume1/docker/reimbursement-app/app-data:/app/data

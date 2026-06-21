@@ -18,6 +18,7 @@ uploads/
 # Environment
 .env
 .env.local
+docker-compose.synology.debug.yaml
 
 # OS
 .DS_Store
