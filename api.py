@@ -145,7 +145,8 @@ def init_db():
         pwd_hash = hashlib.sha256('admin123'.encode()).hexdigest()
         admin_id = str(uuid.uuid4())
         conn.execute(
-            "insert into users (id, email, password_hash, full_name) values (%s,%s,%s,%s)",
+            "insert into users (id, email, password_hash, full_name, is_superadmin, email_verified, registered_at) "
+            "values (%s,%s,%s,%s,TRUE,TRUE,now())",
             (admin_id, 'admin@local.app', pwd_hash, 'Admin')
         )
         conn.commit()
