@@ -37,7 +37,7 @@ function _renderSAPagination(containerId, totalItems, page, mobileLimit, onPageF
 
 function _planSelect(id, currentPlan, onchangeFn) {
   const plan = currentPlan || 'free';
-  return `<select onchange="${onchangeFn}('${id}', this.value)"
+  return `<select onclick="event.stopPropagation()" onchange="${onchangeFn}('${id}', this.value)"
     style="font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg3);color:var(--text2)">
     ${PLAN_TIERS.map(p => `<option value="${p}" ${plan === p ? 'selected' : ''}>${p.toUpperCase()}</option>`).join('')}
   </select>`;
