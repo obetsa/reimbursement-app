@@ -98,7 +98,6 @@ border-radius:8px;text-decoration:none;font-size:14px;font-weight:600">
 DB_PATH = os.path.join('data', 'local.db')  # kept for backup/restore routes
 UPLOAD_FOLDER = os.path.join('data', 'uploads')
 DRIVE_ROOT = 'ReceiptsManager'
-DRIVE_ENABLED = True
 PAYMENT_PROVIDER = None  # 'liqpay' | 'stripe' | None — підключити пізніше
 
 # ══════════════════════════════════════════
@@ -179,12 +178,10 @@ def auth_google():
         f'client_id={GOOGLE_CLIENT_ID}',
         f'redirect_uri={REDIRECT_URI}',
         'response_type=code',
-        'scope=openid%20email%20profile%20https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive.file',
+        'scope=openid%20email%20profile',
         f'state={state}',
         f'code_challenge={challenge}',
         'code_challenge_method=S256',
-        'prompt=consent',
-        'access_type=offline',
     ])
     return redirect(f'https://accounts.google.com/o/oauth2/auth?{params}')
 
@@ -201,9 +198,8 @@ def auth_callback():
         'code':          code,
         'code_verifier': code_verifier,
     })
-    token_data    = token_resp.json()
-    access_token  = token_data.get('access_token')
-    refresh_token = token_data.get('refresh_token', '')
+    token_data   = token_resp.json()
+    access_token = token_data.get('access_token')
 
     user_info = http_requests.get(
         'https://www.googleapis.com/oauth2/v2/userinfo',
@@ -226,8 +222,6 @@ def auth_callback():
         return redirect('/?google_error=user_suspended')
 
     user_id = user['id']
-    if refresh_token:
-        conn.execute("update users set refresh_token=%s where id=%s", (refresh_token, user_id))
     if user['password_hash'] == 'PENDING':
         # Перший Google-логін для запрошеного юзера = активація (мірор /auth/activate)
         conn.execute("update users set email_verified=TRUE, registered_at=now() where id=%s", (user_id,))
@@ -1092,7 +1086,6 @@ def superadmin_delete_org(org_id_to_delete):
     pending_ids = [r['id'] for r in pending_users]
 
     # 4. Clean up data tables (NO ACTION FKs must go first)
-    conn.execute("DELETE FROM unprocessed_imports WHERE org_id=%s", (org_id_to_delete,))
     conn.execute("DELETE FROM return_events WHERE record_id IN (SELECT id FROM records WHERE org_id=%s)", (org_id_to_delete,))
     conn.execute("DELETE FROM attachments  WHERE record_id IN (SELECT id FROM records WHERE org_id=%s)", (org_id_to_delete,))
     conn.execute("DELETE FROM records             WHERE org_id=%s", (org_id_to_delete,))
@@ -1860,7 +1853,6 @@ def org_delete_own():
             print(f'[delete_org] {e}')
 
     # Cascade delete data
-    conn.execute("DELETE FROM unprocessed_imports WHERE org_id=%s", (org_id,))
     conn.execute("DELETE FROM return_events WHERE record_id IN (SELECT id FROM records WHERE org_id=%s)", (org_id,))
     conn.execute("DELETE FROM attachments  WHERE record_id IN (SELECT id FROM records WHERE org_id=%s)", (org_id,))
     conn.execute("DELETE FROM records             WHERE org_id=%s", (org_id,))
@@ -2574,13 +2566,6 @@ def update_record(record_id):
                 (record_id,)
             ).fetchall()
 
-            access_token = None
-            if DRIVE_ENABLED and any(a['drive_id'] for a in atts):
-                try:
-                    access_token = get_drive_token(user_id)
-                except Exception:
-                    pass
-
             for att in atts:
                 old_path = att['file_path'].replace('\\', '/')
                 filename = old_path.split('/')[-1]
@@ -2589,7 +2574,6 @@ def update_record(record_id):
                 if old_path == new_path:
                     continue
 
-                # Move local file
                 old_abs = os.path.join(UPLOAD_FOLDER, old_path.replace('/', os.sep))
                 new_abs = os.path.join(UPLOAD_FOLDER, new_path.replace('/', os.sep))
                 if os.path.exists(old_abs):
@@ -2599,23 +2583,10 @@ def update_record(record_id):
                     except Exception:
                         pass
 
-                # Update DB path
                 conn.execute("update attachments set file_path=%s where id=%s", (new_path, att['id']))
-
-                # Move on Drive
-                if att['drive_id'] and access_token:
-                    try:
-                        old_folder_parts = old_path.split('/')[:-1]
-                        new_folder_parts = new_folder.split('/')
-                        old_folder_id = drive_ensure_folder_path(access_token, old_folder_parts)
-                        new_folder_id = drive_ensure_folder_path(access_token, new_folder_parts)
-                        drive_move_file(access_token, att['drive_id'], new_folder_id, old_folder_id)
-                    except Exception:
-                        pass
 
             conn.commit()
 
-            # Clean up empty old folders (local + Drive)
             if atts:
                 old_folder_rel = atts[0]['file_path'].replace('\\', '/').rsplit('/', 1)[0]
                 old_folder_abs = os.path.join(UPLOAD_FOLDER, old_folder_rel.replace('/', os.sep))
@@ -2623,24 +2594,6 @@ def update_record(record_id):
                     os.rmdir(old_folder_abs)
                 except Exception:
                     pass
-
-                if access_token:
-                    try:
-                        old_folder_parts = old_folder_rel.split('/')
-                        old_folder_id = drive_ensure_folder_path(access_token, old_folder_parts)
-                        r = http_requests.get(
-                            'https://www.googleapis.com/drive/v3/files',
-                            headers={'Authorization': f'Bearer {access_token}'},
-                            params={'q': f"'{old_folder_id}' in parents and trashed=false",
-                                    'fields': 'files(id)', 'pageSize': 1}
-                        ).json()
-                        if not r.get('files'):
-                            http_requests.delete(
-                                f'https://www.googleapis.com/drive/v3/files/{old_folder_id}',
-                                headers={'Authorization': f'Bearer {access_token}'}
-                            )
-                    except Exception:
-                        pass
 
     conn.close()
     return jsonify({'ok': True})
@@ -2869,268 +2822,6 @@ def delete_attachment(att_id):
 
     return jsonify({'ok': True})
 
-# ══════════════════════════════════════════
-# GOOGLE DRIVE HELPERS
-# ══════════════════════════════════════════
-def _drive_refresh_access_token(refresh_token):
-    resp = http_requests.post('https://oauth2.googleapis.com/token', data={
-        'client_id':     GOOGLE_CLIENT_ID,
-        'client_secret': GOOGLE_CLIENT_SECRET,
-        'refresh_token': refresh_token,
-        'grant_type':    'refresh_token',
-    })
-    return resp.json().get('access_token')
-
-def get_drive_token(user_id):
-    conn = get_db()
-    row = conn.execute("select refresh_token from users where id=%s", (user_id,)).fetchone()
-    conn.close()
-    if not row or not row['refresh_token']:
-        return None
-    return _drive_refresh_access_token(row['refresh_token'])
-
-def drive_ensure_folder(access_token, name, parent_id=None):
-    safe_name = name.replace("'", "\\'")
-    q = f"name='{safe_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
-    if parent_id:
-        q += f" and '{parent_id}' in parents"
-    resp = http_requests.get(
-        'https://www.googleapis.com/drive/v3/files',
-        headers={'Authorization': f'Bearer {access_token}'},
-        params={'q': q, 'fields': 'files(id)', 'spaces': 'drive'}
-    ).json()
-    files = resp.get('files', [])
-    if files:
-        return files[0]['id']
-    meta = {'name': name, 'mimeType': 'application/vnd.google-apps.folder'}
-    if parent_id:
-        meta['parents'] = [parent_id]
-    resp = http_requests.post(
-        'https://www.googleapis.com/drive/v3/files',
-        headers={'Authorization': f'Bearer {access_token}'},
-        json=meta
-    ).json()
-    return resp.get('id')
-
-def drive_ensure_folder_path(access_token, path_parts):
-    parent_id = None
-    for part in path_parts:
-        parent_id = drive_ensure_folder(access_token, part, parent_id)
-    return parent_id
-
-def drive_upload_file(access_token, folder_id, filename, file_bytes, mime_type):
-    import json as _json
-    meta = _json.dumps({'name': filename, 'parents': [folder_id] if folder_id else []})
-    resp = http_requests.post(
-        'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
-        headers={'Authorization': f'Bearer {access_token}'},
-        files={
-            'metadata': ('metadata', meta, 'application/json; charset=UTF-8'),
-            'file':     (filename, file_bytes, mime_type),
-        }
-    ).json()
-    return resp.get('id')
-
-# ══════════════════════════════════════════
-# SYNC
-# ══════════════════════════════════════════
-def drive_list_recursive(access_token, folder_id, result=None, depth=0, skip_folders=None, current_path=''):
-    if result is None: result = []
-    if skip_folders is None: skip_folders = set()
-    if depth >= 5 or len(result) >= 500:
-        return result
-    try:
-        resp = http_requests.get(
-            'https://www.googleapis.com/drive/v3/files',
-            headers={'Authorization': f'Bearer {access_token}'},
-            params={
-                'q': f"'{folder_id}' in parents and mimeType!='application/vnd.google-apps.folder' and trashed=false",
-                'fields': 'files(id,name,mimeType)', 'spaces': 'drive', 'pageSize': 100,
-            }
-        ).json()
-        for f in resp.get('files', []):
-            f['folder_path'] = current_path
-            result.append(f)
-        resp2 = http_requests.get(
-            'https://www.googleapis.com/drive/v3/files',
-            headers={'Authorization': f'Bearer {access_token}'},
-            params={
-                'q': f"'{folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
-                'fields': 'files(id,name)', 'spaces': 'drive', 'pageSize': 50,
-            }
-        ).json()
-        for sub in resp2.get('files', []):
-            if sub.get('name') in skip_folders or len(result) >= 500:
-                continue
-            sub_path = sub['name'] if not current_path else f"{current_path}/{sub['name']}"
-            drive_list_recursive(access_token, sub['id'], result, depth + 1, skip_folders, sub_path)
-    except Exception:
-        pass
-    return result
-
-
-def drive_list_folder(access_token, folder_id):
-    resp = http_requests.get(
-        'https://www.googleapis.com/drive/v3/files',
-        headers={'Authorization': f'Bearer {access_token}'},
-        params={
-            'q': f"'{folder_id}' in parents and trashed=false and mimeType!='application/vnd.google-apps.folder'",
-            'fields': 'files(id,name,mimeType)',
-            'spaces': 'drive',
-        }
-    ).json()
-    return resp.get('files', [])
-
-# ══════════════════════════════════════════
-# GOOGLE DRIVE ROUTES
-# ══════════════════════════════════════════
-
-@app.route('/drive/sync', methods=['POST'])
-def drive_sync_route():
-    user_id = get_user_from_token(request)
-    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-    conn = get_db()
-    org_id, role, err = require_org(user_id, conn, min_role='manager')
-    if err: conn.close(); return err
-    access_token = get_drive_token(user_id)
-    if not access_token:
-        conn.close()
-        return jsonify({'error': 'no_drive_token'}), 403
-    atts = conn.execute('''
-        SELECT a.id, a.file_name, a.file_path, a.file_type
-        FROM attachments a
-        JOIN records r ON a.record_id = r.id
-        WHERE r.org_id = %s AND r.is_deleted = 0
-          AND a.file_path IS NOT NULL AND a.drive_id IS NULL
-    ''', (org_id,)).fetchall()
-    uploaded = 0
-    errors = 0
-    for att in atts:
-        abs_path = os.path.join(UPLOAD_FOLDER, att['file_path'].replace('/', os.sep))
-        if not os.path.exists(abs_path):
-            continue
-        parts = att['file_path'].replace('\\', '/').split('/')
-        try:
-            folder_id = drive_ensure_folder_path(access_token, parts[:-1])
-            with open(abs_path, 'rb') as f:
-                drive_id = drive_upload_file(access_token, folder_id, att['file_name'], f.read(), att['file_type'] or 'application/octet-stream')
-            if drive_id:
-                conn.execute("UPDATE attachments SET drive_id=%s WHERE id=%s", (drive_id, att['id']))
-                uploaded += 1
-        except Exception:
-            errors += 1
-    conn.commit()
-    conn.close()
-    return jsonify({'ok': True, 'uploaded': uploaded, 'errors': errors})
-
-
-@app.route('/drive/clean', methods=['POST'])
-def drive_clean_route():
-    user_id = get_user_from_token(request)
-    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-    conn = get_db()
-    org_id, role, err = require_org(user_id, conn, min_role='manager')
-    if err: conn.close(); return err
-    access_token = get_drive_token(user_id)
-    if not access_token:
-        conn.close()
-        return jsonify({'error': 'no_drive_token'}), 403
-    known_ids = {r['drive_id'] for r in conn.execute(
-        '''SELECT a.drive_id FROM attachments a
-           JOIN records r ON a.record_id = r.id
-           WHERE r.org_id = %s AND a.drive_id IS NOT NULL''', (org_id,)
-    ).fetchall()}
-    conn.close()
-    deleted_files = 0
-    deleted_folders = 0
-    try:
-        rm_id = drive_ensure_folder_path(access_token, [DRIVE_ROOT, org_id])
-        drive_files = drive_list_recursive(access_token, rm_id)
-        for f in drive_files:
-            if f['id'] not in known_ids:
-                try:
-                    resp = http_requests.delete(
-                        f'https://www.googleapis.com/drive/v3/files/{f["id"]}',
-                        headers={'Authorization': f'Bearer {access_token}'}
-                    )
-                    if resp.status_code == 204:
-                        deleted_files += 1
-                except Exception:
-                    pass
-        all_folders = []
-        queue = [rm_id]
-        visited = set()
-        while queue:
-            fid = queue.pop(0)
-            if fid in visited: continue
-            visited.add(fid)
-            r = http_requests.get(
-                'https://www.googleapis.com/drive/v3/files',
-                headers={'Authorization': f'Bearer {access_token}'},
-                params={'q': f"'{fid}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false", 'fields': 'files(id,name)', 'pageSize': 100}
-            ).json()
-            for sub in r.get('files', []):
-                all_folders.append({'id': sub['id'], 'name': sub['name']})
-                queue.append(sub['id'])
-        for folder in reversed(all_folders):
-            r = http_requests.get(
-                'https://www.googleapis.com/drive/v3/files',
-                headers={'Authorization': f'Bearer {access_token}'},
-                params={'q': f"'{folder['id']}' in parents and trashed=false", 'fields': 'files(id)', 'pageSize': 1}
-            ).json()
-            if not r.get('files'):
-                try:
-                    resp = http_requests.delete(
-                        f'https://www.googleapis.com/drive/v3/files/{folder["id"]}',
-                        headers={'Authorization': f'Bearer {access_token}'}
-                    )
-                    if resp.status_code == 204:
-                        deleted_folders += 1
-                except Exception:
-                    pass
-    except Exception as e:
-        return jsonify({'ok': False, 'message': str(e)})
-    return jsonify({'ok': True, 'deleted_files': deleted_files, 'deleted_folders': deleted_folders})
-
-
-@app.route('/drive/check', methods=['GET'])
-def drive_check_route():
-    user_id = get_user_from_token(request)
-    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-    conn = get_db()
-    org_id, role, err = require_org(user_id, conn)
-    if err: conn.close(); return err
-    access_token = get_drive_token(user_id)
-    if not access_token:
-        conn.close()
-        return jsonify({'error': 'no_drive_token'}), 403
-    atts = conn.execute('''
-        SELECT a.id, a.file_name, a.file_path, a.drive_id,
-               r.title as record_title, r.date as record_date
-        FROM attachments a
-        JOIN records r ON a.record_id = r.id
-        WHERE r.org_id = %s AND r.is_deleted = 0 AND a.file_path IS NOT NULL
-    ''', (org_id,)).fetchall()
-    conn.close()
-    missing_on_drive = []
-    for att in atts:
-        if not att['drive_id']:
-            abs_path = os.path.join(UPLOAD_FOLDER, att['file_path'].replace('/', os.sep))
-            missing_on_drive.append({
-                'file_name':    att['file_name'],
-                'record_title': att['record_title'],
-                'record_date':  str(att['record_date']),
-                'local_exists': os.path.exists(abs_path),
-            })
-    return jsonify({'ok': True, 'total': len(atts), 'missing_on_drive': missing_on_drive})
-
-
-@app.route('/drive/import', methods=['POST'])
-def drive_import_route():
-    return jsonify({'error': 'not_implemented', 'message': 'Функція в розробці'}), 503
-
-
-
 @app.route('/gallery', methods=['GET'])
 def get_gallery():
     user_id = get_user_from_token(request)
@@ -3140,14 +2831,12 @@ def get_gallery():
     if err: conn.close(); return err
     att_rows = conn.execute('''
         select
-            a.id, a.file_name, a.file_type, a.file_path, a.drive_id,
-            a.storage_type, a.created_at,
+            a.id, a.file_name, a.file_type, a.file_path, a.created_at,
             r.id as record_id,
             r.title as record_title,
             r.date as record_date,
             c.name as company_name,
-            p.name as card_name,
-            'assigned' as source
+            p.name as card_name
         from attachments a
         join records r on a.record_id = r.id
         left join companies c on r.company_id = c.id
@@ -3157,140 +2846,6 @@ def get_gallery():
     ''', (org_id,)).fetchall()
     conn.close()
     return jsonify([dict(r) for r in att_rows])
-
-@app.route('/unprocessed', methods=['GET'])
-def get_unprocessed():
-    user_id = get_user_from_token(request)
-    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-    if not DRIVE_ENABLED: return jsonify([])
-    conn = get_db()
-    rows = conn.execute(
-        "select * from unprocessed_imports where user_id=%s order by synced_at desc",
-        (user_id,)
-    ).fetchall()
-    conn.close()
-    return jsonify([dict(r) for r in rows])
-
-@app.route('/unprocessed/<imp_id>/assign', methods=['POST'])
-def assign_unprocessed(imp_id):
-    user_id = get_user_from_token(request)
-    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-    if not DRIVE_ENABLED: return jsonify({'error': 'drive_disabled'}), 503
-
-    data = request.json or {}
-    record_id = data.get('record_id')
-    if not record_id:
-        return jsonify({'error': 'record_id required'}), 400
-
-    conn = get_db()
-    exists = conn.execute(
-        "select id from unprocessed_imports where id=%s and user_id=%s", (imp_id, user_id)
-    ).fetchone()
-    conn.close()
-    if not exists:
-        return jsonify({'error': 'Not found'}), 404
-
-    drive_ok = _do_assign(imp_id, record_id, user_id)
-    return jsonify({'ok': True, 'record_id': record_id, 'drive_ok': drive_ok})
-
-@app.route('/unprocessed/<imp_id>/new-record', methods=['POST'])
-def unprocessed_new_record(imp_id):
-    user_id = get_user_from_token(request)
-    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-    if not DRIVE_ENABLED: return jsonify({'error': 'drive_disabled'}), 503
-
-    data = request.json or {}
-    conn = get_db()
-    imp = conn.execute(
-        "select * from unprocessed_imports where id=%s and user_id=%s", (imp_id, user_id)
-    ).fetchone()
-    if not imp:
-        conn.close()
-        return jsonify({'error': 'Not found'}), 404
-
-    record_id = str(uuid.uuid4())
-    conn.execute('''
-        insert into records
-        (id, user_id, title, note, date, amount, currency, pay_type, pay_method,
-         card_id, company_id, status, to_return, returned, remainder)
-        values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-    ''', (
-        record_id, user_id,
-        data.get('title', imp['file_name']),
-        data.get('note', ''),
-        data.get('date', datetime.utcnow().strftime('%Y-%m-%d')),
-        data.get('amount', 0),
-        data.get('currency', 'EUR'),
-        data.get('pay_type', 'personal'),
-        data.get('pay_method', 'cash'),
-        data.get('card_id'), data.get('company_id'),
-        'waiting', 0, 0, 0
-    ))
-    conn.commit()
-    conn.close()
-
-    # Assign file to the new record using shared helper
-    drive_ok = _do_assign(imp_id, record_id, user_id)
-    return jsonify({'ok': True, 'record_id': record_id, 'drive_ok': drive_ok})
-
-def _do_assign(imp_id, record_id, user_id):
-    conn = get_db()
-    imp = conn.execute(
-        "select * from unprocessed_imports where id=%s and user_id=%s", (imp_id, user_id)
-    ).fetchone()
-    if not imp:
-        conn.close()
-        return
-
-    rec = conn.execute(
-        "select r.date, r.org_id, c.name as company_name from records r "
-        "left join companies c on r.company_id=c.id where r.id=%s and r.user_id=%s",
-        (record_id, user_id)
-    ).fetchone()
-    if not rec:
-        conn.close()
-        return
-
-    record_date = rec['date'] or datetime.utcnow().strftime('%Y-%m-%d')
-    year  = record_date[:4]
-    month = record_date[5:7]
-    rec_org_id   = rec['org_id'] or 'unknown'
-    raw_company  = rec['company_name'] or 'Unassigned'
-    safe_company = re.sub(r'[^\w\s\-]', '', raw_company).strip().replace(' ', '_') or 'Unassigned'
-
-    rel_folder = '/'.join([DRIVE_ROOT, rec_org_id, year, month, safe_company])
-    abs_folder = os.path.join(UPLOAD_FOLDER, DRIVE_ROOT, rec_org_id, year, month, safe_company)
-    os.makedirs(abs_folder, exist_ok=True)
-
-    att_id = str(uuid.uuid4())
-    orig_name = imp['file_name']
-    ext = os.path.splitext(orig_name)[1].lower()
-    stored_name = att_id + ext
-    file_path = rel_folder + '/' + stored_name
-    mime_type = imp['mime_type'] or 'application/octet-stream'
-
-    saved_locally = False
-    try:
-        access_token = get_drive_token(user_id)
-        if access_token:
-            file_bytes = drive_download_file(access_token, imp['drive_id'])
-            with open(os.path.join(abs_folder, stored_name), 'wb') as f:
-                f.write(file_bytes)
-            saved_locally = True
-    except Exception as e:
-        pass
-
-    if not saved_locally:
-        open(os.path.join(abs_folder, stored_name), 'wb').close()
-
-    conn.execute(
-        "insert into attachments (id, record_id, file_name, file_type, file_path, storage_type, drive_id) values (%s,%s,%s,%s,%s,%s,%s)",
-        (att_id, record_id, orig_name, mime_type, file_path, 'local', None)
-    )
-    conn.execute("delete from unprocessed_imports where id=%s", (imp_id,))
-    conn.commit()
-    conn.close()
-    return True
 
 # ══════════════════════════════════════════
 # BACKUP
@@ -3490,15 +3045,14 @@ def get_profile():
 
     conn = get_db()
     row = conn.execute(
-        "select email, full_name, refresh_token from users where id=%s", (user_id,)
+        "select email, full_name from users where id=%s", (user_id,)
     ).fetchone()
     conn.close()
     if not row: return jsonify({'error': 'Not found'}), 404
 
     return jsonify({
-        'email':        row['email'] or '',
-        'full_name':    row['full_name'] or '',
-        'drive_connected': DRIVE_ENABLED and bool(row['refresh_token']),
+        'email':     row['email'] or '',
+        'full_name': row['full_name'] or '',
     })
 
 
@@ -3583,51 +3137,6 @@ def storage_info():
     })
 
 
-def _drive_count_files(access_token, root_name, skip=None):
-    if skip is None: skip = set()
-    resp = http_requests.get(
-        'https://www.googleapis.com/drive/v3/files',
-        headers={'Authorization': f'Bearer {access_token}'},
-        params={'q': f"name='{root_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false",
-                'fields': 'files(id)'}
-    ).json()
-    files = resp.get('files', [])
-    if not files:
-        return 0
-    return _drive_count_in_folder(access_token, files[0]['id'], skip)
-
-def _drive_count_in_folder(access_token, folder_id, skip, depth=0):
-    if depth > 6:
-        return 0
-    total = 0
-    page_token = None
-    while True:
-        params = {
-            'q': f"'{folder_id}' in parents and mimeType!='application/vnd.google-apps.folder' and trashed=false",
-            'fields': 'nextPageToken,files(id)', 'pageSize': 1000,
-        }
-        if page_token:
-            params['pageToken'] = page_token
-        resp = http_requests.get(
-            'https://www.googleapis.com/drive/v3/files',
-            headers={'Authorization': f'Bearer {access_token}'},
-            params=params
-        ).json()
-        total += len(resp.get('files', []))
-        page_token = resp.get('nextPageToken')
-        if not page_token:
-            break
-    resp2 = http_requests.get(
-        'https://www.googleapis.com/drive/v3/files',
-        headers={'Authorization': f'Bearer {access_token}'},
-        params={'q': f"'{folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
-                'fields': 'files(id,name)', 'pageSize': 100}
-    ).json()
-    for sub in resp2.get('files', []):
-        if sub.get('name') not in skip:
-            total += _drive_count_in_folder(access_token, sub['id'], skip, depth + 1)
-    return total
-
 
 @app.route('/records-stats', methods=['GET'])
 def records_stats():
@@ -3642,35 +3151,16 @@ def records_stats():
     rec_active   = conn.execute("SELECT COUNT(*) FROM records WHERE org_id=%s AND is_deleted=0 AND is_archived=0", (org_id,)).fetchone()['count']
     rec_archived = conn.execute("SELECT COUNT(*) FROM records WHERE org_id=%s AND is_archived=1 AND is_deleted=0", (org_id,)).fetchone()['count']
     rec_deleted  = conn.execute("SELECT COUNT(*) FROM records WHERE org_id=%s AND is_deleted=1", (org_id,)).fetchone()['count']
-    att_total   = conn.execute("SELECT COUNT(*) FROM attachments a JOIN records r ON a.record_id=r.id WHERE r.org_id=%s", (org_id,)).fetchone()['count']
-    att_local   = conn.execute(
+    att_total = conn.execute("SELECT COUNT(*) FROM attachments a JOIN records r ON a.record_id=r.id WHERE r.org_id=%s", (org_id,)).fetchone()['count']
+    att_local = conn.execute(
         "SELECT COUNT(*) FROM attachments a JOIN records r ON a.record_id=r.id "
         "WHERE r.org_id=%s AND a.file_path IS NOT NULL",
         (org_id,)).fetchone()['count']
-    att_drive   = conn.execute(
-        "SELECT COUNT(*) FROM attachments a JOIN records r ON a.record_id=r.id "
-        "WHERE r.org_id=%s AND a.drive_id IS NOT NULL AND a.storage_type='drive'",
-        (org_id,)).fetchone()['count']
-    unprocessed = conn.execute("SELECT COUNT(*) FROM unprocessed_imports WHERE user_id=%s", (user_id,)).fetchone()['count']
     conn.close()
-
-    drive_real = None
-    drive_error = None
-    if not DRIVE_ENABLED:
-        drive_error = 'drive_disabled'
-    else:
-        access_token = get_drive_token(user_id)
-        if not access_token:
-            drive_error = 'no_token'
-        else:
-            try:
-                drive_real = _drive_count_files(access_token, DRIVE_ROOT, skip={'Backup'})
-            except Exception as e:
-                drive_error = str(e)
 
     return jsonify({
         'records':     {'total': rec_total, 'active': rec_active, 'archived': rec_archived, 'deleted': rec_deleted},
-        'attachments': {'total': att_total, 'local': att_local, 'drive': drive_real, 'drive_error': drive_error, 'unprocessed': unprocessed},
+        'attachments': {'total': att_total, 'local': att_local},
     })
 
 

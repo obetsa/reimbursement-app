@@ -1544,19 +1544,7 @@
     color: var(--text3);
   }
 
-  /* User info in sidebar */
-  .sync-indicator {
-    width: 7px; height: 7px;
-    border-radius: 50%;
-    background: var(--green);
-    flex-shrink: 0;
-  }
 
-  .sync-indicator.offline { background: var(--red); }
-  .sync-indicator.syncing {
-    background: var(--yellow);
-    animation: pulse 1s infinite;
-  }
 
   @keyframes pulse {
     0%,100% { opacity: 1; }

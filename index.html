@@ -268,14 +268,6 @@
       <span data-i18n="nav.gallery">Галерея чеків</span>
     </div>
 
-    <div class="nav-divider drive-only"></div>
-
-    <div class="nav-item drive-only" onclick="showPage('drive', this)">
-      <div class="nav-icon">☁️</div>
-      <span data-i18n="nav.drive_section">Google Drive</span>
-      <span class="nav-badge" id="unprocessed-count" style="display:none">0</span>
-    </div>
-
     <div class="nav-divider"></div>
 
     <div class="nav-item" onclick="showPage('settings', this)">
@@ -493,21 +485,6 @@
     </div>
   </div>
 
-  <!-- ── UNPROCESSED ── -->
-  <div id="page-unprocessed" style="display:none">
-    <div class="topbar">
-      <div class="topbar-title" data-i18n="nav.unprocessed">Unprocessed Imports</div>
-    </div>
-    <div class="content">
-      <div id="unprocessed-empty" class="empty-state" style="display:none">
-        <div class="empty-icon">📂</div>
-        <div class="empty-title" data-i18n="unprocessed.empty">Немає файлів для обробки</div>
-        <div class="empty-sub" data-i18n="unprocessed.empty_sub">Додайте файли в папку ReceiptsManager/Unprocessed Imports на Google Drive і натисніть Sync now</div>
-      </div>
-      <div id="unprocessed-list" class="unprocessed-list"></div>
-    </div>
-  </div>
-
   <!-- ── GALLERY ── -->
   <div id="page-gallery" style="display:none">
     <div class="topbar">
@@ -523,102 +500,12 @@
     </div>
   </div>
 
-  <!-- ── GOOGLE DRIVE PAGE ── -->
-  <div id="page-drive" class="settings-page" style="display:none">
-    <div class="topbar">
-      <div class="topbar-title" data-i18n="nav.drive_section">Google Drive</div>
-    </div>
-    <div class="content">
-      <div style="max-width:640px;padding:4px 0">
-
-        <div class="settings-section">
-          <div class="settings-section-header">
-            <div class="settings-section-title" data-i18n="nav.drive_sync">☁️ Синхронізація</div>
-          </div>
-          <div style="padding:12px 18px 18px;display:flex;flex-direction:column;gap:10px">
-            <div style="font-size:13px;color:var(--text3)" data-i18n="drive.sync_desc">Завантажує локальні файли на Google Drive</div>
-            <div><button class="btn btn-primary" onclick="driveSyncNow()" data-i18n="nav.drive_sync">Синхронізація</button></div>
-          </div>
-        </div>
-
-        <div class="settings-section">
-          <div class="settings-section-header">
-            <div class="settings-section-title" data-i18n="nav.drive_check">🔍 Перевірити Drive</div>
-          </div>
-          <div style="padding:12px 18px 18px;display:flex;flex-direction:column;gap:10px">
-            <div style="font-size:13px;color:var(--text3)" data-i18n="drive.check_desc">Показує файли, яких немає на Drive</div>
-            <div><button class="btn btn-ghost" onclick="driveCheck()" data-i18n="nav.drive_check">🔍 Перевірити Drive</button></div>
-          </div>
-        </div>
-
-        <div class="settings-section">
-          <div class="settings-section-header">
-            <div class="settings-section-title" data-i18n="nav.drive_clean">🧹 Очистити Drive</div>
-          </div>
-          <div style="padding:12px 18px 18px;display:flex;flex-direction:column;gap:10px">
-            <div style="font-size:13px;color:var(--text3)" data-i18n="drive.clean_desc">Видаляє порожні папки в ReceiptsManager</div>
-            <div><button class="btn btn-danger" onclick="driveClean()" data-i18n="nav.drive_clean">🧹 Очистити Drive</button></div>
-          </div>
-        </div>
-
-        <div class="settings-section">
-          <div class="settings-section-header">
-            <div class="settings-section-title" data-i18n="nav.drive_import">📥 Імпорт</div>
-          </div>
-          <div style="padding:12px 18px 18px;display:flex;flex-direction:column;gap:10px">
-            <div style="font-size:13px;color:var(--text3)" data-i18n="drive.import_desc">Імпорт файлів з Google Drive</div>
-            <div><button class="btn btn-ghost" onclick="driveImport()" data-i18n="nav.drive_import">📥 Імпорт</button></div>
-          </div>
-        </div>
-
-        <div class="settings-section">
-          <div class="settings-section-header">
-            <div class="settings-section-title" data-i18n="nav.unprocessed">📂 Необроблені імпорти</div>
-          </div>
-          <div style="padding:12px 18px 18px;display:flex;flex-direction:column;gap:10px">
-            <div style="font-size:13px;color:var(--text3)" data-i18n="unprocessed.empty_sub">Додайте файли в папку ReceiptsManager/Unprocessed Imports на Google Drive</div>
-            <div><button class="btn btn-ghost" onclick="showPage('unprocessed', null)" data-i18n="nav.unprocessed">📂 Необроблені імпорти</button></div>
-          </div>
-        </div>
-
-      </div>
-    </div>
-  </div>
-
   <!-- ── GALLERY PREVIEW MODAL ── -->
   <div id="gallery-modal" class="modal-overlay" onclick="if(event.target===this)closeGalleryModal()">
     <div class="gallery-modal-box">
       <button class="modal-close gallery-modal-close" onclick="closeGalleryModal()">✕</button>
       <div id="gallery-preview-content" class="gallery-preview-content"></div>
       <div id="gallery-preview-meta" class="gallery-preview-meta"></div>
-    </div>
-  </div>
-
-  <!-- ── ASSIGN MODAL ── -->
-  <div id="assign-modal" class="modal-overlay" onclick="if(event.target===this)closeAssignModal()">
-    <div class="modal" style="max-width:500px">
-      <div class="modal-header">
-        <div class="modal-title" data-i18n="unprocessed.assign_title">Прив'язати файл до запису</div>
-        <button class="modal-close" onclick="closeAssignModal()">✕</button>
-      </div>
-      <div class="modal-body" style="padding:16px 20px 20px;display:flex;flex-direction:column;gap:16px">
-        <div class="assign-file-banner">
-          <div class="assign-file-banner-icon">📎</div>
-          <div id="assign-file-name" class="assign-file-banner-name"></div>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em" data-i18n="unprocessed.select_record">Оберіть запис</div>
-          <input class="form-input" type="text" id="assign-search"
-            data-i18n-placeholder="unprocessed.search_placeholder"
-            placeholder="Пошук запису..."
-            oninput="filterAssignRecords(this.value)">
-          <div id="assign-records-list" class="assign-records-list"></div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-ghost" onclick="closeAssignModal()" data-i18n="form.cancel">Скасувати</button>
-        <button class="btn btn-primary" onclick="createNewRecordFromImport()" data-i18n="unprocessed.create_record">Створити новий запис</button>
-      </div>
     </div>
   </div>
 
@@ -947,7 +834,6 @@
                   </div>
                 </div>
 
-                <!-- Google Drive backup removed — Drive sync is now manual via sidebar buttons -->
 
               </div>
             </div>
@@ -964,7 +850,6 @@
               </div>
               <div style="padding:0 18px 18px;display:flex;flex-direction:column;gap:8px">
                 <button class="btn btn-ghost" style="font-size:13px" onclick="checkRecordsStats()">📊 Перевірити кількість записів і чеків</button>
-                <!-- Drive check/clean moved to sidebar Drive section -->
                 <button class="btn btn-ghost" style="font-size:13px" onclick="runStorageCleanup()" id="cleanup-btn" data-i18n="storage.cleanup_btn">🧹 Очистити зайві файли та порожні папки</button>
               </div>
             </div>
@@ -1014,7 +899,6 @@
             <button class="upload-btn" onclick="document.getElementById('file-input').click()" data-i18n="form.camera">📷 Камера</button>
             <button class="upload-btn" onclick="document.getElementById('file-input').click()" data-i18n="form.gallery">🖼️ Галерея</button>
             <button class="upload-btn" onclick="document.getElementById('file-input').click()" data-i18n="form.files">📁 Файли</button>
-            <!-- Drive picker removed — attach from Drive not supported in new Drive architecture -->
           </div>
           <div id="existing-attachments-preview" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"></div>
           <div id="files-preview" style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap"></div>
@@ -1228,88 +1112,6 @@
 
 <!-- TOAST -->
 <div class="toast-container" id="toast-container"></div>
-
-<!-- ── DRIVE SYNC PROGRESS OVERLAY ── -->
-<div class="drive-sync-overlay hidden" id="drive-sync-overlay">
-  <div class="drive-sync-box">
-
-    <!-- Cloud icon -->
-    <div class="drive-sync-cloud" id="drive-sync-cloud">
-      <svg width="72" height="52" viewBox="0 0 72 52" fill="none">
-        <path d="M58 42H14C7.37 42 2 36.63 2 30c0-5.8 4.1-10.65 9.6-11.75A18 18 0 0 1 30 6a18 18 0 0 1 17.1 12.4A12 12 0 0 1 70 30c0 6.63-5.37 12-12 12z"
-              fill="#4285f4" opacity="0.9"/>
-        <path d="M36 50V28M36 28l-8 8M36 28l8 8" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="0" id="drive-sync-arrow"/>
-      </svg>
-    </div>
-
-    <!-- Flying files animation -->
-    <div class="drive-sync-files" id="drive-sync-files">
-      <span class="drive-sync-file">📄</span>
-      <span class="drive-sync-file">🖼️</span>
-      <span class="drive-sync-file">📄</span>
-    </div>
-
-    <div class="drive-sync-status" id="drive-sync-status" data-i18n="drive.sync_running">Синхронізація...</div>
-    <div class="drive-sync-sub" id="drive-sync-sub"></div>
-
-    <!-- Result (shown after done) -->
-    <div class="drive-sync-result" id="drive-sync-result" style="display:none">
-      <div class="drive-sync-result-row" id="drive-sync-row-uploaded"></div>
-      <div class="drive-sync-result-row" id="drive-sync-row-errors" style="display:none"></div>
-    </div>
-
-    <button class="btn btn-primary" id="drive-sync-close-btn" style="display:none;width:100%" onclick="closeDriveSyncModal()" data-i18n="form.close">Закрити</button>
-  </div>
-</div>
-
-<!-- ── DRIVE CLEAN PROGRESS OVERLAY ── -->
-<div class="drive-sync-overlay hidden" id="drive-clean-overlay">
-  <div class="drive-sync-box">
-
-    <!-- Falling files animation -->
-    <div class="drive-clean-files" id="drive-clean-files">
-      <span class="drive-clean-file">📄</span>
-      <span class="drive-clean-file">🖼️</span>
-      <span class="drive-clean-file">📄</span>
-    </div>
-
-    <!-- Trash icon -->
-    <div class="drive-clean-trash" id="drive-clean-trash">
-      <svg width="56" height="56" viewBox="0 0 24 24" fill="none">
-        <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="var(--red)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M10 11v6M14 11v6" stroke="var(--red)" stroke-width="1.8" stroke-linecap="round"/>
-      </svg>
-    </div>
-
-    <div class="drive-sync-status" id="drive-clean-status" data-i18n="drive.clean_running">Очищення...</div>
-    <div class="drive-sync-sub" id="drive-clean-sub"></div>
-
-    <!-- Result (shown after done) -->
-    <div class="drive-sync-result" id="drive-clean-result" style="display:none">
-      <div class="drive-sync-result-row" id="drive-clean-row-files"></div>
-      <div class="drive-sync-result-row" id="drive-clean-row-folders"></div>
-    </div>
-
-    <button class="btn btn-primary" id="drive-clean-close-btn" style="display:none;width:100%" onclick="closeDriveCleanModal()" data-i18n="form.close">Закрити</button>
-  </div>
-</div>
-
-<!-- ── MODAL: DRIVE CHECK ── -->
-<div class="modal-overlay drive-only" id="drive-check-overlay" onclick="if(event.target===this)closeDriveCheckModal()">
-  <div class="modal" style="max-width:560px">
-    <div class="modal-header">
-      <div class="modal-title" data-i18n="drive.check_title">🔍 Розбіжності на Drive</div>
-      <button class="modal-close" onclick="closeDriveCheckModal()">✕</button>
-    </div>
-    <div class="modal-body" style="padding:12px 16px">
-      <div id="drive-check-list" style="max-height:400px;overflow-y:auto"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeDriveCheckModal()" data-i18n="form.cancel">Закрити</button>
-    </div>
-  </div>
-</div>
-
 
 <!-- ── MODAL: COMPANY ── -->
 <div class="modal-overlay" id="company-modal-overlay" onclick="if(event.target===this)closeCompanyModal()">

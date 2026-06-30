@@ -28,6 +28,8 @@ ORDERED_FILES = [
     'migrate_014_org_name_unique.sql',
     'migrate_015_token_type.sql',
     'migrate_016_org_invites_member_companies.sql',
+    'migrate_017_fix_org_members_role_check.sql',
+    'migrate_018_remove_drive_columns.sql',
 ]
 
 
