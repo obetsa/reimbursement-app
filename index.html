@@ -358,6 +358,14 @@
           <div id="company-list"></div>
         </div>
 
+        <!-- Payers -->
+        <div class="card">
+          <div class="section-header">
+            <div class="section-title" data-i18n="dash.by_payers">По платниках</div>
+          </div>
+          <div id="payer-list"></div>
+        </div>
+
         <!-- Recent -->
         <div class="card">
           <div class="section-header">
@@ -400,6 +408,9 @@
         <select class="filter-select" id="docs-filter-company" onchange="filterByCompany(this.value)">
           <option value="" data-i18n="docs.all_companies">Всі компанії</option>
         </select>
+        <select class="filter-select" id="docs-filter-payer" onchange="filterByPayer(this.value)">
+          <option value="" data-i18n="docs.all_payers">Всі платники</option>
+        </select>
         <select class="filter-select" id="docs-filter-paytype" onchange="filterByPayType(this.value)">
           <option value="" data-i18n="docs.pay_type">Тип оплати</option>
           <option value="private" data-i18n="docs.pay_private">💼 Приватна</option>
@@ -427,6 +438,7 @@
               <th onclick="sortDocs('date-desc')" data-i18n="table.date">Дата <span class="sort-icon">↕</span></th>
               <th data-i18n="table.title">Назва</th>
               <th data-i18n="table.company">Компанія</th>
+              <th data-i18n="table.payer">Платник</th>
               <th onclick="sortDocs('amount-desc')" data-i18n="table.amount">Сума <span class="sort-icon">↕</span></th>
               <th data-i18n="table.pay_type">Тип оплати</th>
               <th data-i18n="table.status">Статус</th>
@@ -460,7 +472,7 @@
           <table>
             <thead>
               <tr>
-                <th data-i18n="table.date">Дата</th><th data-i18n="table.title">Назва</th><th data-i18n="table.company">Компанія</th><th data-i18n="table.amount">Сума</th><th data-i18n="table.pay_type">Тип оплати</th><th data-i18n="table.status">Статус</th><th data-i18n="table.remainder">Залишок</th><th>📎</th><th style="width:80px"></th>
+                <th data-i18n="table.date">Дата</th><th data-i18n="table.title">Назва</th><th data-i18n="table.company">Компанія</th><th data-i18n="table.payer">Платник</th><th data-i18n="table.amount">Сума</th><th data-i18n="table.pay_type">Тип оплати</th><th data-i18n="table.status">Статус</th><th data-i18n="table.remainder">Залишок</th><th>📎</th><th style="width:80px"></th>
               </tr>
             </thead>
             <tbody id="archive-table-body"></tbody>
@@ -532,27 +544,23 @@
         <div>
           <!-- PAYMENTS -->
           <div id="settings-payments" class="settings-content">
-            <div class="settings-section">
-              <div class="settings-section-header">
-                <div class="settings-section-title" data-i18n="settings.payments">Платіжні інструменти</div>
-                <button class="btn btn-ghost" style="font-size:12px" onclick="openInstrumentModal()" data-i18n="settings.add">+ Додати</button>
-              </div>
-              <div id="instruments-list">
-                <div style="text-align:center;padding:20px;color:var(--text3);font-size:13px" data-i18n="loading.text">Завантаження...</div>
-              </div>
+            <div class="settings-section-header" style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;margin-bottom:12px">
+              <div class="settings-section-title" data-i18n="settings.payments">Платіжні інструменти</div>
+              <button class="btn btn-ghost" style="font-size:12px" onclick="openInstrumentModal()" data-i18n="settings.add">+ Додати</button>
+            </div>
+            <div id="instruments-list">
+              <div style="text-align:center;padding:20px;color:var(--text3);font-size:13px" data-i18n="loading.text">Завантаження...</div>
             </div>
           </div>
 
           <!-- COMPANIES -->
           <div id="settings-companies" class="settings-content active">
-            <div class="settings-section">
-              <div class="settings-section-header">
-                <div class="settings-section-title" data-i18n="settings.companies">Компанії</div>
-                <button class="btn btn-ghost" style="font-size:12px" onclick="openCompanyModal()" data-i18n="settings.add">+ Додати</button>
-              </div>
-              <div id="companies-list">
-                <div style="text-align:center;padding:20px;color:var(--text3);font-size:13px" data-i18n="loading.text">Завантаження...</div>
-              </div>
+            <div class="settings-section-header" style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;margin-bottom:12px">
+              <div class="settings-section-title" data-i18n="settings.companies">Компанії</div>
+              <button class="btn btn-ghost" style="font-size:12px" onclick="openCompanyModal()" data-i18n="settings.add">+ Додати</button>
+            </div>
+            <div id="companies-list">
+              <div style="text-align:center;padding:20px;color:var(--text3);font-size:13px" data-i18n="loading.text">Завантаження...</div>
             </div>
           </div>
 
@@ -928,6 +936,13 @@
 
         <div class="form-group full"><div class="form-section-title" data-i18n="form.payment">Оплата</div></div>
 
+        <div class="form-group full">
+          <label class="form-label" data-i18n="form.payer">Платник <span class="required">*</span></label>
+          <select class="form-select" id="field-payer">
+            <option value="" data-i18n="form.payer_placeholder">— Вибрати платника —</option>
+          </select>
+        </div>
+
         <div class="form-group">
           <label class="form-label" data-i18n="form.pay_type">Тип оплати <span class="required">*</span></label>
           <select class="form-select" id="field-payment-type" onchange="onPaymentTypeChange()">
@@ -1104,6 +1119,7 @@
           <button class="btn btn-archive" onclick="archiveRecord()" data-i18n="detail.archive">🗄️ Архівувати</button>
           <button class="btn btn-danger" onclick="deleteRecord()" data-i18n="detail.delete">🗑️ Видалити</button>
         </div>
+        <div id="detail-author-meta" class="detail-author-meta" style="display:none"></div>
       </div>
 
     </div>
@@ -1223,9 +1239,7 @@
         <div class="form-group full">
           <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px">
             <div style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px" data-i18n="export.fields_title">Буде експортовано полів:</div>
-            <div style="font-size:12px;color:var(--text2);line-height:1.8" data-i18n="export.fields_list">
-              Дата витрати · Дата створення · Заголовок · Компанія · Тип оплати · Спосіб оплати · Картка · Сума · Валюта · Статус · До повернення · Повернено · Залишок · Примітка · Кількість вкладень
-            </div>
+            <div id="export-fields-chips" style="display:flex;flex-wrap:wrap;gap:4px"></div>
           </div>
         </div>
 

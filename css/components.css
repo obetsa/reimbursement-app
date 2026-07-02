@@ -223,6 +223,24 @@
   .company-access-chip.granted { background: var(--green-bg); color: var(--green); border-color: transparent; }
   .company-access-chip.granted:hover { opacity: 0.8; }
 
+  /* ── EXPORT FIELD CHIPS ── */
+  .export-field-chip {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 3px 9px; border-radius: 20px;
+    font-size: 11px; font-weight: 500; cursor: pointer;
+    background: var(--bg4); color: var(--text3);
+    border: 1px solid var(--border);
+    transition: all 0.12s; user-select: none;
+    text-decoration: line-through;
+  }
+  .export-field-chip.active {
+    background: var(--accent-bg, rgba(99,102,241,0.12));
+    color: var(--accent);
+    border-color: var(--accent);
+    text-decoration: none;
+  }
+  .export-field-chip:hover { border-color: var(--border2); }
+
   /* ── PAGINATION ── */
   .pagination-bar {
     display: flex; align-items: center; justify-content: center;

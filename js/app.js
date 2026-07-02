@@ -68,6 +68,7 @@ async function initApp(user) {
     // Populate company dropdowns
     populateCompanyDropdowns(companies);
     populateInstrumentDropdowns(instruments);
+    loadPayerOptions();
 
     renderDocs();
     updateDashboard();
@@ -237,6 +238,44 @@ function populateCompanyDropdowns(companies) {
   }
 }
 
+let _payersList = [];
+
+function populatePayerDropdowns(members) {
+  _payersList = members;
+
+  // Form dropdown
+  const formEl = document.getElementById('field-payer');
+  if(formEl) {
+    const cur = formEl.value;
+    formEl.innerHTML = `<option value="">${t('form.payer_placeholder')}</option>`;
+    members.forEach(m => {
+      formEl.innerHTML += `<option value="${m.user_id}">${m.display_name}</option>`;
+    });
+    if(cur) formEl.value = cur;
+  }
+
+  // Filter dropdown
+  const filterEl = document.getElementById('docs-filter-payer');
+  if(filterEl) {
+    const cur = filterEl.value;
+    filterEl.innerHTML = `<option value="">${t('docs.all_payers')}</option>`;
+    members.forEach(m => {
+      filterEl.innerHTML += `<option value="${m.user_id}">${m.display_name}</option>`;
+    });
+    if(cur) filterEl.value = cur;
+  }
+}
+
+async function loadPayerOptions() {
+  try {
+    const res = await fetch('/org/members/active', { credentials: 'include' });
+    if(res.ok) {
+      const members = await res.json();
+      populatePayerDropdowns(members);
+    }
+  } catch(e) {}
+}
+
 function populateInstrumentDropdowns(instruments) {
   const el = document.getElementById('field-card');
   if(!el) return;
@@ -315,6 +354,42 @@ function updateDashboard() {
     }
   }
 
+  // ── Payer breakdown ──
+  const byPayer = {};
+  active.forEach(d => {
+    if(!d.payerId) return;
+    if(!byPayer[d.payerId]) byPayer[d.payerId] = { name: d.payerName || d.payerId, total: 0, count: 0 };
+    byPayer[d.payerId].total += d.amount || 0;
+    byPayer[d.payerId].count++;
+  });
+
+  const payerColors = ['#a78bfa','#3ecf8e','#f5a623','#4f8ef7','#f76f6f','#38bdf8'];
+  const maxPayerAmt = Math.max(...Object.values(byPayer).map(v => v.total), 1);
+  const payerList = document.getElementById('payer-list');
+
+  if(payerList) {
+    const payerEntries = Object.entries(byPayer).sort((a,b) => b[1].total - a[1].total);
+    if(!payerEntries.length) {
+      payerList.innerHTML = `
+        <div style="text-align:center;padding:32px 20px;color:var(--text3)">
+          <div style="font-size:28px;margin-bottom:8px">👤</div>
+          <div style="font-size:13px">${t('dash.no_payers')}</div>
+        </div>`;
+    } else {
+      payerList.innerHTML = payerEntries.map(([pid, val], i) => `
+        <div class="company-row" onclick="filterByPayerDash('${pid}')">
+          <div class="company-dot" style="background:${payerColors[i%payerColors.length]}"></div>
+          <div class="company-name">${val.name}</div>
+          <div class="company-count">${val.count} ${t('dash.checks')}</div>
+          <div class="company-amount">€${val.total.toFixed(2)}</div>
+        </div>
+        <div class="company-bar-wrap" style="margin:-6px 0 8px 20px">
+          <div class="company-bar" style="width:${maxPayerAmt>0?(val.total/maxPayerAmt*100).toFixed(0):0}%;background:${payerColors[i%payerColors.length]}"></div>
+        </div>
+      `).join('');
+    }
+  }
+
   // ── Recent records ──
   const recentEl = document.getElementById('recent-records-list');
   if(recentEl) {
@@ -347,8 +422,15 @@ function filterByCompanyName(name) {
   renderDocs();
 }
 
+function filterByPayerDash(payerId) {
+  showPage('documents', document.querySelector('[onclick*="documents"]'));
+  const base = sampleDocs.filter(d => !d.isArchived && !d.isDeleted);
+  filteredDocs = base.filter(d => d.payerId === payerId);
+  renderDocs();
+}
+
 function showPageDocuments(el) {
-  const ids = ['docs-search','docs-filter-status','docs-filter-company','docs-filter-paytype'];
+  const ids = ['docs-search','docs-filter-status','docs-filter-company','docs-filter-payer','docs-filter-paytype'];
   ids.forEach(id => { const e = document.getElementById(id); if(e) e.value = ''; });
   const sortEl = document.getElementById('sort-select');
   if(sortEl) sortEl.value = 'date-desc';
@@ -1986,6 +2068,7 @@ function openEditModal(id) {
   document.getElementById('field-payment-type').value = doc.payType;
   document.getElementById('field-payment-method').value = doc.payMethod;
   document.getElementById('field-company').value = doc.companyId || '';
+  document.getElementById('field-payer').value = doc.payerId || '';
   document.getElementById('field-status').value = doc.status;
 
   // Card
@@ -2169,6 +2252,16 @@ async function saveRecord() {
     const cardId = payMethod === 'card' ? (cardSelect.value || null) : null;
     const companyName = companySelect.options[companySelect.selectedIndex]?.text || '—';
     const cardName = cardId ? (cardSelect.options[cardSelect.selectedIndex]?.text || '') : '';
+    const payerSelect = document.getElementById('field-payer');
+    const payerId = payerSelect?.value || null;
+    const payerName = payerId ? (payerSelect.options[payerSelect.selectedIndex]?.text || null) : null;
+
+    if(!payerId) {
+      payerSelect?.classList.add('input-error');
+      setTimeout(() => payerSelect?.classList.remove('input-error'), 2000);
+      showToast(t('toast.fill_required'), 'error');
+      return;
+    }
 
     const recordData = {
       title: document.getElementById('field-title').value,
@@ -2179,6 +2272,7 @@ async function saveRecord() {
       payMethod,
       companyId,
       cardId,
+      payerId,
       status: autoStatus,
       toReturn: payType === 'private' ? amount : 0,
       returned,
@@ -2212,19 +2306,19 @@ async function saveRecord() {
       const aIdx = archivedDocs.findIndex(d => d.id === editingId);
       if(sIdx !== -1) {
         if(recordData.is_archived) {
-          const doc = { ...sampleDocs[sIdx], ...recordData, isArchived: true, company: companyName, card: cardName };
+          const doc = { ...sampleDocs[sIdx], ...recordData, isArchived: true, company: companyName, card: cardName, payerName };
           sampleDocs.splice(sIdx, 1);
           archivedDocs.unshift(doc);
         } else {
-          sampleDocs[sIdx] = { ...sampleDocs[sIdx], ...recordData, isArchived: false, company: companyName, card: cardName };
+          sampleDocs[sIdx] = { ...sampleDocs[sIdx], ...recordData, isArchived: false, company: companyName, card: cardName, payerName };
         }
       } else if(aIdx !== -1) {
         if(!recordData.is_archived) {
-          const doc = { ...archivedDocs[aIdx], ...recordData, isArchived: false, company: companyName, card: cardName };
+          const doc = { ...archivedDocs[aIdx], ...recordData, isArchived: false, company: companyName, card: cardName, payerName };
           archivedDocs.splice(aIdx, 1);
           sampleDocs.unshift(doc);
         } else {
-          archivedDocs[aIdx] = { ...archivedDocs[aIdx], ...recordData, isArchived: true, company: companyName, card: cardName };
+          archivedDocs[aIdx] = { ...archivedDocs[aIdx], ...recordData, isArchived: true, company: companyName, card: cardName, payerName };
         }
       }
       filteredArchived = archivedDocs.filter(d => !d.isDeleted);
@@ -2403,7 +2497,7 @@ function renderTable() {
   const tbody = document.getElementById('docs-table-body');
   if(!tbody) return;
   if(!filteredDocs.length) {
-    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text3)">${t('docs.not_found')}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text3)">${t('docs.not_found')}</td></tr>`;
     return;
   }
   tbody.innerHTML = getDocsPage().map(d => `
@@ -2411,6 +2505,7 @@ function renderTable() {
       <td class="td-date">${formatDate(d.date)}</td>
       <td class="td-title"><strong style="font-weight:500">${d.title}</strong></td>
       <td style="color:var(--text2)">${d.company}</td>
+      <td class="td-payer">${d.payerName || '<span style="color:var(--text3)">—</span>'}</td>
       <td class="td-amount">${d.currency}${d.amount.toFixed(2)}</td>
       <td><span style="font-size:12px;color:var(--text2)">${d.payType === 'private' ? t('detail.private') : t('detail.company_pay')}</span></td>
       <td>${statusBadge(d.status)}</td>
@@ -2448,6 +2543,7 @@ function renderCards() {
       <div class="doc-card-meta">
         <span class="meta-chip">📅 ${formatDate(d.date)}</span>
         <span class="meta-chip">🏢 ${d.company}</span>
+        ${d.payerName ? `<span class="meta-chip">👤 ${d.payerName}</span>` : ''}
         <span class="meta-chip">${d.payType === 'private' ? '💼' : '🏢'} ${d.payMethod === 'card' ? d.card : t('instrument.cash')}</span>
       </div>
       <div class="doc-card-footer">
@@ -2491,10 +2587,15 @@ function filterByPayType(val) {
   applyFilters();
 }
 
+function filterByPayer(val) {
+  applyFilters();
+}
+
 function applyFilters() {
   const search = (document.getElementById('docs-search')?.value || '').toLowerCase();
   const status = document.getElementById('docs-filter-status')?.value || '';
   const company = document.getElementById('docs-filter-company')?.value || '';
+  const payer = document.getElementById('docs-filter-payer')?.value || '';
   const payType = document.getElementById('docs-filter-paytype')?.value || '';
 
   // Якщо вибрано "Архівовано" — ховаємо основну таблицю, показуємо тільки архів
@@ -2528,6 +2629,7 @@ function applyFilters() {
   }
   if(status) base = base.filter(d => d.status === status);
   if(company) base = base.filter(d => d.company === company);
+  if(payer) base = base.filter(d => d.payerId === payer);
   if(payType) base = base.filter(d => d.payType === payType);
 
   filteredDocs = base;
@@ -2613,7 +2715,46 @@ function userCardClick() {
 // ══════════════════════════════════════════
 // EXPORT
 // ══════════════════════════════════════════
+// ── EXPORT FIELDS CONFIG ──
+const EXPORT_FIELDS = [
+  { key: 'date',       labelKey: 'export.col.date',       width: 12, getValue: d => d.date },
+  { key: 'created',    labelKey: 'export.col.created',    width: 12, getValue: d => d.created },
+  { key: 'title',      labelKey: 'export.col.title',      width: 30, getValue: d => d.title },
+  { key: 'note',       labelKey: 'export.col.note',       width: 30, getValue: d => d.note || '' },
+  { key: 'company',    labelKey: 'export.col.company',    width: 20, getValue: d => d.company },
+  { key: 'payer',      labelKey: 'export.col.payer',      width: 20, getValue: d => d.payerName || '' },
+  { key: 'pay_type',   labelKey: 'export.col.pay_type',   width: 18, getValue: d => t('export.pay_type.' + d.payType) || d.payType },
+  { key: 'pay_method', labelKey: 'export.col.pay_method', width: 14, getValue: d => t('export.pay_method.' + d.payMethod) || d.payMethod },
+  { key: 'card',       labelKey: 'export.col.card',       width: 18, getValue: d => d.card || '' },
+  { key: 'amount',     labelKey: 'export.col.amount',     width: 10, getValue: d => d.amount },
+  { key: 'currency',   labelKey: 'export.col.currency',   width: 8,  getValue: d => d.currencyCode || 'EUR' },
+  { key: 'status',     labelKey: 'export.col.status',     width: 22, getValue: d => getStatusLabel(d.status) },
+  { key: 'to_return',  labelKey: 'export.col.to_return',  width: 14, getValue: d => d.toReturn || 0 },
+  { key: 'returned',   labelKey: 'export.col.returned',   width: 12, getValue: d => d.returned || 0 },
+  { key: 'remainder',  labelKey: 'export.col.remainder',  width: 12, getValue: d => d.remainder || 0 },
+  { key: 'files',      labelKey: 'export.col.files',      width: 10, getValue: d => d.files || 0 },
+];
+
+// key → true (active) by default; false = excluded
+const _exportSelection = {};
+
+function renderExportFields() {
+  const container = document.getElementById('export-fields-chips');
+  if(!container) return;
+  container.innerHTML = EXPORT_FIELDS.map(f => {
+    const active = _exportSelection[f.key] !== false;
+    return `<span class="export-field-chip${active ? ' active' : ''}" onclick="toggleExportField('${f.key}', this)">${t(f.labelKey)}</span>`;
+  }).join('');
+}
+
+function toggleExportField(key, el) {
+  _exportSelection[key] = !(_exportSelection[key] !== false);
+  el.classList.toggle('active', _exportSelection[key] !== false);
+  el.style.textDecoration = (_exportSelection[key] !== false) ? 'none' : 'line-through';
+}
+
 function openExportModal() {
+  renderExportFields();
   document.getElementById('export-modal-overlay').classList.add('open');
   lockScroll();
   updateExportCount();
@@ -2694,32 +2835,9 @@ function getStatusLabel(status) {
 }
 
 function buildExportRows(docs) {
-  const headers = [
-    t('export.col.date'), t('export.col.created'), t('export.col.title'), t('export.col.note'),
-    t('export.col.company'), t('export.col.pay_type'), t('export.col.pay_method'), t('export.col.card'),
-    t('export.col.amount'), t('export.col.currency'), t('export.col.status'),
-    t('export.col.to_return'), t('export.col.returned'), t('export.col.remainder'),
-    t('export.col.files')
-  ];
-
-  const rows = docs.map(d => [
-    d.date,
-    d.created,
-    d.title,
-    d.note || '',
-    d.company,
-    t('export.pay_type.' + d.payType) || d.payType,
-    t('export.pay_method.' + d.payMethod) || d.payMethod,
-    d.card || '',
-    d.amount,
-    'EUR',
-    getStatusLabel(d.status),
-    d.toReturn || 0,
-    d.returned || 0,
-    d.remainder || 0,
-    d.files || 0,
-  ]);
-
+  const active = EXPORT_FIELDS.filter(f => _exportSelection[f.key] !== false);
+  const headers = active.map(f => t(f.labelKey));
+  const rows = docs.map(d => active.map(f => f.getValue(d)));
   return [headers, ...rows];
 }
 
@@ -2771,13 +2889,9 @@ function exportXLSX(rows, filename) {
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(rows);
 
-  // Column widths
-  ws['!cols'] = [
-    {wch:12},{wch:12},{wch:30},{wch:30},
-    {wch:18},{wch:14},{wch:14},{wch:18},
-    {wch:10},{wch:8},{wch:22},
-    {wch:14},{wch:12},{wch:12},{wch:10}
-  ];
+  // Column widths — dynamic based on active fields
+  const activeFields = EXPORT_FIELDS.filter(f => _exportSelection[f.key] !== false);
+  ws['!cols'] = activeFields.map(f => ({wch: f.width || 14}));
 
   // Style header row (bold)
   const range = XLSX.utils.decode_range(ws['!ref']);
@@ -2957,6 +3071,10 @@ function openDetail(id) {
       <div class="detail-field-label">${t('detail.created')}</div>
       <div class="detail-field-value" style="color:var(--text2)">${formatDateTime(doc.created)}</div>
     </div>
+    <div class="detail-field">
+      <div class="detail-field-label">${t('detail.payer')}</div>
+      <div class="detail-field-value ${doc.payerName ? '' : 'muted'}">${doc.payerName || '—'}</div>
+    </div>
   `;
 
   // Return section
@@ -3005,6 +3123,15 @@ function openDetail(id) {
 
   // Attachments
   renderAttachments(doc);
+
+  // Author meta (bottom right)
+  const authorEl = document.getElementById('detail-author-meta');
+  if(doc.authorName) {
+    authorEl.style.display = '';
+    authorEl.textContent = t(doc.authorIsEditor ? 'detail.last_editor' : 'detail.author') + ': ' + doc.authorName;
+  } else {
+    authorEl.style.display = 'none';
+  }
 
   // Reset add-return form
   document.getElementById('add-return-form').classList.remove('open');
@@ -3523,11 +3650,7 @@ async function loadAndRenderCompanies() {
 function renderCompaniesList() {
   const list = document.getElementById('companies-list');
   if(!list) return;
-  if(!companiesCache.length) {
-    list.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text3);font-size:13px">${t('settings.no_companies')}</div>`;
-    return;
-  }
-  list.innerHTML = companiesCache.slice().reverse().map(c => `
+  const items = companiesCache.slice().reverse().map(c => `
     <div class="settings-item ${!c.is_active ? 'deactivated' : ''}">
       <div class="settings-item-icon">🏢</div>
       <div class="settings-item-info">
@@ -3543,6 +3666,11 @@ function renderCompaniesList() {
       </div>
     </div>
   `).join('');
+  list.innerHTML = `<div class="settings-section">${
+    companiesCache.length
+      ? items
+      : `<div style="text-align:center;padding:24px;color:var(--text3);font-size:13px">${t('settings.no_companies')}</div>`
+  }</div>`;
 }
 
 function openCompanyModal(id = null) {
@@ -3713,13 +3841,18 @@ function renderInstrumentsList() {
   const typeClass = { private_card: 'type-private', company_card: 'type-company', cash: 'type-cash' };
   const typeIcon  = { private_card: '💳', company_card: '🏢', cash: '💵' };
 
-  list.innerHTML = instrumentsCache.slice().reverse().map(i => `
+  const renderItem = (i, showOwner = false) => {
+    const ownerName = showOwner
+      ? (_payersList.find(m => m.user_id === i.user_id)?.display_name || '')
+      : '';
+    return `
     <div class="settings-item ${!i.is_active ? 'deactivated' : ''}">
       <div class="settings-item-icon">${typeIcon[i.type] || '💳'}</div>
       <div class="settings-item-info">
         <div class="settings-item-name">${i.name}</div>
         <div class="settings-item-sub">
           <span class="type-chip ${typeClass[i.type] || ''}">${typeLabel[i.type] || i.type}</span>
+          ${ownerName ? `<span style="font-size:11px;color:var(--text3);margin-left:6px">👤 ${ownerName}</span>` : ''}
         </div>
       </div>
       <div class="settings-item-actions">
@@ -3730,8 +3863,40 @@ function renderInstrumentsList() {
         </button>
         <button class="icon-btn danger" title="${t('detail.delete')}" onclick="deleteInstrument('${i.id}', '${i.name.replace(/'/g, "\\'")}')">🗑️</button>` : ''}
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  };
+
+  const isAdmin = currentOrg && currentOrg.role === 'admin';
+  const myId = currentUser && currentUser.id;
+
+  const wrapSection = (titleKey, items, showOwner = false) => `
+    <div class="settings-section">
+      <div class="settings-section-header">
+        <div class="settings-section-title">${t(titleKey)}</div>
+      </div>
+      ${items.length
+        ? items.map(i => renderItem(i, showOwner)).join('')
+        : `<div style="text-align:center;padding:24px;color:var(--text3);font-size:13px">${t('settings.no_instruments')}</div>`
+      }
+    </div>`;
+
+  if(isAdmin && myId) {
+    const mine   = instrumentsCache.filter(i => i.user_id === myId).reverse();
+    const others = instrumentsCache.filter(i => i.user_id !== myId).reverse();
+    let html = wrapSection('settings.instruments_mine', mine, false);
+    if(others.length) {
+      html += wrapSection('settings.instruments_others', others, true);
+    }
+    list.innerHTML = html;
+  } else {
+    list.innerHTML = `
+      <div class="settings-section">
+        ${instrumentsCache.length
+          ? instrumentsCache.slice().reverse().map(i => renderItem(i, false)).join('')
+          : `<div style="text-align:center;padding:24px;color:var(--text3);font-size:13px">${t('settings.no_instruments')}</div>`
+        }
+      </div>`;
+  }
 }
 
 function openInstrumentModal(id = null) {

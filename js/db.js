@@ -108,7 +108,7 @@ function mapRecord(r) {
   return {
     id: r.id,
     date: r.date,
-    created: (r.created_at || '').split('T')[0] || '',
+    created: r.created_at ? new Date(r.created_at).toISOString().split('T')[0] : '',
     title: r.title,
     note: r.note || '',
     company: r.company_name || '—',
@@ -137,6 +137,10 @@ function mapRecord(r) {
     isArchived: !!r.is_archived,
     isDeleted: !!r.is_deleted,
     previousStatus: r.previous_status || null,
+    authorName: r.author_name || null,
+    authorIsEditor: !!r.author_is_editor,
+    payerId: r.payer_id || null,
+    payerName: r.payer_name || null,
   };
 }
 
@@ -161,6 +165,7 @@ async function createRecord(data) {
     amount: data.amount,
     pay_type: data.payType, pay_method: data.payMethod,
     card_id: data.cardId || null, company_id: data.companyId || null,
+    payer_id: data.payerId || null,
     status: data.status,
     to_return: data.toReturn || 0, returned: data.returned || 0, remainder: data.remainder || 0,
   });
@@ -172,6 +177,7 @@ async function updateRecord(id, data) {
     title: data.title, note: data.note || '', date: data.date,
     amount: data.amount, pay_type: data.payType, pay_method: data.payMethod,
     card_id: data.cardId || null, company_id: data.companyId || null,
+    payer_id: data.payerId || null,
     status: data.status,
     to_return: data.toReturn || 0, returned: data.returned || 0, remainder: data.remainder || 0,
     is_archived: data.is_archived ?? 0,

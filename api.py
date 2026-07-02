@@ -1456,6 +1456,25 @@ def org_invite_current():
     return jsonify({'token': row['token'], 'expires_at': row['expires_at'].isoformat()})
 
 
+@app.route('/org/members/active', methods=['GET'])
+def org_members_active():
+    """Активні члени org для dropdown платника — доступно всім ролям."""
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='user')
+    if err: conn.close(); return err
+    rows = conn.execute(
+        "SELECT u.id as user_id, COALESCE(NULLIF(u.full_name,''), u.email) as display_name "
+        "FROM org_members m JOIN users u ON m.user_id=u.id "
+        "WHERE m.org_id=%s AND m.left_at IS NULL AND u.password_hash != 'PENDING' "
+        "ORDER BY display_name",
+        (org_id,)
+    ).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+
 @app.route('/org/members', methods=['GET'])
 def org_members():
     user_id = get_user_from_token(request)
@@ -2267,10 +2286,16 @@ def get_instruments():
     conn = get_db()
     org_id, role, err = require_org(user_id, conn)
     if err: conn.close(); return err
-    rows = conn.execute(
-        "select * from payment_instruments where org_id=%s and (is_deleted=0 or is_deleted is null) order by sort_order, name",
-        (org_id,)
-    ).fetchall()
+    if role == 'admin':
+        rows = conn.execute(
+            "select * from payment_instruments where org_id=%s and (is_deleted=0 or is_deleted is null) order by sort_order, name",
+            (org_id,)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "select * from payment_instruments where org_id=%s and user_id=%s and (is_deleted=0 or is_deleted is null) order by sort_order, name",
+            (org_id, user_id)
+        ).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
 
@@ -2404,10 +2429,17 @@ def get_records():
         return jsonify([])
 
     query = '''
-        select r.*, c.name as company_name, p.name as card_name
+        select r.*, c.name as company_name, p.name as card_name,
+          COALESCE(NULLIF(ue.full_name, ''), ue.email) as editor_name,
+          COALESCE(NULLIF(uc.full_name, ''), uc.email) as creator_name,
+          (r.updated_by IS NOT NULL) as author_is_editor,
+          COALESCE(NULLIF(up.full_name, ''), up.email) as payer_name
         from records r
         left join companies c on r.company_id = c.id
         left join payment_instruments p on r.card_id = p.id
+        left join users uc on r.created_by = uc.id
+        left join users ue on r.updated_by = ue.id
+        left join users up on r.payer_id = up.id
         where r.org_id=%s
     '''
     params = [org_id]
@@ -2441,6 +2473,11 @@ def get_records():
         d['attachments'] = [dict(a) for a in atts]
         d['is_archived'] = bool(d.get('is_archived'))
         d['is_deleted'] = bool(d.get('is_deleted'))
+        editor_name = d.pop('editor_name', None)
+        creator_name = d.pop('creator_name', None)
+        d['author_name'] = editor_name or creator_name
+        d['author_is_editor'] = bool(editor_name)
+        d['payer_name'] = d.pop('payer_name', None)
         result.append(d)
 
     conn.close()
@@ -2475,8 +2512,8 @@ def create_record():
     conn.execute('''
         insert into records
         (id, user_id, org_id, title, note, date, amount, currency, pay_type, pay_method,
-         card_id, company_id, status, to_return, returned, remainder)
-        values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+         card_id, company_id, status, to_return, returned, remainder, created_by, payer_id)
+        values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
     ''', (
         record_id, user_id, org_id,
         data['title'], data.get('note', ''),
@@ -2487,20 +2524,34 @@ def create_record():
         data.get('status', 'waiting'),
         data.get('to_return', 0),
         data.get('returned', 0),
-        data.get('remainder', 0)
+        data.get('remainder', 0),
+        user_id,
+        data.get('payer_id') or None
     ))
     conn.commit()
 
     row = conn.execute('''
-        select r.*, c.name as company_name, p.name as card_name
+        select r.*, c.name as company_name, p.name as card_name,
+          COALESCE(NULLIF(ue.full_name, ''), ue.email) as editor_name,
+          COALESCE(NULLIF(uc.full_name, ''), uc.email) as creator_name,
+          (r.updated_by IS NOT NULL) as author_is_editor,
+          COALESCE(NULLIF(up.full_name, ''), up.email) as payer_name
         from records r
         left join companies c on r.company_id = c.id
         left join payment_instruments p on r.card_id = p.id
+        left join users uc on r.created_by = uc.id
+        left join users ue on r.updated_by = ue.id
+        left join users up on r.payer_id = up.id
         where r.id=%s
     ''', (record_id,)).fetchone()
     conn.close()
 
     d = dict(row)
+    editor_name = d.pop('editor_name', None)
+    creator_name = d.pop('creator_name', None)
+    d['author_name'] = editor_name or creator_name
+    d['author_is_editor'] = bool(editor_name)
+    d['payer_name'] = d.pop('payer_name', None)
     d['return_events'] = []
     d['attachments'] = []
     d['is_archived'] = False
@@ -2531,7 +2582,7 @@ def update_record(record_id):
     fields = []
     values = []
     allowed = ['title', 'note', 'date', 'amount', 'pay_type', 'pay_method',
-               'card_id', 'company_id', 'status', 'previous_status', 'to_return', 'returned',
+               'card_id', 'company_id', 'payer_id', 'status', 'previous_status', 'to_return', 'returned',
                'remainder', 'is_archived', 'is_deleted', 'deleted_at']
     for key in allowed:
         if key in data:
@@ -2540,6 +2591,8 @@ def update_record(record_id):
             if isinstance(val, bool):
                 val = 1 if val else 0
             values.append(val)
+    fields.append("updated_by=%s")
+    values.append(user_id)
     values.extend([record_id, org_id])
     conn.execute(f"update records set {', '.join(fields)} where id=%s AND org_id=%s", values)
     conn.commit()

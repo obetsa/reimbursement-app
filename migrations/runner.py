@@ -30,6 +30,8 @@ ORDERED_FILES = [
     'migrate_016_org_invites_member_companies.sql',
     'migrate_017_fix_org_members_role_check.sql',
     'migrate_018_remove_drive_columns.sql',
+    'migrate_019_record_author.sql',
+    'migrate_020_record_payer.sql',
 ]
 
 

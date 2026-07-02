@@ -84,7 +84,7 @@
 
   /* ── TABLE ── */
   .table-wrap { overflow-x: auto; }
-  table { min-width: 600px; }
+  table { min-width: 720px; }
 
   /* ── CARDS ── */
   .cards-grid { grid-template-columns: 1fr !important; }
@@ -172,14 +172,24 @@
   .settings-nav-item.active { border-color: var(--accent); }
   .btn-invite-generate { font-size: 14px; padding: 9px 16px; }
   .company-access-chip { font-size: 12px; padding: 6px 12px; }
+  .export-field-chip { font-size: 10px; padding: 2px 7px; }
   .verify-banner { font-size: 12px; padding: 10px 12px; }
 
   /* settings-item → картка на мобільному */
-  #companies-list, #instruments-list { padding: 14px; display: flex; flex-direction: column; gap: 6px; }
-  #companies-list .settings-item, #instruments-list .settings-item { background: var(--bg3); border-radius: var(--radius-sm); border-bottom: none; }
-  #companies-list .settings-item:hover, #instruments-list .settings-item:hover { background: var(--bg4); }
-  #companies-list .settings-item-icon, #instruments-list .settings-item-icon { background: var(--bg2); }
-  #companies-list .icon-btn, #instruments-list .icon-btn { background: var(--bg2); border-color: var(--border2); }
+  #companies-list .settings-section { border-radius: var(--radius-sm); }
+  #companies-list .settings-item { background: var(--bg3); border-bottom: none; border-top: 1px solid var(--border); }
+  #companies-list .settings-item:first-child { border-top: none; }
+  #companies-list .settings-item:hover { background: var(--bg4); }
+  #companies-list .settings-item-icon { background: var(--bg2); }
+  #companies-list .icon-btn { background: var(--bg2); border-color: var(--border2); }
+
+  #instruments-list { display: flex; flex-direction: column; gap: 12px; }
+  #instruments-list .settings-section { border-radius: var(--radius-sm); }
+  #instruments-list .settings-item { background: var(--bg3); border-bottom: none; border-top: 1px solid var(--border); }
+  #instruments-list .settings-item:first-child { border-top: none; }
+  #instruments-list .settings-item:hover { background: var(--bg4); }
+  #instruments-list .settings-item-icon { background: var(--bg2); }
+  #instruments-list .icon-btn { background: var(--bg2); border-color: var(--border2); }
   #trash-list { display: flex; flex-direction: column; gap: 7px; }
   #trash-list .card { display: flex; flex-direction: column; gap: 9px; padding: 10px; }
   .settings-item { flex-wrap: wrap; padding: 12px 14px; gap: 8px; border-bottom: none; margin-bottom: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg2); }
