@@ -585,7 +585,7 @@
               <th data-i18n="cexp.col_date">Дата</th>
               <th data-i18n="cexp.col_paying">Оплатив</th>
               <th data-i18n="cexp.col_beneficiary">Витрата для</th>
-              <th data-i18n="cexp.col_amount" class="td-amount">Сума</th>
+              <th data-i18n="cexp.col_amount" style="text-align:center">Сума</th>
               <th data-i18n="cexp.col_status">Статус</th>
               <th data-i18n="cexp.col_note">Примітка</th>
               <th data-i18n="cexp.col_entered_by">Хто вніс</th>
@@ -604,16 +604,37 @@
     </div>
   </div>
 
-  <!-- ── COMPANY SETTLEMENTS (stub) ── -->
+  <!-- ── COMPANY SETTLEMENTS ── -->
   <div id="page-company-settlements" style="display:none">
     <div class="topbar">
       <div class="topbar-title" data-i18n="nav.company_settlements">Розрахунки між компаніями</div>
     </div>
     <div class="content">
-      <div style="text-align:center;padding:80px 20px;color:var(--text3)">
-        <div style="font-size:40px;margin-bottom:12px">🔄</div>
-        <div style="font-size:14px">Незабаром</div>
+      <div class="filters-bar">
+        <select id="settle-filter-company" class="filter-select" onchange="settleApplyFilter()">
+          <option value="" data-i18n="settle.filter_company">Всі компанії</option>
+        </select>
       </div>
+
+      <!-- TABLE -->
+      <div id="settle-table-wrap" class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th data-i18n="settle.debtor">Боржник</th>
+              <th style="width:32px;text-align:center">→</th>
+              <th data-i18n="settle.creditor">Кредитор</th>
+              <th data-i18n="settle.open" style="text-align:center">Відкрито</th>
+              <th data-i18n="settle.total" style="text-align:center">Загалом</th>
+              <th data-i18n="settle.returned" style="text-align:center">Погашено</th>
+              <th data-i18n="settle.count" style="text-align:center">Записів</th>
+            </tr>
+          </thead>
+          <tbody id="settle-tbody"></tbody>
+        </table>
+      </div>
+
+      <div id="settle-empty" style="display:none;text-align:center;padding:64px;color:var(--text3);font-size:13px" data-i18n="settle.no_data">Розрахунків ще немає</div>
     </div>
   </div>
 

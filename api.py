@@ -3035,6 +3035,87 @@ def delete_company_expense(exp_id):
     return jsonify({'ok': True})
 
 
+@app.route('/company-settlements', methods=['GET'])
+def get_company_settlements():
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn)
+    if err: conn.close(); return err
+
+    rows = conn.execute("""
+        SELECT
+            ce.paying_company_id,
+            cp.name AS paying_name,
+            ce.beneficiary_company_id,
+            cb.name AS bene_name,
+            SUM(ce.amount) AS total_amount,
+            SUM(ce.returned_amount) AS total_returned,
+            SUM(CASE WHEN ce.status != 'done' THEN ce.amount - ce.returned_amount ELSE 0 END) AS open_debt,
+            COUNT(*) AS expense_count
+        FROM company_expenses ce
+        LEFT JOIN companies cp ON cp.id = ce.paying_company_id
+        LEFT JOIN companies cb ON cb.id = ce.beneficiary_company_id
+        WHERE ce.org_id = %s
+          AND ce.paying_company_id IS NOT NULL
+          AND ce.beneficiary_company_id IS NOT NULL
+          AND ce.paying_company_id != ce.beneficiary_company_id
+        GROUP BY ce.paying_company_id, cp.name, ce.beneficiary_company_id, cb.name
+    """, (org_id,)).fetchall()
+    conn.close()
+
+    # Build directional map
+    direct = {}
+    for r in rows:
+        d = dict(r)
+        key = (d['paying_company_id'], d['beneficiary_company_id'])
+        direct[key] = d
+
+    # Net out pairs
+    seen = set()
+    result = []
+    for (paying_id, bene_id), d in direct.items():
+        pair_key = tuple(sorted([paying_id, bene_id]))
+        if pair_key in seen:
+            continue
+        seen.add(pair_key)
+
+        reverse = direct.get((bene_id, paying_id))
+        total = float(d['total_amount'])
+        returned = float(d['total_returned'])
+        open_d = float(d['open_debt'])
+
+        if reverse:
+            total += float(reverse['total_amount'])
+            returned += float(reverse['total_returned'])
+            net_open = open_d - float(reverse['open_debt'])
+        else:
+            net_open = open_d
+
+        if net_open >= 0:
+            debtor_id, debtor_name = bene_id, d['bene_name']
+            creditor_id, creditor_name = paying_id, d['paying_name']
+        else:
+            debtor_id, debtor_name = paying_id, d['paying_name']
+            creditor_id, creditor_name = bene_id, d['bene_name']
+            net_open = abs(net_open)
+
+        result.append({
+            'debtor_id': debtor_id,
+            'debtor_name': debtor_name,
+            'creditor_id': creditor_id,
+            'creditor_name': creditor_name,
+            'open_amount': round(net_open, 2),
+            'total_amount': round(total, 2),
+            'total_returned': round(returned, 2),
+            'is_net': bool(reverse),
+            'expense_count': int(d['expense_count']) + (int(reverse['expense_count']) if reverse else 0)
+        })
+
+    result.sort(key=lambda x: x['open_amount'], reverse=True)
+    return jsonify(result)
+
+
 @app.route('/backup/download', methods=['GET'])
 def backup_download():
     user_id = get_user_from_token(request)

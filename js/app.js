@@ -503,6 +503,7 @@ function showPage(name, el) {
   if(name === 'settings') { restoreSettingsTab(); loadProfile(); }
   if(name === 'gallery') { applyTranslations(); loadGallery(); }
   if(name === 'company-expenses') loadCompanyExpenses();
+  if(name === 'company-settlements') loadCompanySettlements();
   // if(name === 'superadmin') loadSuperadmin(); // SA moved to admin.html
 
   localStorage.setItem('currentPage', name);
@@ -4448,7 +4449,7 @@ function _cexpRenderTable() {
       <td class="td-date">${dateStr}</td>
       <td>${paying}</td>
       <td>${bene}</td>
-      <td class="td-amount">${amt}</td>
+      <td style="text-align:center;font-family:'DM Mono',monospace;font-weight:500;white-space:nowrap">${amt}</td>
       <td>${badge}</td>
       <td style="color:var(--text3);font-size:12px">${note}</td>
       <td style="color:var(--text3);font-size:12px">${enteredBy}</td>
@@ -4613,4 +4614,75 @@ async function deleteCexp(id) {
   } catch(e) {
     showToast(t('toast.error'), 'error');
   }
+}
+
+// ══════════════════════════════════════════
+// COMPANY SETTLEMENTS
+// ══════════════════════════════════════════
+
+let _settleList = [];
+let _settleFiltered = [];
+
+async function loadCompanySettlements() {
+  try {
+    const [sr, cr] = await Promise.all([
+      fetch('/company-settlements', { credentials: 'include' }),
+      fetch('/companies', { credentials: 'include' })
+    ]);
+    _settleList = sr.ok ? await sr.json() : [];
+    const companies = cr.ok ? await cr.json() : [];
+    _settlePopulateFilter(companies);
+    settleApplyFilter();
+  } catch(e) {}
+}
+
+function _settlePopulateFilter(companies) {
+  const sel = document.getElementById('settle-filter-company');
+  if (!sel) return;
+  const allOpt = `<option value="">${t('settle.filter_company')}</option>`;
+  sel.innerHTML = allOpt + companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+}
+
+function settleApplyFilter() {
+  const fc = document.getElementById('settle-filter-company')?.value || '';
+  _settleFiltered = fc
+    ? _settleList.filter(r => r.debtor_id === fc || r.creditor_id === fc)
+    : [..._settleList];
+  _settleRender();
+}
+
+function _settleRender() {
+  const tbody = document.getElementById('settle-tbody');
+  const empty = document.getElementById('settle-empty');
+  const wrap  = document.getElementById('settle-table-wrap');
+  if (!tbody) return;
+
+  if (_settleFiltered.length === 0) {
+    if (wrap)  wrap.style.display  = 'none';
+    if (empty) empty.style.display = '';
+    return;
+  }
+  if (wrap)  wrap.style.display  = '';
+  if (empty) empty.style.display = 'none';
+
+  const fmt = v => parseFloat(v || 0).toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  tbody.innerHTML = _settleFiltered.map(r => {
+    const isSettled = r.open_amount === 0;
+    const openCell = isSettled
+      ? `<span class="badge badge-done">${t('settle.settled')}</span>`
+      : `<span style="font-family:'DM Mono',monospace;font-weight:600;color:var(--red)">${fmt(r.open_amount)}</span>`;
+    const netBadge = r.is_net
+      ? `<span class="badge" style="background:var(--bg4);color:var(--text3);font-size:10px">${t('settle.net_badge')}</span>`
+      : '';
+    return `<tr>
+      <td><strong>${r.debtor_name || '—'}</strong></td>
+      <td style="text-align:center;color:var(--text3)">→</td>
+      <td>${r.creditor_name || '—'} ${netBadge}</td>
+      <td style="text-align:center">${openCell}</td>
+      <td style="text-align:center;font-family:'DM Mono',monospace;color:var(--text2);font-size:13px">${fmt(r.total_amount)}</td>
+      <td style="text-align:center;font-family:'DM Mono',monospace;color:var(--text3);font-size:13px">${fmt(r.total_returned)}</td>
+      <td style="text-align:center;color:var(--text3);font-size:12px">${r.expense_count}</td>
+    </tr>`;
+  }).join('');
 }
