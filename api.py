@@ -2950,6 +2950,13 @@ CEXP_SELECT = """
     LEFT JOIN users ue ON ce.updated_by = ue.id
 """
 
+def _get_accessible_company_ids(user_id, org_id, conn):
+    rows = conn.execute(
+        "SELECT company_id FROM org_member_companies WHERE user_id=%s AND org_id=%s",
+        (user_id, org_id)
+    ).fetchall()
+    return [r['company_id'] for r in rows]
+
 @app.route('/company-expenses', methods=['GET'])
 def get_company_expenses():
     user_id = get_user_from_token(request)
@@ -2957,10 +2964,24 @@ def get_company_expenses():
     conn = get_db()
     org_id, role, err = require_org(user_id, conn)
     if err: conn.close(); return err
-    rows = conn.execute(
-        CEXP_SELECT + " WHERE ce.org_id=%s ORDER BY ce.date DESC, ce.created_at DESC",
-        (org_id,)
-    ).fetchall()
+
+    if role == 'admin':
+        rows = conn.execute(
+            CEXP_SELECT + " WHERE ce.org_id=%s ORDER BY ce.date DESC, ce.created_at DESC",
+            (org_id,)
+        ).fetchall()
+    else:
+        company_ids = _get_accessible_company_ids(user_id, org_id, conn)
+        if not company_ids:
+            conn.close()
+            return jsonify([])
+        rows = conn.execute(
+            CEXP_SELECT + """ WHERE ce.org_id=%s
+              AND (ce.paying_company_id = ANY(%s) OR ce.beneficiary_company_id = ANY(%s))
+              ORDER BY ce.date DESC, ce.created_at DESC""",
+            (org_id, company_ids, company_ids)
+        ).fetchall()
+
     conn.close()
     return jsonify([_cexp_row_to_dict(r) for r in rows])
 
@@ -2972,6 +2993,15 @@ def create_company_expense():
     org_id, role, err = require_org(user_id, conn, min_role='manager')
     if err: conn.close(); return err
     data = request.json
+
+    if role != 'admin':
+        company_ids = _get_accessible_company_ids(user_id, org_id, conn)
+        paying = data.get('paying_company_id')
+        bene   = data.get('beneficiary_company_id')
+        if (paying and paying not in company_ids) or (bene and bene not in company_ids):
+            conn.close()
+            return jsonify({'error': 'forbidden'}), 403
+
     exp_id = str(uuid.uuid4())
     conn.execute(
         """INSERT INTO company_expenses
@@ -2999,9 +3029,21 @@ def update_company_expense(exp_id):
     conn = get_db()
     org_id, role, err = require_org(user_id, conn, min_role='manager')
     if err: conn.close(); return err
-    row = conn.execute("SELECT id FROM company_expenses WHERE id=%s AND org_id=%s", (exp_id, org_id)).fetchone()
+    row = conn.execute(
+        "SELECT id, paying_company_id, beneficiary_company_id FROM company_expenses WHERE id=%s AND org_id=%s",
+        (exp_id, org_id)
+    ).fetchone()
     if not row: conn.close(); return jsonify({'error': 'not_found'}), 404
+
     data = request.json
+
+    if role != 'admin':
+        company_ids = _get_accessible_company_ids(user_id, org_id, conn)
+        paying = data.get('paying_company_id') or row['paying_company_id']
+        bene   = data.get('beneficiary_company_id') or row['beneficiary_company_id']
+        if (paying and paying not in company_ids) or (bene and bene not in company_ids):
+            conn.close()
+            return jsonify({'error': 'forbidden'}), 403
     conn.execute(
         """UPDATE company_expenses SET
            date=%s, paying_company_id=%s, beneficiary_company_id=%s,
@@ -3029,6 +3071,18 @@ def delete_company_expense(exp_id):
     conn = get_db()
     org_id, role, err = require_org(user_id, conn, min_role='manager')
     if err: conn.close(); return err
+
+    if role != 'admin':
+        row = conn.execute(
+            "SELECT paying_company_id, beneficiary_company_id FROM company_expenses WHERE id=%s AND org_id=%s",
+            (exp_id, org_id)
+        ).fetchone()
+        if not row: conn.close(); return jsonify({'error': 'not_found'}), 404
+        company_ids = _get_accessible_company_ids(user_id, org_id, conn)
+        if row['paying_company_id'] not in company_ids and row['beneficiary_company_id'] not in company_ids:
+            conn.close()
+            return jsonify({'error': 'forbidden'}), 403
+
     conn.execute("DELETE FROM company_expenses WHERE id=%s AND org_id=%s", (exp_id, org_id))
     conn.commit()
     conn.close()
@@ -3042,6 +3096,17 @@ def get_company_settlements():
     conn = get_db()
     org_id, role, err = require_org(user_id, conn)
     if err: conn.close(); return err
+
+    if role == 'admin':
+        access_filter = ''
+        params = (org_id,)
+    else:
+        company_ids = _get_accessible_company_ids(user_id, org_id, conn)
+        if not company_ids:
+            conn.close()
+            return jsonify([])
+        access_filter = 'AND (ce.paying_company_id = ANY(%s) OR ce.beneficiary_company_id = ANY(%s))'
+        params = (org_id, company_ids, company_ids)
 
     rows = conn.execute("""
         SELECT
@@ -3060,8 +3125,9 @@ def get_company_settlements():
           AND ce.paying_company_id IS NOT NULL
           AND ce.beneficiary_company_id IS NOT NULL
           AND ce.paying_company_id != ce.beneficiary_company_id
+          {access_filter}
         GROUP BY ce.paying_company_id, cp.name, ce.beneficiary_company_id, cb.name
-    """, (org_id,)).fetchall()
+    """.format(access_filter=access_filter), params).fetchall()
     conn.close()
 
     # Build directional map

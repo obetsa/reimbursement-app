@@ -434,6 +434,19 @@ function updateDashboard() {
   loadDashSettlements();
 }
 
+async function refreshDashboardData() {
+  try {
+    const [records, archived] = await Promise.all([loadRecords(), loadArchivedRecords()]);
+    sampleDocs.length = 0;
+    records.forEach(r => sampleDocs.push(r));
+    filteredDocs = [...sampleDocs];
+    archivedDocs.length = 0;
+    archived.forEach(r => archivedDocs.push(r));
+    filteredArchived = [...archivedDocs];
+    updateDashboard();
+  } catch { /* тихо ігноруємо — дані лишаються старі */ }
+}
+
 async function loadDashSettlements() {
   const card = document.getElementById('dash-settlements-card');
   const list = document.getElementById('dash-settlements-list');
@@ -543,6 +556,7 @@ function showPage(name, el) {
   document.querySelector('.sidebar')?.classList.remove('mob-expanded');
   document.getElementById('mob-sidebar-overlay')?.classList.remove('open');
 
+  if(name === 'dashboard') refreshDashboardData();
   if(name === 'documents') renderDocs();
   if(name === 'trash') loadAndRenderTrash();
   if(name === 'settings') { restoreSettingsTab(); loadProfile(); }
