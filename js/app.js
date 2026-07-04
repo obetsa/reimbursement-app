@@ -82,7 +82,7 @@ async function initApp(user) {
       .catch(() => {});
     fetch('/company-settlements', { credentials: 'include' })
       .then(r => r.ok ? r.json() : [])
-      .then(data => { _settleList = data; _updateSettleBadge(); })
+      .then(data => { _settleList = data; })
       .catch(() => {});
 
     showApp();
@@ -3100,20 +3100,12 @@ async function updateBadges() {
   document.getElementById('docs-count').textContent = active || '';
   document.getElementById('trash-count').textContent = deleted || '';
   _updateCexpBadge();
-  _updateSettleBadge();
 }
 
 function _updateCexpBadge() {
   const el = document.getElementById('cexp-count');
   if (!el) return;
   el.textContent = _cexpList.length || '';
-}
-
-function _updateSettleBadge() {
-  const el = document.getElementById('settle-count');
-  if (!el) return;
-  const open = _settleList.filter(s => s.open_amount > 0).length;
-  el.textContent = open || '';
 }
 
 // ── TOAST ──
@@ -4714,7 +4706,6 @@ async function loadCompanySettlements() {
       fetch('/companies', { credentials: 'include' })
     ]);
     _settleList = sr.ok ? await sr.json() : [];
-    _updateSettleBadge();
     const companies = cr.ok ? await cr.json() : [];
     _settlePopulateFilter(companies);
     settleApplyFilter();
