@@ -34,6 +34,7 @@ ORDERED_FILES = [
     'migrate_020_record_payer.sql',
     'migrate_021_company_expenses.sql',
     'migrate_022_cexp_entered_by.sql',
+    'migrate_023_cexp_status.sql',
 ]
 
 

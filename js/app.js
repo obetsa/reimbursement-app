@@ -4371,11 +4371,13 @@ function cexpApplyFilters() {
   const q = (document.getElementById('cexp-search')?.value || '').toLowerCase();
   const fp = document.getElementById('cexp-filter-paying')?.value || '';
   const fb = document.getElementById('cexp-filter-bene')?.value || '';
+  const fs = document.getElementById('cexp-filter-status')?.value || '';
   const sort = document.getElementById('cexp-sort')?.value || 'date-desc';
 
   _cexpFiltered = _cexpList.filter(r => {
     if (fp && r.paying_company_id !== fp) return false;
     if (fb && r.beneficiary_company_id !== fb) return false;
+    if (fs && r.status !== fs) return false;
     if (q) {
       const haystack = [
         r.paying_company_name, r.beneficiary_company_name,
@@ -4437,6 +4439,7 @@ function _cexpRenderTable() {
     const bene = r.beneficiary_company_name || '—';
     const note = r.note || '';
     const enteredBy = r.entered_by_name || '';
+    const badge = statusBadge(r.status || 'waiting');
     const actions = canEdit ? `
       <button class="btn btn-ghost" onclick="openCexpModal('${r.id}')" style="padding:2px 8px;font-size:12px">✏️</button>
       <button class="btn btn-ghost" onclick="deleteCexp('${r.id}')" style="padding:2px 8px;font-size:12px;color:var(--red)">🗑</button>
@@ -4445,7 +4448,8 @@ function _cexpRenderTable() {
       <td class="td-date">${dateStr}</td>
       <td>${paying}</td>
       <td>${bene}</td>
-      <td class="td-amount" style="font-weight:500">${amt}</td>
+      <td class="td-amount">${amt}</td>
+      <td>${badge}</td>
       <td style="color:var(--text3);font-size:12px">${note}</td>
       <td style="color:var(--text3);font-size:12px">${enteredBy}</td>
       <td style="white-space:nowrap">${actions}</td>
@@ -4462,6 +4466,7 @@ function _cexpRenderCards() {
     const paying = r.paying_company_name || '—';
     const bene = r.beneficiary_company_name || '—';
     const enteredBy = r.entered_by_name || '';
+    const badge = statusBadge(r.status || 'waiting');
     const editBtns = canEdit ? `
       <button class="btn btn-ghost" onclick="event.stopPropagation();openCexpModal('${r.id}')" style="padding:2px 8px;font-size:11px">✏️</button>
       <button class="btn btn-ghost" onclick="event.stopPropagation();deleteCexp('${r.id}')" style="padding:2px 8px;font-size:11px;color:var(--red)">🗑</button>
@@ -4473,11 +4478,12 @@ function _cexpRenderCards() {
       </div>
       <div class="doc-card-meta">
         <span class="meta-chip">📅 ${formatDate(r.date)}</span>
-        ${r.note ? `<span class="meta-chip">📝 ${r.note}</span>` : ''}
         ${enteredBy ? `<span class="meta-chip">👤 ${enteredBy}</span>` : ''}
+        ${r.note ? `<span class="meta-chip">📝 ${r.note}</span>` : ''}
       </div>
       <div class="doc-card-footer">
         <div class="doc-card-amount">${amt}</div>
+        ${badge}
       </div>
     </div>`;
   }).join('');
@@ -4524,6 +4530,8 @@ async function openCexpModal(editId = null) {
       document.getElementById('cexp-paying').value = rec.paying_company_id || '';
       document.getElementById('cexp-beneficiary').value = rec.beneficiary_company_id || '';
       document.getElementById('cexp-entered-by').value = rec.entered_by || '';
+      document.getElementById('cexp-status').value = rec.status || 'waiting';
+      document.getElementById('cexp-returned-amount').value = rec.returned_amount || '';
     }
   } else {
     document.getElementById('cexp-date').value = new Date().toISOString().slice(0, 10);
@@ -4532,9 +4540,19 @@ async function openCexpModal(editId = null) {
     document.getElementById('cexp-paying').value = '';
     document.getElementById('cexp-beneficiary').value = '';
     document.getElementById('cexp-entered-by').value = '';
+    document.getElementById('cexp-status').value = 'waiting';
+    document.getElementById('cexp-returned-amount').value = '';
   }
+  _cexpToggleReturnedField();
+  document.getElementById('cexp-status').onchange = _cexpToggleReturnedField;
 
   document.getElementById('cexp-modal-overlay').style.display = 'flex';
+}
+
+function _cexpToggleReturnedField() {
+  const status = document.getElementById('cexp-status')?.value;
+  const wrap = document.getElementById('cexp-returned-wrap');
+  if (wrap) wrap.style.display = (status === 'partial') ? '' : 'none';
 }
 
 function closeCexpModal() {
@@ -4553,11 +4571,16 @@ async function saveCexp() {
     return;
   }
 
+  const status = document.getElementById('cexp-status').value || 'waiting';
   const body = {
     date,
     paying_company_id: paying,
     beneficiary_company_id: beneficiary,
     amount: parseFloat(amount),
+    status,
+    returned_amount: status === 'partial'
+      ? parseFloat(document.getElementById('cexp-returned-amount').value || 0)
+      : (status === 'done' ? parseFloat(amount) : 0),
     note: document.getElementById('cexp-note').value.trim() || null,
     entered_by: document.getElementById('cexp-entered-by').value || null
   };

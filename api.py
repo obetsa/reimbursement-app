@@ -2975,14 +2975,16 @@ def create_company_expense():
     exp_id = str(uuid.uuid4())
     conn.execute(
         """INSERT INTO company_expenses
-           (id, org_id, date, paying_company_id, beneficiary_company_id, amount, note, entered_by, created_by)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+           (id, org_id, date, paying_company_id, beneficiary_company_id, amount, note, entered_by, status, returned_amount, created_by)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (exp_id, org_id, data['date'],
          data.get('paying_company_id') or None,
          data.get('beneficiary_company_id') or None,
          data.get('amount', 0),
          data.get('note') or None,
          data.get('entered_by') or None,
+         data.get('status', 'waiting'),
+         data.get('returned_amount', 0),
          user_id)
     )
     conn.commit()
@@ -3003,7 +3005,8 @@ def update_company_expense(exp_id):
     conn.execute(
         """UPDATE company_expenses SET
            date=%s, paying_company_id=%s, beneficiary_company_id=%s,
-           amount=%s, note=%s, entered_by=%s, updated_by=%s, updated_at=now()
+           amount=%s, note=%s, entered_by=%s, status=%s, returned_amount=%s,
+           updated_by=%s, updated_at=now()
            WHERE id=%s AND org_id=%s""",
         (data['date'],
          data.get('paying_company_id') or None,
@@ -3011,6 +3014,8 @@ def update_company_expense(exp_id):
          data.get('amount', 0),
          data.get('note') or None,
          data.get('entered_by') or None,
+         data.get('status', 'waiting'),
+         data.get('returned_amount', 0),
          user_id, exp_id, org_id)
     )
     conn.commit()
