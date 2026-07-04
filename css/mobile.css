@@ -208,6 +208,65 @@
   .search-wrap { min-width: 0; flex: 1 1 100%; }
   #view-table-btn { display: none; }
 
+  /* ── COMPANY EXPENSES ── */
+  #cexp-view-table-btn { display: none; }
+
+  /* Фільтри — 2 колонки під пошуком */
+  #page-company-expenses .filters-bar { flex-wrap: wrap; }
+  #cexp-filter-paying,
+  #cexp-filter-bene   { flex: 1 1 calc(50% - 3px); min-width: 0; }
+  #cexp-filter-status,
+  #cexp-sort          { flex: 1 1 calc(50% - 3px); min-width: 0; }
+
+  /* ── COMPANY SETTLEMENTS — table → картки ── */
+  #settle-table-wrap { overflow-x: unset; }
+  #settle-table-wrap table { min-width: unset; display: block; }
+  #settle-table-wrap thead { display: none; }
+  #settle-table-wrap tbody { display: flex; flex-direction: column; gap: 8px; }
+
+  #settle-table-wrap tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    gap: 0;
+  }
+
+  /* Боржник */
+  #settle-table-wrap td:nth-child(1) { font-size: 13px; font-weight: 600; padding: 0; flex-shrink: 0; }
+  /* → */
+  #settle-table-wrap td:nth-child(2) { padding: 0 5px; font-size: 11px; color: var(--text3); flex-shrink: 0; }
+  /* Кредитор */
+  #settle-table-wrap td:nth-child(3) { flex: 1; font-size: 12px; padding: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 40px; }
+  /* Відкрито — справа */
+  #settle-table-wrap td:nth-child(4) { margin-left: auto; padding: 0 0 0 8px; font-size: 14px !important; flex-shrink: 0; text-align: right !important; }
+
+  /* Другий рядок: загалом + кількість */
+  #settle-table-wrap td:nth-child(5) {
+    width: 50%;
+    padding: 6px 0 0 !important;
+    margin-top: 6px;
+    border-top: 1px solid var(--border);
+    font-size: 11px !important;
+    color: var(--text3) !important;
+    text-align: left !important;
+  }
+  #settle-table-wrap td:nth-child(6) { display: none !important; }
+  #settle-table-wrap td:nth-child(7) {
+    width: 50%;
+    padding: 6px 0 0 !important;
+    margin-top: 6px;
+    border-top: 1px solid var(--border);
+    font-size: 11px !important;
+    color: var(--text3) !important;
+    text-align: right !important;
+  }
+
+  #settle-table-wrap .settle-mobile-label { display: inline; font-weight: 400; }
+
   /* ── GALLERY ── */
   .gallery-list { padding: 4px 6px; }
   .gallery-modal-box { max-width: 100vw; border-radius: 10px; }

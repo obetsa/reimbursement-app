@@ -33,7 +33,7 @@ js/
   app.js                           # весь frontend JS
   admin.js                         # SA функції для admin.html (окремо від app.js)
   auth.js                          # авторизація (login/activate/OAuth)
-  config.js                        # конфіг (DRIVE_ENABLED тощо)
+  config.js                        # конфіг (APP_MODE)
   i18n.js                          # переклади UA/DE/EN
   db.js                            # DB helpers (frontend)
 css/
@@ -52,7 +52,21 @@ migrations/
   migrate_007_suspended.sql        # organizations.is_suspended
   migrate_008_registered_at.sql    # users.registered_at
   migrate_009_user_suspended.sql   # users.is_suspended
+  migrate_010_org_plan.sql         # organizations.plan
+  migrate_011_org_settings.sql     # organizations.settings JSONB (default_currency)
+  migrate_012_plan_tiers.sql       # план-тіари free/pro/ultimate/zero
   migrate_013_payments.sql         # payments — архітектура оплат (Фаза 3, Крок 1)
+  migrate_014_org_name_unique.sql  # organizations.name UNIQUE (case-insensitive)
+  migrate_015_token_type.sql       # тип токена (email_verifications)
+  migrate_016_org_invites_member_companies.sql # org_invites, org_member_companies допов.
+  migrate_017_fix_org_members_role_check.sql   # CHECK constraint ролей (viewer→manager)
+  migrate_018_remove_drive_columns.sql         # drop drive_id/storage_type/refresh_token
+  migrate_019_record_author.sql    # records — автор запису
+  migrate_020_record_payer.sql     # records — платник (окремо від автора)
+  migrate_021_company_expenses.sql # company_expenses — витрати між компаніями
+  migrate_022_cexp_entered_by.sql  # company_expenses.entered_by
+  migrate_023_cexp_status.sql      # company_expenses.status + returned_amount
+  migrate_024_cexp_soft_delete.sql # company_expenses.is_deleted + deleted_at
 tests/
   test_api.py                      # базові API тести (16/16)
   test_hierarchy.py                # тести ієрархії org (22/24)
@@ -116,7 +130,14 @@ attachments                   — файли до запису
 return_events                 — події повернення коштів
 └── → records.id
 
-unprocessed_imports           — необроблені файли з Drive
+company_expenses              — витрати між компаніями (хто оплатив ≠ для кого = внутрішній борг)
+├── → organizations.id
+├── → companies.id (paying_company_id, beneficiary_company_id)
+├── → users.id (entered_by, created_by, updated_by)
+├── status: waiting | partial | done
+└── is_deleted BOOLEAN / deleted_at TIMESTAMP — soft delete (корзина)
+
+unprocessed_imports            — таблиця лишилась в схемі, але неактивна (Drive-функціонал видалено 30.06.2026)
 └── → users.id
 ```
 
@@ -128,9 +149,9 @@ unprocessed_imports           — необроблені файли з Drive
 | `manager` | свої записи + компанії, які має доступ       |
 | `user`    | тільки перегляд (viewer)                     |
 
-## Поточний стан (станом на 15.06.2026)
+## Поточний стан (станом на 05.07.2026)
 
-**Гілка `feature/org-roles`** — активна розробка.
+**Гілка `company-expenses`** — активна розробка (ще не змержена в `main`). Кілька довгих feature-гілок (`company-expenses`, `release-3-design`, `web`, `app-sqlite`) — свідомий підхід до версійності, не потребує зведення в одну гілку без окремого прохання.
 
 Зроблено:
 - SQLite → PostgreSQL (psycopg2, `migrations/schema_pg.sql`)
@@ -168,9 +189,12 @@ unprocessed_imports           — необроблені файли з Drive
 - Ліміт org для non-admin ролей ✅ (15.06.2026, варіант B): `check_org_limit(user_id, conn, role='admin')` рахує тільки org де юзер `admin` — `users.plan` обмежує лише кількість org-admin, а не загальну кількість org-членства. `/org/join` і invite manager/user — без ліміту. Frontend: `adminOrgCount`, i18n `org.limit_info` → "Ви адмін у {used} з {max} організацій". Деталі у "Відкриті питання"
 - `organizations.name` unique + rename ✅ (15.06.2026, кроки 1-3 з "Шлях файлів: org_id vs org_name"): `migrate_014_org_name_unique.sql` — унікальний індекс по `lower(name)`. `/org/create` тепер також перевіряє унікальність (409 `org_name_taken`). Новий `PUT /org/rename` — тільки org-admin (`require_org(min_role='admin')`), case-insensitive перевірка дублікату (виключаючи себе). UI: Settings → Організація → рядок "Назва організації" з кнопкою "Перейменувати" (тільки admin) → модалка з полем назви. i18n: `org.name_label/rename_btn/rename_title/rename_success` (uk/de/en), помилка дубліката через існуючий `superadmin.err_name_taken`. Кроки 4-5 (модалка міграції файлів, перехід на org_name шляхи) — наступний реліз, деталі у "Відкриті питання"
 - SA.12 ✅ (15.06.2026): клік на назву org у списку `/admin` → модалка зі списком всіх активних членів org (email, ім'я, роль, статус). Новий ендпоінт `GET /superadmin/orgs/<org_id>/members` (за зразком `/org/members`, тільки активні — `left_at IS NULL`). `js/admin.js`: `openOrgMembersModal(orgId, orgName)`, назва org у таблиці/картках стала клікабельною. i18n: `superadmin.org_members_title/no_org_members` (uk/de/en), решта (ролі, статуси, колонки) — існуючі ключі. test_superadmin 22/22 ✅
-- Google OAuth login узгоджено з закритою реєстрацією ✅ (15.06.2026): `/auth/google` + `/auth/callback` вже існували (з гілки `web`, кнопка "Увійти через Google" в `index.html`), але `/auth/callback` створював нового юзера для будь-якого Google-акаунту — обхід `registration_closed`. Фікс у `/auth/callback`: невідомий email → редірект `/?google_error=registration_closed` (без створення юзера); `is_suspended` (не-SA) → `/?google_error=user_suspended`; `password_hash='PENDING'` (запрошений, не активований) → перший Google-логін = активація (`email_verified=TRUE, registered_at=now()`, мірор `/auth/activate`). Frontend: `js/app.js` ловить `?google_error=...`, показує тост (`auth.err_google_registration_closed` uk/de/en, для suspended — існуючий `error.user_suspended_desc`). Drive-scope в `/auth/google` (запит `…/auth/drive` при `DRIVE_ENABLED=False`) — лишився, окреме питання разом з Google Drive
+- Google OAuth login узгоджено з закритою реєстрацією ✅ (15.06.2026): `/auth/google` + `/auth/callback` вже існували (з гілки `web`, кнопка "Увійти через Google" в `index.html`), але `/auth/callback` створював нового юзера для будь-якого Google-акаунту — обхід `registration_closed`. Фікс у `/auth/callback`: невідомий email → редірект `/?google_error=registration_closed` (без створення юзера); `is_suspended` (не-SA) → `/?google_error=user_suspended`; `password_hash='PENDING'` (запрошений, не активований) → перший Google-логін = активація (`email_verified=TRUE, registered_at=now()`, мірор `/auth/activate`). Frontend: `js/app.js` ловить `?google_error=...`, показує тост (`auth.err_google_registration_closed` uk/de/en, для suspended — існуючий `error.user_suspended_desc`)
 - Доступ до компаній з модалки "Компанії" ✅ (16.06.2026): у Settings → Компанії, при редагуванні або створенні компанії, в модалці тепер є секція "Доступ користувачів" — чіпи всіх не-admin членів org (manager/user, активні), клік перемикає `org_member_companies` (той самий механізм, що в Settings → Організація). Новий ендпоінт `GET /companies/<id>/access` (admin-only, повертає `user_id[]`). Для нової компанії: після "Зберегти" модалка лишається відкритою, заголовок змінюється на "Редагувати компанію", кнопка "Скасувати" → "Закрити", з'являється секція доступу (порожня, бо `org_member_companies` ще немає записів для нового `company_id`). i18n: `form.close`, `company.access_label`, `company.access_empty` (uk/de/en). Попутно виправлено баг (3 місця: `create_company`, `org_member_invite`, `create_record`) — `conn.close()` викликався ДО `get_org_limits(org_id, conn)` у гілці `limit_reached`, через що замість `403` повертався `500 psycopg2.InterfaceError: connection already closed`
 - Пагінація ✅ (16.06.2026): "Документи" (`index.html`) і SA-панель (org/users у `/admin`) — десктоп: Prev/Next + "Сторінка X з Y" (`DOCS_PAGE_SIZE`/`SA_PAGE_SIZE = 20`, client-side slice вже отриманих масивів `filteredDocs`/`_saOrgs`/`_saUsers`); мобільний (≤768px): кнопка "Показати ще" (load more, +20). Новий блок стилів `.pagination-bar/.pagination-btn/.pagination-info/.pagination-load-more` (css/components.css). i18n: `pagination.page_of/prev/next/show_more` (uk/de/en). Сторінка скидається на 1 при зміні фільтра/сортування. Перевірено headless Chrome (десктоп 1280x900 і мобільний 390x844, мок-дані 25-45 записів) + test_isolation 36/37 (1 попередження — незмінний skip без SA-сесії)
+- Google Drive sync ✅ видалено повністю (30.06.2026): весь `/drive/*`, `/sync/*`, `/unprocessed/*` код з бекенду і фронтенду, `DRIVE_ENABLED`, Drive UI, i18n `drive.*/sync.*/unprocessed.*`. Стара гілка `feature/google-drive-sync` збережена в git на випадок повернення. `migrate_017` (fix org_members role CHECK), `migrate_018` (drop drive_id/storage_type/refresh_token). Google OAuth login (без sync) лишився і працює окремо
+- Автор/платник записів, дашборд платників ✅: `records` — окремі `author`/`payer` (`migrate_019`, `migrate_020`), дашборд-віджет топ-платників, поділ платіжних інструментів
+- **Модуль «Витрати по компаніях» + «Розрахунки між компаніями»** ✅ (01.07–05.07.2026, гілка `company-expenses`, не змержена в `main`): нова таблиця `company_expenses` (`migrate_021`, +`entered_by` в `migrate_022`, +`status`/`returned_amount` в `migrate_023`, +soft delete в `migrate_024`) — витрата = хто оплатив (компанія) + для кого (компанія); розбіжність = внутрішній борг. Сторінка "Витрати по компаніях": таблиця/картки (мобільний дефолт — картки, як в документах), пошук + фільтри (оплатив/для кого/статус) + сортування, статус погашення (waiting/partial/done). Сторінка "Розрахунки між компаніями" (`GET /company-settlements`): net-баланс між парами компаній, drill-down картка компанії (кому винна / хто винен їй) через `openSettleCompanyModal`. Дашборд-віджет: топ-5 відкритих боргів (`loadDashSettlements`). Nav badge-каунти в сайдбарі. Роль-фільтр: `_get_accessible_company_ids()` — manager/user бачать тільки записи де хоч одна компанія в їх `org_member_companies`, admin — всі. Soft delete: корзина з двома блоками (документи + витрати по компаніях), `PUT /company-expenses/<id>/restore`, `DELETE /company-expenses/<id>/permanent`. Мобільна адаптація (05.07): `_cexpView`/`cexpSetView()` форсують `cards` на ≤768px (той самий патерн, що й `currentView`/`setView()` в документах); картки `#settle-table-wrap` на мобільному з підписами `.settle-mobile-label` (щоб цифри не висіли без контексту після приховування `<thead>`)
 
 Відкладено / наступне: див. Roadmap нижче.
 
@@ -256,21 +280,35 @@ unprocessed_imports           — необроблені файли з Drive
 | 3.1 | Stripe або LiqPay | Підключити провайдера (ключі, checkout-сесія, перевірка підпису вебхука) |
 | 3.3 | Plan upgrade flow | Один платіж = план назавжди (без `plan_expires_at`); `valid_until` в `payments` підготовлено під майбутні періоди |
 
+### Company Expenses модуль ✅ (гілка `company-expenses`, не змержена в `main`)
+
+| # | Задача | Статус |
+|---|--------|--------|
+| ✅ 1 | `company_expenses` таблиця + CRUD, таблиця/картки, пошук/фільтри/сортування | Готово |
+| ✅ 2 | Статус погашення (waiting/partial/done) + returned_amount | Готово |
+| ✅ 3 | "Розрахунки між компаніями" — net-баланс, `/company-settlements` | Готово |
+| ✅ 4 | Drill-down картка компанії (кому винна / хто винен їй) | Готово |
+| ✅ 5 | Дашборд-віджет — топ-5 відкритих боргів | Готово |
+| ✅ 6 | Роль-фільтр (manager/user — тільки доступні компанії) | Готово |
+| ✅ 7 | Soft delete + корзина (2 блоки: документи + cexp) | Готово |
+| ✅ 8 | Мобільна адаптація (cards-дефолт, підписи на settle-картках) | Готово |
+
 ### Суміжно
 
 | Задача | Коли |
 |--------|------|
 | Supabase cloud | Після Фази 0, перед деплоєм (відкладено на наступний реліз) |
-| ✅ Google OAuth login узгоджено з закритою реєстрацією | Готово (15.06.2026) — `/auth/callback` тепер: невідомий email → `registration_closed` (без створення юзера), `is_suspended` → `user_suspended`, `password_hash='PENDING'` → активація (мірор `/auth/activate`). Drive-scope в `/auth/google` лишається — окреме питання (Google Drive) |
+| ✅ Google OAuth login узгоджено з закритою реєстрацією | Готово (15.06.2026) — `/auth/callback` тепер: невідомий email → `registration_closed` (без створення юзера), `is_suspended` → `user_suspended`, `password_hash='PENDING'` → активація (мірор `/auth/activate`) |
 
 ### Наступні кроки
 
-> Порядок виконання після завершення поточного релізу (пагінація ✅ 16.06.2026).
+> Порядок виконання, тільки коли користувач сам скаже почати.
 
-1. **Drive sync** — перевірити OAuth scopes і права в Google Console перед увімкненням `DRIVE_ENABLED` (деталі: "Відкриті питання" → "Google Drive")
-2. **OWASP ZAP scan** — перед першим публічним деплоєм
-3. **Hypothesis tests** — property-based тести для критичної логіки (org isolation, ролі, ліміти)
-4. **Відновити пароль** — flow "Забули пароль?" прихований (`display:none` у `index.html`). Потребує: SMTP-шаблон листа, `/auth/forgot-password` і `/auth/reset-password` ендпоінти, токен з TTL у `email_verifications`. Показати кнопку після реалізації.
+1. **OWASP ZAP scan** — перед першим публічним деплоєм (`zap.yaml` в корені — підготовка)
+2. **Hypothesis tests** — property-based тести для критичної логіки (org isolation, ролі, ліміти)
+3. **Відновити пароль** — flow "Забули пароль?" прихований (`display:none` у `index.html`). Потребує: SMTP-шаблон листа, `/auth/forgot-password` і `/auth/reset-password` ендпоінти, токен з TTL у `email_verifications`. Показати кнопку після реалізації.
+4. **Portainer** — Recreate + Re-pull, накатити міграції 021-024 (company_expenses) — не терміново, робити коли скаже користувач
+5. **Merge `company-expenses` в `main`** — тільки коли скаже користувач; кілька довгих feature-гілок — це нормальний робочий підхід, не проблема, яку треба вирішувати самостійно
 
 ---
 
@@ -331,13 +369,6 @@ Frontend (`js/app.js`, `loadOrgMembers`): `adminOrgCount = orgList.filter(o => o
 
 **Валюта в записах — вирішено (12.06.2026)**
 `organizations.settings.default_currency` (EUR/UAH/USD, дефолт EUR), встановлює org-admin в Settings → Організація. Нові записи отримують цю валюту автоматично, без select у формі. **Конвертації немає** — старі записи зберігають свою валюту, суми не перераховуються при зміні org-валюти. Якщо знадобиться реальна конвертація (курси, перерахунок) — окрема велика фіча, не планується.
-
-**Google Drive — перевірити перед підключенням**
-Drive sync вимкнено (`DRIVE_ENABLED = False`). Перед увімкненням:
-1. Перевірити які OAuth scopes зараз є в Google Console
-2. Переглянути всі `/drive/*` та `/sync/*` роути в `api.py`
-3. Врахувати нову multi-tenant структуру папок (зараз `ReceiptsManager/{org_id}/...`)
-4. Drive папки теж мають бути ізольовані по org
 
 **Бізнес-модель free/pro — вирішено (13.06.2026)**
 
@@ -404,12 +435,16 @@ Frontend ✅: usage-бари в Settings → Організація тепер �
 
 ## Drive sync
 
-Вимкнено: `DRIVE_ENABLED = False` в `api.py` та `app.js`. Всі Drive роути повертають 503. Увімкнути = 2 рядки. Весь код збережено.
+Повністю видалено (`4f255b9`, 30.06.2026) — весь `/drive/*`, `/sync/*`, `/unprocessed/*` код, `DRIVE_ENABLED`, Drive UI, i18n-ключі. Стара гілка `feature/google-drive-sync` збережена в git на випадок повернення. Google OAuth login (без sync) лишився і працює окремо.
 
 ## Git
 
 - `main` — стабільна версія
-- `feature/org-roles` — поточна активна гілка
-- `web` — Google OAuth + Drive (попередня активна)
+- `company-expenses` — поточна активна гілка (модуль розрахунків між компаніями, не змержена)
+- `release-3-design` — попередня активна (автор/платник, дашборд платників, фавікон) — закомічено
+- `web` — Google OAuth + стара Drive-логіка (історична)
+- `app-sqlite` — стара SQLite-версія (історична)
 
-Деплой: `docker build` → push на `obetsa/reimbursement-app:latest`.
+Кілька довгих feature-гілок одночасно — свідомий підхід до версійності. Не пропонувати мерж в `main` без прямого прохання користувача.
+
+Деплой: `docker build` → push на `obetsa/reimbursement-app:latest`. Не пушити в docker/Portainer без прямого прохання користувача.

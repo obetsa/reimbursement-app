@@ -4467,11 +4467,13 @@ async function runStorageCleanup() {
 let _cexpList = [];
 let _cexpFiltered = [];
 let _cexpEditId = null;
-let _cexpView = 'table';  // 'table' | 'cards'
+let _cexpView = window.innerWidth <= 768 ? 'cards' : 'table';  // 'table' | 'cards'
 let _cexpCompanies = [];
 let _cexpMembers = [];
 
 async function loadCompanyExpenses() {
+  document.getElementById('cexp-view-table-btn')?.classList.toggle('active', _cexpView === 'table');
+  document.getElementById('cexp-view-cards-btn')?.classList.toggle('active', _cexpView === 'cards');
   try {
     const resp = await fetch('/company-expenses', { credentials: 'include' });
     if (!resp.ok) return;
@@ -4626,6 +4628,7 @@ function _cexpRenderCards() {
 }
 
 function cexpSetView(v) {
+  if (window.innerWidth <= 768) v = 'cards';
   _cexpView = v;
   document.getElementById('cexp-view-table-btn')?.classList.toggle('active', v === 'table');
   document.getElementById('cexp-view-cards-btn')?.classList.toggle('active', v === 'cards');
@@ -4817,9 +4820,9 @@ function _settleRender() {
       <td style="text-align:center;color:var(--text3)">→</td>
       <td>${creditorLink} ${netBadge}</td>
       <td style="text-align:center">${openCell}</td>
-      <td style="text-align:center;font-family:'DM Mono',monospace;color:var(--text2);font-size:13px">${fmt(r.total_amount)}</td>
-      <td style="text-align:center;font-family:'DM Mono',monospace;color:var(--text3);font-size:13px">${fmt(r.total_returned)}</td>
-      <td style="text-align:center;color:var(--text3);font-size:12px">${r.expense_count}</td>
+      <td style="text-align:center;font-family:'DM Mono',monospace;color:var(--text2);font-size:13px"><span class="settle-mobile-label">${t('settle.total')}: </span>${fmt(r.total_amount)}</td>
+      <td style="text-align:center;font-family:'DM Mono',monospace;color:var(--text3);font-size:13px"><span class="settle-mobile-label">${t('settle.returned')}: </span>${fmt(r.total_returned)}</td>
+      <td style="text-align:center;color:var(--text3);font-size:12px"><span class="settle-mobile-label">${t('settle.count')}: </span>${r.expense_count}</td>
     </tr>`;
   }).join('');
 }
