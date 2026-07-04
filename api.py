@@ -2927,7 +2927,7 @@ def backup_download():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
     conn = get_db()
-    org_id, role, err = require_org(user_id, conn)
+    org_id, role, err = require_org(user_id, conn, min_role='admin')
     if err: conn.close(); return err
 
     try:

@@ -67,8 +67,9 @@ async function initApp(user) {
 
     // Populate company dropdowns
     populateCompanyDropdowns(companies);
+    instrumentsCache = instruments;
+    await loadPayerOptions();
     populateInstrumentDropdowns(instruments);
-    loadPayerOptions();
 
     renderDocs();
     updateDashboard();
@@ -184,6 +185,7 @@ function canWrite() {
 
 function applyRoleRestrictions() {
   const w = canWrite();
+  const isAdmin = currentOrg && currentOrg.role === 'admin';
   document.querySelectorAll('[onclick="openModal()"]').forEach(el => el.style.display = w ? '' : 'none');
   const addComp = document.querySelector('[onclick="openCompanyModal()"]');
   if(addComp) addComp.style.display = w ? '' : 'none';
@@ -193,6 +195,14 @@ function applyRoleRestrictions() {
   if(detailEditBtn) detailEditBtn.style.display = w ? '' : 'none';
   const dangerActions = document.querySelector('.danger-actions');
   if(dangerActions) dangerActions.style.display = w ? '' : 'none';
+  const backupTab = document.querySelector('[onclick*="showSettingsTab(\'backup\'"]');
+  if(backupTab) backupTab.style.display = isAdmin ? '' : 'none';
+  const storageTab = document.querySelector('[onclick*="showSettingsTab(\'storage\'"]');
+  if(storageTab) storageTab.style.display = isAdmin ? '' : 'none';
+  const statsBtn = document.querySelector('[onclick="checkRecordsStats()"]');
+  if(statsBtn) statsBtn.style.display = isAdmin ? '' : 'none';
+  const cleanupBtn = document.getElementById('cleanup-btn');
+  if(cleanupBtn) cleanupBtn.style.display = isAdmin ? '' : 'none';
 }
 
 function _showVerifyBanner() {
@@ -280,9 +290,15 @@ function populateInstrumentDropdowns(instruments) {
   const el = document.getElementById('field-card');
   if(!el) return;
   const cur = el.value;
+  const isAdmin = currentOrg && currentOrg.role === 'admin';
+  const myId = currentUser && currentUser.id;
   el.innerHTML = `<option value="" data-i18n="form.select_card">${t('form.select_card')}</option>`;
   instruments.filter(i => i.is_active).forEach(i => {
-    el.innerHTML += `<option value="${i.id}">${i.name}</option>`;
+    const isOther = isAdmin && myId && i.user_id !== myId;
+    const ownerSuffix = isOther
+      ? ` (${_payersList.find(m => m.user_id === i.user_id)?.display_name || '?'})`
+      : '';
+    el.innerHTML += `<option value="${i.id}">${i.name}${ownerSuffix}</option>`;
   });
   el.value = cur;
 }
@@ -4270,8 +4286,7 @@ async function checkRecordsStats() {
       </div>
       <div>
         <div class="stats-section-title">Чеки</div>
-        <div class="stats-row"><span class="stats-row-label">БД</span><span class="stats-row-value">${a.total}</span></div>
-        <div class="stats-row"><span class="stats-row-label">Локально</span><span class="stats-row-value">${a.local}</span></div>
+        <div class="stats-row"><span class="stats-row-label">Всього</span><span class="stats-row-value">${a.total}</span></div>
       </div>
     `;
   } catch(e) {
