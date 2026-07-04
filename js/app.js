@@ -429,6 +429,51 @@ function updateDashboard() {
       `).join('');
     }
   }
+
+  // ── Settlements widget ──
+  loadDashSettlements();
+}
+
+async function loadDashSettlements() {
+  const card = document.getElementById('dash-settlements-card');
+  const list = document.getElementById('dash-settlements-list');
+  if (!card || !list) return;
+
+  let data;
+  try {
+    const r = await fetch('/company-settlements');
+    if (!r.ok) { card.style.display = 'none'; return; }
+    data = await r.json();
+  } catch { card.style.display = 'none'; return; }
+
+  const open = (data || []).filter(s => s.open_amount > 0)
+    .sort((a, b) => b.open_amount - a.open_amount)
+    .slice(0, 5);
+
+  card.style.display = '';
+
+  if (!open.length) {
+    list.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text3);font-size:13px">${t('dash.no_settlements')}</div>`;
+    return;
+  }
+
+  const fmt = v => parseFloat(v || 0).toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const maxAmt = open[0].open_amount;
+
+  list.innerHTML = open.map(s => `
+    <div class="company-row" style="cursor:pointer" onclick="openSettleCompanyModal('${s.debtor_id}','${(s.debtor_name||'').replace(/'/g,"\\'")}')">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          <strong>${s.debtor_name || '—'}</strong>
+          <span style="color:var(--text3);font-size:11px;margin:0 4px">→</span>
+          ${s.creditor_name || '—'}
+        </div>
+        <div class="company-bar-wrap" style="margin:4px 0 0">
+          <div class="company-bar" style="width:${maxAmt>0?(s.open_amount/maxAmt*100).toFixed(0):0}%;background:var(--red)"></div>
+        </div>
+      </div>
+      <div style="font-family:'DM Mono',monospace;font-weight:600;color:var(--red);font-size:14px;margin-left:12px;flex-shrink:0">${fmt(s.open_amount)}</div>
+    </div>`).join('');
 }
 
 function filterByCompanyName(name) {
