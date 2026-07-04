@@ -4675,14 +4675,69 @@ function _settleRender() {
     const netBadge = r.is_net
       ? `<span class="badge" style="background:var(--bg4);color:var(--text3);font-size:10px">${t('settle.net_badge')}</span>`
       : '';
+    const debtorLink = `<strong class="settle-company-link" onclick="openSettleCompanyModal('${r.debtor_id}',this.textContent)">${r.debtor_name || '—'}</strong>`;
+    const creditorLink = `<span class="settle-company-link" onclick="openSettleCompanyModal('${r.creditor_id}',this.textContent)">${r.creditor_name || '—'}</span>`;
     return `<tr>
-      <td><strong>${r.debtor_name || '—'}</strong></td>
+      <td>${debtorLink}</td>
       <td style="text-align:center;color:var(--text3)">→</td>
-      <td>${r.creditor_name || '—'} ${netBadge}</td>
+      <td>${creditorLink} ${netBadge}</td>
       <td style="text-align:center">${openCell}</td>
       <td style="text-align:center;font-family:'DM Mono',monospace;color:var(--text2);font-size:13px">${fmt(r.total_amount)}</td>
       <td style="text-align:center;font-family:'DM Mono',monospace;color:var(--text3);font-size:13px">${fmt(r.total_returned)}</td>
       <td style="text-align:center;color:var(--text3);font-size:12px">${r.expense_count}</td>
     </tr>`;
   }).join('');
+}
+
+function openSettleCompanyModal(companyId, companyName) {
+  const name = (typeof companyName === 'string' ? companyName : companyName?.textContent || '').trim();
+  document.getElementById('settle-company-modal-title').textContent = name;
+
+  const fmt = v => parseFloat(v || 0).toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // Використовуємо ВЕСЬ список (не відфільтрований), щоб картка завжди повна
+  const owes   = _settleList.filter(r => r.debtor_id   === companyId && r.open_amount > 0);
+  const isOwed = _settleList.filter(r => r.creditor_id === companyId && r.open_amount > 0);
+
+  const totalDebt  = owes.reduce((s, r)   => s + r.open_amount, 0);
+  const totalOwed  = isOwed.reduce((s, r) => s + r.open_amount, 0);
+  const net        = totalOwed - totalDebt;
+
+  const rowStyle = 'display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)';
+  const amtStyle = 'font-family:"DM Mono",monospace;font-weight:500';
+
+  const renderRows = (list, amtKey, nameKey) => list.length === 0
+    ? `<div style="padding:12px 0;color:var(--text3);font-size:13px">${t('settle.card_no_debts')}</div>`
+    : list.map(r => `
+        <div style="${rowStyle}">
+          <span>${r[nameKey] || '—'}</span>
+          <span style="${amtStyle};color:var(--red)">${fmt(r.open_amount)}</span>
+        </div>`).join('') +
+      `<div style="display:flex;justify-content:space-between;padding:10px 0;font-weight:600;font-size:13px">
+        <span>${t(amtKey === 'debtor_id' ? 'settle.card_total_debt' : 'settle.card_total_owed')}</span>
+        <span style="${amtStyle}">${fmt(amtKey === 'debtor_id' ? totalDebt : totalOwed)}</span>
+      </div>`;
+
+  const netColor = net > 0 ? 'var(--green)' : net < 0 ? 'var(--red)' : 'var(--text3)';
+  const netLabel = net > 0 ? t('settle.card_net_negative') : net < 0 ? t('settle.card_net_positive') : t('settle.card_net_zero');
+
+  const section = (title, content) => `
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
+      <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">${title}</div>
+      ${content}
+    </div>`;
+
+  document.getElementById('settle-company-modal-body').innerHTML =
+    section(t('settle.card_owes'),   renderRows(owes,   'debtor_id',   'creditor_name')) +
+    section(t('settle.card_owed'),   renderRows(isOwed, 'creditor_id', 'debtor_name')) +
+    `<div style="padding:16px 20px;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:13px;color:var(--text2)">${netLabel}</span>
+      <span style="font-family:'DM Mono',monospace;font-weight:600;color:${netColor};font-size:16px">${fmt(Math.abs(net))}</span>
+    </div>`;
+
+  document.getElementById('settle-company-modal-overlay').style.display = 'flex';
+}
+
+function closeSettleCompanyModal() {
+  document.getElementById('settle-company-modal-overlay').style.display = 'none';
 }

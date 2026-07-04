@@ -455,6 +455,12 @@
 
   .section-link:hover { text-decoration: underline; }
 
+  .settle-company-link {
+    cursor: pointer;
+    color: var(--accent);
+  }
+  .settle-company-link:hover { text-decoration: underline; }
+
   .card {
     background: var(--bg2);
     border: 1px solid var(--border);
