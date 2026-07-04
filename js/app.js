@@ -75,6 +75,15 @@ async function initApp(user) {
     updateDashboard();
     await updateBadges();
     applyRoleRestrictions();
+    // Preload cexp/settle counts for sidebar badges
+    fetch('/company-expenses', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => { _cexpList = data; _updateCexpBadge(); })
+      .catch(() => {});
+    fetch('/company-settlements', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => { _settleList = data; _updateSettleBadge(); })
+      .catch(() => {});
 
     showApp();
   } catch(e) {
@@ -3090,6 +3099,21 @@ async function updateBadges() {
   const deleted = deletedRecords.length + deletedInstruments.length + deletedCompanies.length;
   document.getElementById('docs-count').textContent = active || '';
   document.getElementById('trash-count').textContent = deleted || '';
+  _updateCexpBadge();
+  _updateSettleBadge();
+}
+
+function _updateCexpBadge() {
+  const el = document.getElementById('cexp-count');
+  if (!el) return;
+  el.textContent = _cexpList.length || '';
+}
+
+function _updateSettleBadge() {
+  const el = document.getElementById('settle-count');
+  if (!el) return;
+  const open = _settleList.filter(s => s.open_amount > 0).length;
+  el.textContent = open || '';
 }
 
 // ── TOAST ──
@@ -4401,6 +4425,7 @@ async function loadCompanyExpenses() {
     const resp = await fetch('/company-expenses', { credentials: 'include' });
     if (!resp.ok) return;
     _cexpList = await resp.json();
+    _updateCexpBadge();
     await _cexpLoadFiltersData();
     cexpApplyFilters();
   } catch(e) {}
@@ -4689,6 +4714,7 @@ async function loadCompanySettlements() {
       fetch('/companies', { credentials: 'include' })
     ]);
     _settleList = sr.ok ? await sr.json() : [];
+    _updateSettleBadge();
     const companies = cr.ok ? await cr.json() : [];
     _settlePopulateFilter(companies);
     settleApplyFilter();
