@@ -1,0 +1,1 @@
+ALTER TABLE company_expenses ADD COLUMN IF NOT EXISTS entered_by TEXT REFERENCES users(id) ON DELETE SET NULL;

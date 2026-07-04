@@ -738,6 +738,7 @@
     font-family: 'DM Mono', monospace;
     font-weight: 500;
     white-space: nowrap;
+    text-align: right;
   }
 
   .td-remainder {

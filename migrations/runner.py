@@ -32,6 +32,8 @@ ORDERED_FILES = [
     'migrate_018_remove_drive_columns.sql',
     'migrate_019_record_author.sql',
     'migrate_020_record_payer.sql',
+    'migrate_021_company_expenses.sql',
+    'migrate_022_cexp_entered_by.sql',
 ]
 
 

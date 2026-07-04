@@ -502,6 +502,7 @@ function showPage(name, el) {
   if(name === 'trash') loadAndRenderTrash();
   if(name === 'settings') { restoreSettingsTab(); loadProfile(); }
   if(name === 'gallery') { applyTranslations(); loadGallery(); }
+  if(name === 'company-expenses') loadCompanyExpenses();
   // if(name === 'superadmin') loadSuperadmin(); // SA moved to admin.html
 
   localStorage.setItem('currentPage', name);
@@ -4323,3 +4324,270 @@ async function runStorageCleanup() {
 
 /* Drive Picker — removed. Old functions: openDrivePicker, closeDrivePicker, onDrivePickerSearch,
    _loadDriveFiles, selectDriveFile — not needed in new Drive architecture. */
+
+// ══════════════════════════════════════════
+// COMPANY EXPENSES
+// ══════════════════════════════════════════
+
+let _cexpList = [];
+let _cexpFiltered = [];
+let _cexpEditId = null;
+let _cexpView = 'table';  // 'table' | 'cards'
+let _cexpCompanies = [];
+let _cexpMembers = [];
+
+async function loadCompanyExpenses() {
+  try {
+    const resp = await fetch('/company-expenses', { credentials: 'include' });
+    if (!resp.ok) return;
+    _cexpList = await resp.json();
+    await _cexpLoadFiltersData();
+    cexpApplyFilters();
+  } catch(e) {}
+}
+
+async function _cexpLoadFiltersData() {
+  try {
+    const [cr, mr] = await Promise.all([
+      fetch('/companies', { credentials: 'include' }),
+      fetch('/org/members/active', { credentials: 'include' })
+    ]);
+    _cexpCompanies = cr.ok ? await cr.json() : [];
+    _cexpMembers = mr.ok ? await mr.json() : [];
+  } catch(e) {}
+  _cexpPopulateFilterSelects();
+}
+
+function _cexpPopulateFilterSelects() {
+  const allOpt = `<option value="">${t('cexp.filter_all_companies')}</option>`;
+  const opts = _cexpCompanies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  const fp = document.getElementById('cexp-filter-paying');
+  const fb = document.getElementById('cexp-filter-bene');
+  if (fp) fp.innerHTML = allOpt + opts;
+  if (fb) fb.innerHTML = allOpt + opts;
+}
+
+function cexpApplyFilters() {
+  const q = (document.getElementById('cexp-search')?.value || '').toLowerCase();
+  const fp = document.getElementById('cexp-filter-paying')?.value || '';
+  const fb = document.getElementById('cexp-filter-bene')?.value || '';
+  const sort = document.getElementById('cexp-sort')?.value || 'date-desc';
+
+  _cexpFiltered = _cexpList.filter(r => {
+    if (fp && r.paying_company_id !== fp) return false;
+    if (fb && r.beneficiary_company_id !== fb) return false;
+    if (q) {
+      const haystack = [
+        r.paying_company_name, r.beneficiary_company_name,
+        r.note, r.entered_by_name
+      ].filter(Boolean).join(' ').toLowerCase();
+      if (!haystack.includes(q)) return false;
+    }
+    return true;
+  });
+
+  _cexpFiltered.sort((a, b) => {
+    if (sort === 'date-desc') return b.date.localeCompare(a.date);
+    if (sort === 'date-asc')  return a.date.localeCompare(b.date);
+    if (sort === 'amount-desc') return parseFloat(b.amount) - parseFloat(a.amount);
+    if (sort === 'amount-asc')  return parseFloat(a.amount) - parseFloat(b.amount);
+    return 0;
+  });
+
+  _cexpRender();
+}
+
+function _cexpRender() {
+  const empty = document.getElementById('cexp-empty');
+  const tableView = document.getElementById('cexp-table-view');
+  const cardsView = document.getElementById('cexp-cards-view');
+  if (!tableView || !cardsView) return;
+
+  if (_cexpFiltered.length === 0) {
+    tableView.style.display = 'none';
+    cardsView.style.display = 'none';
+    if (empty) empty.style.display = '';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+
+  if (_cexpView === 'table') {
+    tableView.style.display = '';
+    cardsView.style.display = 'none';
+    _cexpRenderTable();
+  } else {
+    tableView.style.display = 'none';
+    cardsView.style.display = '';
+    _cexpRenderCards();
+  }
+}
+
+function _cexpCanEdit() {
+  return currentOrg && (currentOrg.role === 'admin' || currentOrg.role === 'manager');
+}
+
+function _cexpRenderTable() {
+  const tbody = document.getElementById('cexp-tbody');
+  if (!tbody) return;
+  const canEdit = _cexpCanEdit();
+  tbody.innerHTML = _cexpFiltered.map(r => {
+    const amt = parseFloat(r.amount || 0).toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const dateStr = formatDate(r.date);
+    const paying = r.paying_company_name || '—';
+    const bene = r.beneficiary_company_name || '—';
+    const note = r.note || '';
+    const enteredBy = r.entered_by_name || '';
+    const actions = canEdit ? `
+      <button class="btn btn-ghost" onclick="openCexpModal('${r.id}')" style="padding:2px 8px;font-size:12px">✏️</button>
+      <button class="btn btn-ghost" onclick="deleteCexp('${r.id}')" style="padding:2px 8px;font-size:12px;color:var(--red)">🗑</button>
+    ` : '';
+    return `<tr>
+      <td class="td-date">${dateStr}</td>
+      <td>${paying}</td>
+      <td>${bene}</td>
+      <td class="td-amount" style="font-weight:500">${amt}</td>
+      <td style="color:var(--text3);font-size:12px">${note}</td>
+      <td style="color:var(--text3);font-size:12px">${enteredBy}</td>
+      <td style="white-space:nowrap">${actions}</td>
+    </tr>`;
+  }).join('');
+}
+
+function _cexpRenderCards() {
+  const grid = document.getElementById('cexp-cards-view');
+  if (!grid) return;
+  const canEdit = _cexpCanEdit();
+  grid.innerHTML = _cexpFiltered.map(r => {
+    const amt = parseFloat(r.amount || 0).toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const paying = r.paying_company_name || '—';
+    const bene = r.beneficiary_company_name || '—';
+    const enteredBy = r.entered_by_name || '';
+    const editBtns = canEdit ? `
+      <button class="btn btn-ghost" onclick="event.stopPropagation();openCexpModal('${r.id}')" style="padding:2px 8px;font-size:11px">✏️</button>
+      <button class="btn btn-ghost" onclick="event.stopPropagation();deleteCexp('${r.id}')" style="padding:2px 8px;font-size:11px;color:var(--red)">🗑</button>
+    ` : '';
+    return `<div class="doc-card">
+      <div class="doc-card-top">
+        <div class="doc-card-title">${paying} → ${bene}</div>
+        <div style="display:flex;align-items:center;gap:4px">${editBtns}</div>
+      </div>
+      <div class="doc-card-meta">
+        <span class="meta-chip">📅 ${formatDate(r.date)}</span>
+        ${r.note ? `<span class="meta-chip">📝 ${r.note}</span>` : ''}
+        ${enteredBy ? `<span class="meta-chip">👤 ${enteredBy}</span>` : ''}
+      </div>
+      <div class="doc-card-footer">
+        <div class="doc-card-amount">${amt}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function cexpSetView(v) {
+  _cexpView = v;
+  document.getElementById('cexp-view-table-btn')?.classList.toggle('active', v === 'table');
+  document.getElementById('cexp-view-cards-btn')?.classList.toggle('active', v === 'cards');
+  _cexpRender();
+}
+
+function _cexpPopulateCompanySelects(companies) {
+  const placeholder = `<option value="">${t('cexp.select_company')}</option>`;
+  ['cexp-paying', 'cexp-beneficiary'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    sel.innerHTML = placeholder + companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  });
+}
+
+function _cexpPopulateMemberSelect(members) {
+  const sel = document.getElementById('cexp-entered-by');
+  if (!sel) return;
+  sel.innerHTML = `<option value="">${t('cexp.select_member')}</option>` +
+    members.map(m => `<option value="${m.user_id}">${m.display_name}</option>`).join('');
+}
+
+async function openCexpModal(editId = null) {
+  _cexpEditId = editId;
+  const titleEl = document.getElementById('cexp-modal-title');
+  if (titleEl) titleEl.textContent = t(editId ? 'cexp.modal_title_edit' : 'cexp.modal_title_new');
+
+  // Populate selects (companies already in cache, members too)
+  _cexpPopulateCompanySelects(_cexpCompanies);
+  _cexpPopulateMemberSelect(_cexpMembers);
+
+  if (editId) {
+    const rec = _cexpList.find(r => r.id === editId);
+    if (rec) {
+      document.getElementById('cexp-date').value = rec.date ? rec.date.slice(0, 10) : '';
+      document.getElementById('cexp-amount').value = rec.amount || '';
+      document.getElementById('cexp-note').value = rec.note || '';
+      document.getElementById('cexp-paying').value = rec.paying_company_id || '';
+      document.getElementById('cexp-beneficiary').value = rec.beneficiary_company_id || '';
+      document.getElementById('cexp-entered-by').value = rec.entered_by || '';
+    }
+  } else {
+    document.getElementById('cexp-date').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('cexp-amount').value = '';
+    document.getElementById('cexp-note').value = '';
+    document.getElementById('cexp-paying').value = '';
+    document.getElementById('cexp-beneficiary').value = '';
+    document.getElementById('cexp-entered-by').value = '';
+  }
+
+  document.getElementById('cexp-modal-overlay').style.display = 'flex';
+}
+
+function closeCexpModal() {
+  document.getElementById('cexp-modal-overlay').style.display = 'none';
+  _cexpEditId = null;
+}
+
+async function saveCexp() {
+  const date = document.getElementById('cexp-date').value;
+  const paying = document.getElementById('cexp-paying').value;
+  const beneficiary = document.getElementById('cexp-beneficiary').value;
+  const amount = document.getElementById('cexp-amount').value;
+
+  if (!date || !paying || !beneficiary || !amount) {
+    showToast(t('toast.fill_required'), 'error');
+    return;
+  }
+
+  const body = {
+    date,
+    paying_company_id: paying,
+    beneficiary_company_id: beneficiary,
+    amount: parseFloat(amount),
+    note: document.getElementById('cexp-note').value.trim() || null,
+    entered_by: document.getElementById('cexp-entered-by').value || null
+  };
+
+  try {
+    const url = _cexpEditId ? `/company-expenses/${_cexpEditId}` : '/company-expenses';
+    const method = _cexpEditId ? 'PUT' : 'POST';
+    const resp = await fetch(url, {
+      method,
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!resp.ok) { showToast(t('toast.error'), 'error'); return; }
+    closeCexpModal();
+    await loadCompanyExpenses();
+    showToast(t('toast.saved'), 'success');
+  } catch(e) {
+    showToast(t('toast.error'), 'error');
+  }
+}
+
+async function deleteCexp(id) {
+  if (!confirm('Видалити?')) return;
+  try {
+    const resp = await fetch(`/company-expenses/${id}`, { method: 'DELETE', credentials: 'include' });
+    if (!resp.ok) { showToast(t('toast.error'), 'error'); return; }
+    await loadCompanyExpenses();
+    showToast(t('toast.saved'), 'success');
+  } catch(e) {
+    showToast(t('toast.error'), 'error');
+  }
+}

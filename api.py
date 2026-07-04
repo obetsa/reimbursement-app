@@ -2922,6 +2922,114 @@ def _rows_to_list(conn, query, params=()):
         result.append(d)
     return result
 
+# ══════════════════════════════════════════
+# COMPANY EXPENSES
+# ══════════════════════════════════════════
+
+def _cexp_row_to_dict(r):
+    d = dict(r)
+    editor = d.pop('editor_name', None)
+    creator = d.pop('creator_name', None)
+    d['author_name'] = editor or creator
+    d['author_is_editor'] = bool(editor)
+    if d.get('date'): d['date'] = str(d['date'])
+    return d
+
+CEXP_SELECT = """
+    SELECT ce.*,
+        cp.name as paying_company_name,
+        cb.name as beneficiary_company_name,
+        COALESCE(NULLIF(ue_in.full_name,''), ue_in.email) as entered_by_name,
+        COALESCE(NULLIF(uc.full_name,''), uc.email) as creator_name,
+        COALESCE(NULLIF(ue.full_name,''), ue.email) as editor_name
+    FROM company_expenses ce
+    LEFT JOIN companies cp ON ce.paying_company_id = cp.id
+    LEFT JOIN companies cb ON ce.beneficiary_company_id = cb.id
+    LEFT JOIN users ue_in ON ce.entered_by = ue_in.id
+    LEFT JOIN users uc ON ce.created_by = uc.id
+    LEFT JOIN users ue ON ce.updated_by = ue.id
+"""
+
+@app.route('/company-expenses', methods=['GET'])
+def get_company_expenses():
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn)
+    if err: conn.close(); return err
+    rows = conn.execute(
+        CEXP_SELECT + " WHERE ce.org_id=%s ORDER BY ce.date DESC, ce.created_at DESC",
+        (org_id,)
+    ).fetchall()
+    conn.close()
+    return jsonify([_cexp_row_to_dict(r) for r in rows])
+
+@app.route('/company-expenses', methods=['POST'])
+def create_company_expense():
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    if err: conn.close(); return err
+    data = request.json
+    exp_id = str(uuid.uuid4())
+    conn.execute(
+        """INSERT INTO company_expenses
+           (id, org_id, date, paying_company_id, beneficiary_company_id, amount, note, entered_by, created_by)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+        (exp_id, org_id, data['date'],
+         data.get('paying_company_id') or None,
+         data.get('beneficiary_company_id') or None,
+         data.get('amount', 0),
+         data.get('note') or None,
+         data.get('entered_by') or None,
+         user_id)
+    )
+    conn.commit()
+    row = conn.execute(CEXP_SELECT + " WHERE ce.id=%s", (exp_id,)).fetchone()
+    conn.close()
+    return jsonify(_cexp_row_to_dict(row)), 201
+
+@app.route('/company-expenses/<exp_id>', methods=['PUT'])
+def update_company_expense(exp_id):
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    if err: conn.close(); return err
+    row = conn.execute("SELECT id FROM company_expenses WHERE id=%s AND org_id=%s", (exp_id, org_id)).fetchone()
+    if not row: conn.close(); return jsonify({'error': 'not_found'}), 404
+    data = request.json
+    conn.execute(
+        """UPDATE company_expenses SET
+           date=%s, paying_company_id=%s, beneficiary_company_id=%s,
+           amount=%s, note=%s, entered_by=%s, updated_by=%s, updated_at=now()
+           WHERE id=%s AND org_id=%s""",
+        (data['date'],
+         data.get('paying_company_id') or None,
+         data.get('beneficiary_company_id') or None,
+         data.get('amount', 0),
+         data.get('note') or None,
+         data.get('entered_by') or None,
+         user_id, exp_id, org_id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/company-expenses/<exp_id>', methods=['DELETE'])
+def delete_company_expense(exp_id):
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    if err: conn.close(); return err
+    conn.execute("DELETE FROM company_expenses WHERE id=%s AND org_id=%s", (exp_id, org_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
 @app.route('/backup/download', methods=['GET'])
 def backup_download():
     user_id = get_user_from_token(request)
