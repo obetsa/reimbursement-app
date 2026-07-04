@@ -2967,7 +2967,7 @@ def get_company_expenses():
 
     if role == 'admin':
         rows = conn.execute(
-            CEXP_SELECT + " WHERE ce.org_id=%s ORDER BY ce.date DESC, ce.created_at DESC",
+            CEXP_SELECT + " WHERE ce.org_id=%s AND (ce.is_deleted IS NULL OR ce.is_deleted=FALSE) ORDER BY ce.date DESC, ce.created_at DESC",
             (org_id,)
         ).fetchall()
     else:
@@ -2977,11 +2977,38 @@ def get_company_expenses():
             return jsonify([])
         rows = conn.execute(
             CEXP_SELECT + """ WHERE ce.org_id=%s
+              AND (ce.is_deleted IS NULL OR ce.is_deleted=FALSE)
               AND (ce.paying_company_id = ANY(%s) OR ce.beneficiary_company_id = ANY(%s))
               ORDER BY ce.date DESC, ce.created_at DESC""",
             (org_id, company_ids, company_ids)
         ).fetchall()
 
+    conn.close()
+    return jsonify([_cexp_row_to_dict(r) for r in rows])
+
+@app.route('/company-expenses/trash', methods=['GET'])
+def get_company_expenses_trash():
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn)
+    if err: conn.close(); return err
+    if role == 'admin':
+        rows = conn.execute(
+            CEXP_SELECT + " WHERE ce.org_id=%s AND ce.is_deleted=TRUE ORDER BY ce.deleted_at DESC",
+            (org_id,)
+        ).fetchall()
+    else:
+        company_ids = _get_accessible_company_ids(user_id, org_id, conn)
+        if not company_ids:
+            conn.close()
+            return jsonify([])
+        rows = conn.execute(
+            CEXP_SELECT + """ WHERE ce.org_id=%s AND ce.is_deleted=TRUE
+              AND (ce.paying_company_id = ANY(%s) OR ce.beneficiary_company_id = ANY(%s))
+              ORDER BY ce.deleted_at DESC""",
+            (org_id, company_ids, company_ids)
+        ).fetchall()
     conn.close()
     return jsonify([_cexp_row_to_dict(r) for r in rows])
 
@@ -3072,17 +3099,49 @@ def delete_company_expense(exp_id):
     org_id, role, err = require_org(user_id, conn, min_role='manager')
     if err: conn.close(); return err
 
+    row = conn.execute(
+        "SELECT paying_company_id, beneficiary_company_id FROM company_expenses WHERE id=%s AND org_id=%s AND (is_deleted IS NULL OR is_deleted=FALSE)",
+        (exp_id, org_id)
+    ).fetchone()
+    if not row: conn.close(); return jsonify({'error': 'not_found'}), 404
+
     if role != 'admin':
-        row = conn.execute(
-            "SELECT paying_company_id, beneficiary_company_id FROM company_expenses WHERE id=%s AND org_id=%s",
-            (exp_id, org_id)
-        ).fetchone()
-        if not row: conn.close(); return jsonify({'error': 'not_found'}), 404
         company_ids = _get_accessible_company_ids(user_id, org_id, conn)
         if row['paying_company_id'] not in company_ids and row['beneficiary_company_id'] not in company_ids:
             conn.close()
             return jsonify({'error': 'forbidden'}), 403
 
+    import datetime as _dt
+    conn.execute(
+        "UPDATE company_expenses SET is_deleted=TRUE, deleted_at=%s WHERE id=%s AND org_id=%s",
+        (_dt.datetime.utcnow(), exp_id, org_id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/company-expenses/<exp_id>/restore', methods=['PUT'])
+def restore_company_expense(exp_id):
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    if err: conn.close(); return err
+    conn.execute(
+        "UPDATE company_expenses SET is_deleted=FALSE, deleted_at=NULL WHERE id=%s AND org_id=%s",
+        (exp_id, org_id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/company-expenses/<exp_id>/permanent', methods=['DELETE'])
+def permanent_delete_company_expense(exp_id):
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    if err: conn.close(); return err
     conn.execute("DELETE FROM company_expenses WHERE id=%s AND org_id=%s", (exp_id, org_id))
     conn.commit()
     conn.close()
@@ -3122,6 +3181,7 @@ def get_company_settlements():
         LEFT JOIN companies cp ON cp.id = ce.paying_company_id
         LEFT JOIN companies cb ON cb.id = ce.beneficiary_company_id
         WHERE ce.org_id = %s
+          AND (ce.is_deleted IS NULL OR ce.is_deleted=FALSE)
           AND ce.paying_company_id IS NOT NULL
           AND ce.beneficiary_company_id IS NOT NULL
           AND ce.paying_company_id != ce.beneficiary_company_id

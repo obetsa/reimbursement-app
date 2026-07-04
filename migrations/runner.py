@@ -35,6 +35,7 @@ ORDERED_FILES = [
     'migrate_021_company_expenses.sql',
     'migrate_022_cexp_entered_by.sql',
     'migrate_023_cexp_status.sql',
+    'migrate_024_cexp_soft_delete.sql',
 ]
 
 

@@ -3093,10 +3093,10 @@ function exportData() { openExportModal(); }
 // ── BADGES ──
 async function updateBadges() {
   const active = sampleDocs.filter(d => !d.isArchived && !d.isDeleted).length;
-  const [deletedRecords, deletedInstruments, deletedCompanies] = await Promise.all([
-    loadDeletedRecords(), loadDeletedInstruments(), loadDeletedCompanies()
+  const [deletedRecords, deletedInstruments, deletedCompanies, deletedCexp] = await Promise.all([
+    loadDeletedRecords(), loadDeletedInstruments(), loadDeletedCompanies(), loadDeletedCexp()
   ]);
-  const deleted = deletedRecords.length + deletedInstruments.length + deletedCompanies.length;
+  const deleted = deletedRecords.length + deletedInstruments.length + deletedCompanies.length + deletedCexp.length;
   document.getElementById('docs-count').textContent = active || '';
   document.getElementById('trash-count').textContent = deleted || '';
   _updateCexpBadge();
@@ -3517,64 +3517,122 @@ async function deleteFromArchive(id) {
 }
 
 // ── TRASH PAGE ──
+async function loadDeletedCexp() {
+  try {
+    const r = await fetch('/company-expenses/trash', { credentials: 'include' });
+    return r.ok ? await r.json() : [];
+  } catch { return []; }
+}
+
 async function loadAndRenderTrash() {
   const list = document.getElementById('trash-list');
   list.innerHTML = '<div class="empty-state"><div class="spinner" style="margin:0 auto"></div></div>';
-  const [records, instruments, companies] = await Promise.all([
-    loadDeletedRecords(), loadDeletedInstruments(), loadDeletedCompanies()
+  const [records, instruments, companies, cexpDeleted] = await Promise.all([
+    loadDeletedRecords(), loadDeletedInstruments(), loadDeletedCompanies(), loadDeletedCexp()
   ]);
-  if(!records.length && !instruments.length && !companies.length) {
+  if(!records.length && !instruments.length && !companies.length && !cexpDeleted.length) {
     list.innerHTML = `<div class="empty-state"><div class="empty-icon">🗑️</div><div class="empty-title">${t('trash.empty')}</div><div class="empty-sub">${t('trash.empty_sub')}</div></div>`;
     return;
   }
   const typeIcon = { private_card: '💳', company_card: '🏢', cash: '💵' };
+  const fmt = v => parseFloat(v || 0).toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const sectionLabel = title => `<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin:16px 0 6px">${title}</div>`;
+  const card = html => `<div class="card" style="margin-bottom:12px">${html}</div>`;
+
   let html = '';
-  if(companies.length) {
-    html += '<div class="card" style="margin-bottom:12px">' + companies.map(c => `
-      <div class="settings-item">
-        <div class="settings-item-icon" style="opacity:0.5">🏢</div>
-        <div class="settings-item-info">
-          <div class="settings-item-name" style="opacity:0.6">${c.name}</div>
-          <div class="settings-item-sub">${t('table.company')}</div>
-        </div>
-        <div class="settings-item-actions">
-          <button class="btn btn-ghost" style="font-size:12px" onclick="restoreCompany('${c.id}')">${t('trash.restore')}</button>
-          <button class="icon-btn danger" title="${t('trash.delete_perm')}" onclick="permanentDeleteCompany('${c.id}')">✕</button>
-        </div>
-      </div>
-    `).join('') + '</div>';
+
+  // ── Документи ──
+  const hasDocsItems = companies.length || instruments.length || records.length;
+  if(hasDocsItems) {
+    html += sectionLabel(t('nav.documents'));
+    let docsHtml = '';
+    if(companies.length) {
+      docsHtml += companies.map(c => `
+        <div class="settings-item">
+          <div class="settings-item-icon" style="opacity:0.5">🏢</div>
+          <div class="settings-item-info">
+            <div class="settings-item-name" style="opacity:0.6">${c.name}</div>
+            <div class="settings-item-sub">${t('table.company')}</div>
+          </div>
+          <div class="settings-item-actions">
+            <button class="btn btn-ghost" style="font-size:12px" onclick="restoreCompany('${c.id}')">${t('trash.restore')}</button>
+            <button class="icon-btn danger" title="${t('trash.delete_perm')}" onclick="permanentDeleteCompany('${c.id}')">✕</button>
+          </div>
+        </div>`).join('');
+    }
+    if(instruments.length) {
+      docsHtml += instruments.map(i => `
+        <div class="settings-item">
+          <div class="settings-item-icon" style="opacity:0.5">${typeIcon[i.type] || '💳'}</div>
+          <div class="settings-item-info">
+            <div class="settings-item-name" style="opacity:0.6">${i.name}</div>
+            <div class="settings-item-sub">${t('settings.instrument_single')}</div>
+          </div>
+          <div class="settings-item-actions">
+            <button class="btn btn-ghost" style="font-size:12px" onclick="restoreInstrument('${i.id}')">${t('trash.restore')}</button>
+            <button class="icon-btn danger" title="${t('trash.delete_perm')}" onclick="permanentDeleteInstrument('${i.id}')">✕</button>
+          </div>
+        </div>`).join('');
+    }
+    if(records.length) {
+      docsHtml += records.map(r => `
+        <div class="settings-item">
+          <div class="settings-item-icon" style="opacity:0.5">📄</div>
+          <div class="settings-item-info">
+            <div class="settings-item-name" style="opacity:0.6">${r.title}</div>
+            <div class="settings-item-sub">${formatDate(r.date)} · €${r.amount.toFixed(2)} · ${r.company}</div>
+          </div>
+          <div class="settings-item-actions">
+            <button class="btn btn-ghost" style="font-size:12px" onclick="restoreRecord('${r.id}', '${r.status}')">${t('trash.restore')}</button>
+            <button class="icon-btn danger" title="${t('trash.delete_perm')}" onclick="permanentDelete('${r.id}')">✕</button>
+          </div>
+        </div>`).join('');
+    }
+    html += card(docsHtml);
   }
-  if(instruments.length) {
-    html += '<div class="card" style="margin-bottom:12px">' + instruments.map(i => `
-      <div class="settings-item">
-        <div class="settings-item-icon" style="opacity:0.5">${typeIcon[i.type] || '💳'}</div>
-        <div class="settings-item-info">
-          <div class="settings-item-name" style="opacity:0.6">${i.name}</div>
-          <div class="settings-item-sub">${t('settings.instrument_single')}</div>
-        </div>
-        <div class="settings-item-actions">
-          <button class="btn btn-ghost" style="font-size:12px" onclick="restoreInstrument('${i.id}')">${t('trash.restore')}</button>
-          <button class="icon-btn danger" title="${t('trash.delete_perm')}" onclick="permanentDeleteInstrument('${i.id}')">✕</button>
-        </div>
-      </div>
-    `).join('') + '</div>';
+
+  // ── Витрати по компаніях ──
+  if(cexpDeleted.length) {
+    html += sectionLabel(t('nav.company_expenses'));
+    html += card(cexpDeleted.map(ce => {
+      const paying = ce.paying_company_name || '—';
+      const bene   = ce.beneficiary_company_name || '—';
+      return `
+        <div class="settings-item">
+          <div class="settings-item-icon" style="opacity:0.5">📊</div>
+          <div class="settings-item-info">
+            <div class="settings-item-name" style="opacity:0.6">${paying} → ${bene}</div>
+            <div class="settings-item-sub">${formatDate(ce.date)} · ${fmt(ce.amount)}</div>
+          </div>
+          <div class="settings-item-actions">
+            <button class="btn btn-ghost" style="font-size:12px" onclick="restoreCexp('${ce.id}')">${t('trash.restore')}</button>
+            <button class="icon-btn danger" title="${t('trash.delete_perm')}" onclick="permanentDeleteCexp('${ce.id}')">✕</button>
+          </div>
+        </div>`;
+    }).join(''));
   }
-  if(records.length) {
-    html += '<div class="card">' + records.map(r => `
-      <div class="settings-item">
-        <div class="settings-item-icon" style="opacity:0.5">📄</div>
-        <div class="settings-item-info">
-          <div class="settings-item-name" style="opacity:0.6">${r.title}</div>
-          <div class="settings-item-sub">${formatDate(r.date)} · €${r.amount.toFixed(2)} · ${r.company}</div>
-        </div>
-        <div class="settings-item-actions">
-          <button class="btn btn-ghost" style="font-size:12px" onclick="restoreRecord('${r.id}', '${r.status}')">${t('trash.restore')}</button>
-          <button class="icon-btn danger" title="${t('trash.delete_perm')}" onclick="permanentDelete('${r.id}')">✕</button>
-        </div>
-      </div>
-    `).join('') + '</div>';
-  }
+
   list.innerHTML = html;
+}
+
+async function restoreCexp(id) {
+  try {
+    await apiPut('/company-expenses/' + id + '/restore', {});
+    showToast(t('toast.restored'), 'success');
+    await loadAndRenderTrash();
+    await loadCompanyExpenses();
+    updateBadges();
+  } catch(e) { showToast(_errMsg(e), 'error'); }
+}
+
+async function permanentDeleteCexp(id) {
+  try {
+    await apiDelete('/company-expenses/' + id + '/permanent');
+    showToast(t('toast.perm_deleted'), 'success');
+    await loadAndRenderTrash();
+    updateBadges();
+  } catch(e) { showToast(_errMsg(e), 'error'); }
 }
 
 async function restoreRecord(id, status) {
@@ -3612,12 +3670,13 @@ async function permanentDelete(id) {
 }
 
 async function emptyTrash() {
-  const [records, instruments, companies] = await Promise.all([
-    loadDeletedRecords(), loadDeletedInstruments(), loadDeletedCompanies()
+  const [records, instruments, companies, cexpItems] = await Promise.all([
+    loadDeletedRecords(), loadDeletedInstruments(), loadDeletedCompanies(), loadDeletedCexp()
   ]);
   for(const r of records) { await permanentDeleteDB(r.id); }
   for(const i of instruments) { await permanentDeleteInstrumentDB(i.id); }
   for(const c of companies) { await permanentDeleteCompanyDB(c.id); }
+  for(const ce of cexpItems) { await apiDelete('/company-expenses/' + ce.id + '/permanent'); }
   records.forEach(r => { const idx = sampleDocs.findIndex(d => d.id === r.id); if(idx !== -1) sampleDocs.splice(idx, 1); });
   showToast(t('toast.trash_cleared'), 'success');
   loadAndRenderTrash();
