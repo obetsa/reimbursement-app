@@ -218,7 +218,13 @@
   #cexp-filter-status,
   #cexp-sort          { flex: 1 1 calc(50% - 3px); min-width: 0; }
 
-  /* ── COMPANY SETTLEMENTS — table → картки ── */
+  /* ── COMPANY SETTLEMENTS ── */
+  #page-company-settlements .filters-bar { flex-wrap: wrap; }
+  #settle-filter-company,
+  #settle-filter-debtor,
+  #settle-filter-creditor { flex: 1 1 100%; min-width: 0; }
+
+  /* table → картки */
   #settle-table-wrap { overflow-x: unset; }
   #settle-table-wrap table { min-width: unset; display: block; }
   #settle-table-wrap thead { display: none; }

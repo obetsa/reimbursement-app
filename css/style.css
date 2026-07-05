@@ -463,6 +463,20 @@
 
   .settle-mobile-label { display: none; }
 
+  .cexp-pair-banner {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    color: var(--text3);
+  }
+
   .card {
     background: var(--bg2);
     border: 1px solid var(--border);

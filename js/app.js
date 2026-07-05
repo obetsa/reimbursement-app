@@ -4470,8 +4470,12 @@ let _cexpEditId = null;
 let _cexpView = window.innerWidth <= 768 ? 'cards' : 'table';  // 'table' | 'cards'
 let _cexpCompanies = [];
 let _cexpMembers = [];
+let _cexpPairFilter = null;  // {a, b} — unordered пара company id (з "Розрахунків"), або null
 
 async function loadCompanyExpenses() {
+  _cexpPairFilter = null;
+  const pairBanner = document.getElementById('cexp-pair-banner');
+  if (pairBanner) pairBanner.style.display = 'none';
   document.getElementById('cexp-view-table-btn')?.classList.toggle('active', _cexpView === 'table');
   document.getElementById('cexp-view-cards-btn')?.classList.toggle('active', _cexpView === 'cards');
   try {
@@ -4497,12 +4501,40 @@ async function _cexpLoadFiltersData() {
 }
 
 function _cexpPopulateFilterSelects() {
-  const allOpt = `<option value="">${t('cexp.filter_all_companies')}</option>`;
   const opts = _cexpCompanies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
   const fp = document.getElementById('cexp-filter-paying');
   const fb = document.getElementById('cexp-filter-bene');
-  if (fp) fp.innerHTML = allOpt + opts;
-  if (fb) fb.innerHTML = allOpt + opts;
+  if (fp) fp.innerHTML = `<option value="">${t('cexp.filter_paying_placeholder')}</option>` + opts;
+  if (fb) fb.innerHTML = `<option value="">${t('cexp.filter_bene_placeholder')}</option>` + opts;
+}
+
+function cexpUserFilterChanged() {
+  if (_cexpPairFilter) { cexpClearPairFilter(); return; }
+  cexpApplyFilters();
+}
+
+function cexpFilterByPair(companyIdA, companyIdB, nameA, nameB) {
+  showPage('company-expenses', document.querySelector('[onclick*="company-expenses"]'));
+  _cexpPairFilter = { a: companyIdA, b: companyIdB };
+
+  const search = document.getElementById('cexp-search'); if (search) search.value = '';
+  const fp = document.getElementById('cexp-filter-paying'); if (fp) fp.value = '';
+  const fb = document.getElementById('cexp-filter-bene'); if (fb) fb.value = '';
+  const fs = document.getElementById('cexp-filter-status'); if (fs) fs.value = '';
+
+  const banner = document.getElementById('cexp-pair-banner');
+  const label = document.getElementById('cexp-pair-banner-label');
+  if (label) label.textContent = `${nameA || '—'} ↔ ${nameB || '—'}`;
+  if (banner) banner.style.display = '';
+
+  cexpApplyFilters();
+}
+
+function cexpClearPairFilter() {
+  _cexpPairFilter = null;
+  const banner = document.getElementById('cexp-pair-banner');
+  if (banner) banner.style.display = 'none';
+  cexpApplyFilters();
 }
 
 function cexpApplyFilters() {
@@ -4513,6 +4545,13 @@ function cexpApplyFilters() {
   const sort = document.getElementById('cexp-sort')?.value || 'date-desc';
 
   _cexpFiltered = _cexpList.filter(r => {
+    if (_cexpPairFilter) {
+      const { a, b } = _cexpPairFilter;
+      const matchesPair = (r.paying_company_id === a && r.beneficiary_company_id === b) ||
+                           (r.paying_company_id === b && r.beneficiary_company_id === a);
+      if (!matchesPair) return false;
+    }
+    // дропдауни "Хто оплатив"/"Для кого" — суворо однонапрямковий AND-фільтр
     if (fp && r.paying_company_id !== fp) return false;
     if (fb && r.beneficiary_company_id !== fb) return false;
     if (fs && r.status !== fs) return false;
@@ -4579,10 +4618,10 @@ function _cexpRenderTable() {
     const enteredBy = r.entered_by_name || '';
     const badge = statusBadge(r.status || 'waiting');
     const actions = canEdit ? `
-      <button class="btn btn-ghost" onclick="openCexpModal('${r.id}')" style="padding:2px 8px;font-size:12px">✏️</button>
-      <button class="btn btn-ghost" onclick="deleteCexp('${r.id}')" style="padding:2px 8px;font-size:12px;color:var(--red)">🗑</button>
+      <button class="btn btn-ghost" onclick="event.stopPropagation();openCexpModal('${r.id}')" style="padding:2px 8px;font-size:12px">✏️</button>
+      <button class="btn btn-ghost" onclick="event.stopPropagation();deleteCexp('${r.id}')" style="padding:2px 8px;font-size:12px;color:var(--red)">🗑</button>
     ` : '';
-    return `<tr>
+    return `<tr onclick="openCexpModal('${r.id}')" style="cursor:pointer">
       <td class="td-date">${dateStr}</td>
       <td>${paying}</td>
       <td>${bene}</td>
@@ -4590,7 +4629,7 @@ function _cexpRenderTable() {
       <td>${badge}</td>
       <td style="color:var(--text3);font-size:12px">${note}</td>
       <td style="color:var(--text3);font-size:12px">${enteredBy}</td>
-      <td style="white-space:nowrap">${actions}</td>
+      <td style="white-space:nowrap" onclick="event.stopPropagation()">${actions}</td>
     </tr>`;
   }).join('');
 }
@@ -4609,7 +4648,7 @@ function _cexpRenderCards() {
       <button class="btn btn-ghost" onclick="event.stopPropagation();openCexpModal('${r.id}')" style="padding:2px 8px;font-size:11px">✏️</button>
       <button class="btn btn-ghost" onclick="event.stopPropagation();deleteCexp('${r.id}')" style="padding:2px 8px;font-size:11px;color:var(--red)">🗑</button>
     ` : '';
-    return `<div class="doc-card">
+    return `<div class="doc-card" onclick="openCexpModal('${r.id}')">
       <div class="doc-card-top">
         <div class="doc-card-title">${paying} → ${bene}</div>
         <div style="display:flex;align-items:center;gap:4px">${editBtns}</div>
@@ -4651,37 +4690,46 @@ function _cexpPopulateMemberSelect(members) {
     members.map(m => `<option value="${m.user_id}">${m.display_name}</option>`).join('');
 }
 
+function _cexpSetTitle(key) {
+  const el = document.getElementById('cexp-modal-title');
+  if (el) { el.setAttribute('data-i18n', key); el.textContent = t(key); }
+}
+
+function _cexpFillFields(rec) {
+  document.getElementById('cexp-date').value = rec?.date ? rec.date.slice(0, 10) : new Date().toISOString().slice(0, 10);
+  document.getElementById('cexp-amount').value = rec?.amount || '';
+  document.getElementById('cexp-note').value = rec?.note || '';
+  document.getElementById('cexp-paying').value = rec?.paying_company_id || '';
+  document.getElementById('cexp-beneficiary').value = rec?.beneficiary_company_id || '';
+  document.getElementById('cexp-entered-by').value = rec?.entered_by || '';
+  document.getElementById('cexp-status').value = rec?.status || 'waiting';
+  document.getElementById('cexp-returned-amount').value = rec?.returned_amount || '';
+}
+
 async function openCexpModal(editId = null) {
   _cexpEditId = editId;
-  const titleEl = document.getElementById('cexp-modal-title');
-  if (titleEl) titleEl.textContent = t(editId ? 'cexp.modal_title_edit' : 'cexp.modal_title_new');
+  const readOnly = !!editId && !_cexpCanEdit();
+  _cexpSetTitle(readOnly ? 'cexp.modal_title_view' : (editId ? 'cexp.modal_title_edit' : 'cexp.modal_title_new'));
 
-  // Populate selects (companies already in cache, members too)
   _cexpPopulateCompanySelects(_cexpCompanies);
   _cexpPopulateMemberSelect(_cexpMembers);
 
-  if (editId) {
-    const rec = _cexpList.find(r => r.id === editId);
-    if (rec) {
-      document.getElementById('cexp-date').value = rec.date ? rec.date.slice(0, 10) : '';
-      document.getElementById('cexp-amount').value = rec.amount || '';
-      document.getElementById('cexp-note').value = rec.note || '';
-      document.getElementById('cexp-paying').value = rec.paying_company_id || '';
-      document.getElementById('cexp-beneficiary').value = rec.beneficiary_company_id || '';
-      document.getElementById('cexp-entered-by').value = rec.entered_by || '';
-      document.getElementById('cexp-status').value = rec.status || 'waiting';
-      document.getElementById('cexp-returned-amount').value = rec.returned_amount || '';
-    }
-  } else {
-    document.getElementById('cexp-date').value = new Date().toISOString().slice(0, 10);
-    document.getElementById('cexp-amount').value = '';
-    document.getElementById('cexp-note').value = '';
-    document.getElementById('cexp-paying').value = '';
-    document.getElementById('cexp-beneficiary').value = '';
-    document.getElementById('cexp-entered-by').value = '';
-    document.getElementById('cexp-status').value = 'waiting';
-    document.getElementById('cexp-returned-amount').value = '';
+  const rec = editId ? _cexpList.find(r => r.id === editId) : null;
+  _cexpFillFields(rec);
+
+  ['cexp-date', 'cexp-paying', 'cexp-beneficiary', 'cexp-amount', 'cexp-status', 'cexp-returned-amount', 'cexp-entered-by', 'cexp-note'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = readOnly;
+  });
+  const saveBtn = document.getElementById('cexp-save-btn');
+  const cancelBtn = document.getElementById('cexp-cancel-btn');
+  if (saveBtn) saveBtn.style.display = readOnly ? 'none' : '';
+  if (cancelBtn) {
+    const cancelKey = readOnly ? 'form.close' : 'form.cancel';
+    cancelBtn.setAttribute('data-i18n', cancelKey);
+    cancelBtn.textContent = t(cancelKey);
   }
+
   _cexpToggleReturnedField();
   document.getElementById('cexp-status').onchange = _cexpToggleReturnedField;
 
@@ -4775,17 +4823,25 @@ async function loadCompanySettlements() {
 }
 
 function _settlePopulateFilter(companies) {
+  const opts = companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
   const sel = document.getElementById('settle-filter-company');
-  if (!sel) return;
-  const allOpt = `<option value="">${t('settle.filter_company')}</option>`;
-  sel.innerHTML = allOpt + companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  if (sel) sel.innerHTML = `<option value="">${t('settle.filter_company')}</option>` + opts;
+  const selDebtor = document.getElementById('settle-filter-debtor');
+  if (selDebtor) selDebtor.innerHTML = `<option value="">${t('settle.filter_debtor')}</option>` + opts;
+  const selCreditor = document.getElementById('settle-filter-creditor');
+  if (selCreditor) selCreditor.innerHTML = `<option value="">${t('settle.filter_creditor')}</option>` + opts;
 }
 
 function settleApplyFilter() {
   const fc = document.getElementById('settle-filter-company')?.value || '';
-  _settleFiltered = fc
-    ? _settleList.filter(r => r.debtor_id === fc || r.creditor_id === fc)
-    : [..._settleList];
+  const fd = document.getElementById('settle-filter-debtor')?.value || '';
+  const fr = document.getElementById('settle-filter-creditor')?.value || '';
+  _settleFiltered = _settleList.filter(r => {
+    if (fc && r.debtor_id !== fc && r.creditor_id !== fc) return false;
+    if (fd && r.debtor_id !== fd) return false;
+    if (fr && r.creditor_id !== fr) return false;
+    return true;
+  });
   _settleRender();
 }
 
@@ -4815,6 +4871,9 @@ function _settleRender() {
       : '';
     const debtorLink = `<strong class="settle-company-link" onclick="openSettleCompanyModal('${r.debtor_id}',this.textContent)">${r.debtor_name || '—'}</strong>`;
     const creditorLink = `<span class="settle-company-link" onclick="openSettleCompanyModal('${r.creditor_id}',this.textContent)">${r.creditor_name || '—'}</span>`;
+    const debtorNameEsc = (r.debtor_name || '').replace(/'/g, "\\'");
+    const creditorNameEsc = (r.creditor_name || '').replace(/'/g, "\\'");
+    const countLink = `<span class="settle-company-link" onclick="cexpFilterByPair('${r.debtor_id}','${r.creditor_id}','${debtorNameEsc}','${creditorNameEsc}')">${r.expense_count}</span>`;
     return `<tr>
       <td>${debtorLink}</td>
       <td style="text-align:center;color:var(--text3)">→</td>
@@ -4822,7 +4881,7 @@ function _settleRender() {
       <td style="text-align:center">${openCell}</td>
       <td style="text-align:center;font-family:'DM Mono',monospace;color:var(--text2);font-size:13px"><span class="settle-mobile-label">${t('settle.total')}: </span>${fmt(r.total_amount)}</td>
       <td style="text-align:center;font-family:'DM Mono',monospace;color:var(--text3);font-size:13px"><span class="settle-mobile-label">${t('settle.returned')}: </span>${fmt(r.total_returned)}</td>
-      <td style="text-align:center;color:var(--text3);font-size:12px"><span class="settle-mobile-label">${t('settle.count')}: </span>${r.expense_count}</td>
+      <td style="text-align:center;color:var(--text3);font-size:12px"><span class="settle-mobile-label">${t('settle.count')}: </span>${countLink}</td>
     </tr>`;
   }).join('');
 }

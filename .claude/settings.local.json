@@ -46,7 +46,9 @@
       "Bash(node --check js/app.js)",
       "Bash(grep -ci \"drive\" api.py)",
       "Bash(grep -ci \"drive\" js/app.js)",
-      "Bash(grep -in \"drive\" js/config.js)"
+      "Bash(grep -in \"drive\" js/config.js)",
+      "Bash(node --check js/i18n.js)",
+      "Bash(node -e ' *)"
     ]
   }
 }

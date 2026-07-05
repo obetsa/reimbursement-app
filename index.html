@@ -251,19 +251,15 @@
       <div class="nav-icon">🏠</div>
       <span data-i18n="nav.dashboard">Dashboard</span>
     </div>
+
+    <div class="nav-divider"></div>
+
+    <div class="nav-section" data-i18n="nav.section_records">Записи</div>
     <div class="nav-item" onclick="showPageDocuments(this)">
       <div class="nav-icon">📄</div>
       <span data-i18n="nav.documents">Документи</span>
       <span class="nav-badge" id="docs-count">0</span>
     </div>
-    <div class="nav-item" onclick="showPage('trash', this)">
-      <div class="nav-icon">🗑️</div>
-      <span data-i18n="nav.trash">Корзина</span>
-      <span class="nav-badge" id="trash-count">0</span>
-    </div>
-
-    <div class="nav-divider"></div>
-
     <div class="nav-item" onclick="showPage('gallery', this)">
       <div class="nav-icon">🖼️</div>
       <span data-i18n="nav.gallery">Галерея чеків</span>
@@ -284,6 +280,14 @@
     <div class="nav-item" onclick="showPage('company-settlements', this)">
       <div class="nav-icon">🔄</div>
       <span data-i18n="nav.company_settlements">Розрахунки між компаніями</span>
+    </div>
+
+    <div class="nav-divider"></div>
+
+    <div class="nav-item" onclick="showPage('trash', this)">
+      <div class="nav-icon">🗑️</div>
+      <span data-i18n="nav.trash">Корзина</span>
+      <span class="nav-badge" id="trash-count">0</span>
     </div>
 
     <div class="nav-divider"></div>
@@ -561,15 +565,15 @@
       <div class="filters-bar">
         <div class="search-wrap">
           <span class="search-icon">🔍</span>
-          <input class="search-input" type="text" id="cexp-search" oninput="cexpApplyFilters()" data-i18n-placeholder="docs.search">
+          <input class="search-input" type="text" id="cexp-search" oninput="cexpUserFilterChanged()" data-i18n-placeholder="docs.search">
         </div>
-        <select id="cexp-filter-paying" class="filter-select" onchange="cexpApplyFilters()">
-          <option value="" data-i18n="cexp.filter_all_companies">Всі компанії</option>
+        <select id="cexp-filter-paying" class="filter-select" onchange="cexpUserFilterChanged()">
+          <option value="" data-i18n="cexp.filter_paying_placeholder">Хто оплатив</option>
         </select>
-        <select id="cexp-filter-bene" class="filter-select" onchange="cexpApplyFilters()">
-          <option value="" data-i18n="cexp.filter_all_companies">Всі компанії</option>
+        <select id="cexp-filter-bene" class="filter-select" onchange="cexpUserFilterChanged()">
+          <option value="" data-i18n="cexp.filter_bene_placeholder">Для кого</option>
         </select>
-        <select id="cexp-filter-status" class="filter-select" onchange="cexpApplyFilters()">
+        <select id="cexp-filter-status" class="filter-select" onchange="cexpUserFilterChanged()">
           <option value="" data-i18n="cexp.filter_all_statuses">Всі статуси</option>
           <option value="waiting" data-i18n="status.waiting">⏳ Очікує</option>
           <option value="partial" data-i18n="status.partial">🔄 Частково</option>
@@ -585,6 +589,13 @@
           <button class="view-btn active" id="cexp-view-table-btn" onclick="cexpSetView('table')" data-i18n-title="view.table">☰</button>
           <button class="view-btn" id="cexp-view-cards-btn" onclick="cexpSetView('cards')" data-i18n-title="view.cards">⊞</button>
         </div>
+      </div>
+
+      <!-- PAIR FILTER BANNER (з "Розрахунків між компаніями") -->
+      <div id="cexp-pair-banner" class="cexp-pair-banner" style="display:none">
+        <span data-i18n="cexp.pair_filter_label">Показано лише:</span>
+        <strong id="cexp-pair-banner-label"></strong>
+        <button class="btn btn-ghost" style="padding:2px 8px;font-size:12px" onclick="cexpClearPairFilter()" data-i18n="cexp.pair_filter_clear">✕ Показати всі</button>
       </div>
 
       <!-- TABLE VIEW -->
@@ -623,6 +634,12 @@
       <div class="filters-bar">
         <select id="settle-filter-company" class="filter-select" onchange="settleApplyFilter()">
           <option value="" data-i18n="settle.filter_company">Всі компанії</option>
+        </select>
+        <select id="settle-filter-debtor" class="filter-select" onchange="settleApplyFilter()">
+          <option value="" data-i18n="settle.filter_debtor">Хто винен</option>
+        </select>
+        <select id="settle-filter-creditor" class="filter-select" onchange="settleApplyFilter()">
+          <option value="" data-i18n="settle.filter_creditor">Кому винен</option>
         </select>
       </div>
 
@@ -713,8 +730,8 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-ghost" onclick="closeCexpModal()" data-i18n="form.cancel">Скасувати</button>
-        <button class="btn btn-primary" onclick="saveCexp()" data-i18n="form.save">Зберегти</button>
+        <button class="btn btn-ghost" id="cexp-cancel-btn" onclick="closeCexpModal()" data-i18n="form.cancel">Скасувати</button>
+        <button class="btn btn-primary" id="cexp-save-btn" onclick="saveCexp()" data-i18n="form.save">Зберегти</button>
       </div>
     </div>
   </div>
