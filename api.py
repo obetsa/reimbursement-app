@@ -2156,7 +2156,7 @@ def update_company(company_id):
 
         if old_safe != new_safe:
             atts = conn.execute(
-                "select a.id, a.file_path, a.drive_id from attachments a "
+                "select a.id, a.file_path from attachments a "
                 "join records r on a.record_id=r.id "
                 "where r.company_id=%s and r.org_id=%s and a.file_path is not null",
                 (company_id, org_id)
@@ -2820,13 +2820,13 @@ def upload_attachment(record_id):
     file_type = file.content_type or 'application/octet-stream'
 
     conn.execute(
-        "insert into attachments (id, record_id, file_name, file_type, file_path, storage_type, drive_id) values (%s,%s,%s,%s,%s,%s,%s)",
-        (att_id, record_id, orig_name, file_type, file_path, 'local', None)
+        "insert into attachments (id, record_id, file_name, file_type, file_path) values (%s,%s,%s,%s,%s)",
+        (att_id, record_id, orig_name, file_type, file_path)
     )
     conn.commit()
     conn.close()
 
-    return jsonify({'id': att_id, 'record_id': record_id, 'file_name': orig_name, 'file_type': file_type, 'storage_type': 'local', 'drive_id': None})
+    return jsonify({'id': att_id, 'record_id': record_id, 'file_name': orig_name, 'file_type': file_type})
 
 @app.route('/attachments/<att_id>/file', methods=['GET'])
 def serve_attachment(att_id):
