@@ -200,6 +200,7 @@ unprocessed_imports            — таблиця лишилась в схемі
 - Company-expenses — чіткіші підписи фільтрів ✅ (05.07.2026): дропдауни в панелі фільтрів тепер "Хто оплатив" / "Для кого" (`cexp.filter_paying_placeholder/filter_bene_placeholder`) замість однакового "Всі компанії" на обох — залишаються **однонапрямковим** AND-фільтром (paying=X І beneficiary=Y), без бідирекційної логіки
 - Company-settlements → company-expenses "pair filter" ✅ (05.07.2026): клік на число в колонці "Записів" (`_settleRender`) відкриває "Витрати по компаніях" з банером `#cexp-pair-banner` ("Показано лише: Компанія А ↔ Компанія Б" + "✕ Показати всі") — показує **всі** записи між цими двома компаніями в обидва напрямки (`_cexpPairFilter`, окремий від дропдаунів "Хто оплатив"/"Для кого" механізм). Банер ховається при ручній зміні пошуку/фільтра/статусу (`cexpUserFilterChanged()`) або переході на сторінку заново
 - Company-settlements — фільтри "Хто винен" / "Кому винен" ✅ (05.07.2026): два нових дропдауни (`settle-filter-debtor`/`settle-filter-creditor`, i18n `settle.filter_debtor/filter_creditor`) поруч з існуючим "Всі компанії" — directional AND-фільтр по `debtor_id`/`creditor_id`
+- Компанії — доступ, сортування, is_active фільтри ✅ (07.07.2026): 1) `create_company` тепер грантить manager-творцю доступ до щойно створеної компанії (`org_member_companies`) — раніше сам її не бачив; 2) `GET /companies` сортує по `created_at` замість `sort_order, name` (дублікати sort_order давали хаотичний порядок); 3) дропдауни компаній в cexp (`_cexpPopulateCompanySelects`, `_cexpPopulateFilterSelects`) і settlements (`_settlePopulateFilter`) тепер фільтрують `is_active`, як і форма документів. SA-панель: додано `total_companies` в `/superadmin/stats` + картка. i18n: `settle.net_badge` (uk) "Нетований" → "Нетто"
 
 Відкладено / наступне: див. Roadmap нижче.
 
@@ -464,3 +465,5 @@ Frontend ✅: usage-бари в Settings → Організація тепер �
 Кілька довгих feature-гілок одночасно — свідомий підхід до версійності. Не пропонувати мерж в `main` без прямого прохання користувача.
 
 Деплой: `docker build` → push на `obetsa/reimbursement-app:latest`. Не пушити в docker/Portainer без прямого прохання користувача.
+
+**Версійність на Docker Hub** (з 07.07.2026): перед перезаписом `latest` — попередній `latest` спершу тегується наступним по порядку `vN` і пушиться окремо (архів), і тільки після цього новий код пушиться як `latest`. Поточні теги: `v1` (30.04) → `v2` (12.05) → `v3` (19.06) → `v4` (30.06) → `v5` (07.07, архів latest до фіксів компаній) → `latest` (07.07, поточний код). Наступний архівний тег — `v6`.
