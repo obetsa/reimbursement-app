@@ -1020,6 +1020,9 @@ def superadmin_stats():
     total_records = conn.execute(
         "SELECT COUNT(*) AS c FROM records WHERE is_deleted IS NULL OR is_deleted=0"
     ).fetchone()['c']
+    total_companies = conn.execute(
+        "SELECT COUNT(*) AS c FROM companies WHERE is_active IS NULL OR is_active=1"
+    ).fetchone()['c']
     conn.close()
 
     total_storage_mb = 0.0
@@ -1037,6 +1040,7 @@ def superadmin_stats():
         'total_orgs': total_orgs,
         'active_users': active_users,
         'total_records': total_records,
+        'total_companies': total_companies,
         'total_storage_mb': total_storage_mb
     })
 
@@ -2088,7 +2092,7 @@ def get_companies():
     accessible = get_accessible_companies(user_id, org_id, role, conn)
     if accessible is None:
         rows = conn.execute(
-            "select * from companies where org_id=%s and (is_deleted=0 or is_deleted is null) order by sort_order, name",
+            "select * from companies where org_id=%s and (is_deleted=0 or is_deleted is null) order by created_at",
             (org_id,)
         ).fetchall()
     elif not accessible:
@@ -2096,7 +2100,7 @@ def get_companies():
     else:
         placeholders = ','.join(['%s'] * len(accessible))
         rows = conn.execute(
-            f"select * from companies where org_id=%s and id IN ({placeholders}) and (is_deleted=0 or is_deleted is null) order by sort_order, name",
+            f"select * from companies where org_id=%s and id IN ({placeholders}) and (is_deleted=0 or is_deleted is null) order by created_at",
             [org_id] + accessible
         ).fetchall()
     conn.close()
@@ -2119,6 +2123,12 @@ def create_company():
         "insert into companies (id, user_id, org_id, name, is_shared, is_active, sort_order) values (%s,%s,%s,%s,%s,1,%s)",
         (company_id, user_id, org_id, data['name'], 1 if data.get('is_shared') else 0, data.get('sort_order', 0))
     )
+    if role != 'admin':
+        # manager, що створив компанію, автоматично отримує до неї доступ (інакше сам її не побачить)
+        conn.execute(
+            "INSERT INTO org_member_companies (id, org_id, user_id, company_id, granted_by) VALUES (%s,%s,%s,%s,%s)",
+            (str(uuid.uuid4()), org_id, user_id, company_id, user_id)
+        )
     conn.commit()
     row = conn.execute("select * from companies where id=%s", (company_id,)).fetchone()
     conn.close()

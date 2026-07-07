@@ -4501,7 +4501,7 @@ async function _cexpLoadFiltersData() {
 }
 
 function _cexpPopulateFilterSelects() {
-  const opts = _cexpCompanies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  const opts = _cexpCompanies.filter(c => c.is_active).map(c => `<option value="${c.id}">${c.name}</option>`).join('');
   const fp = document.getElementById('cexp-filter-paying');
   const fb = document.getElementById('cexp-filter-bene');
   if (fp) fp.innerHTML = `<option value="">${t('cexp.filter_paying_placeholder')}</option>` + opts;
@@ -4676,10 +4676,11 @@ function cexpSetView(v) {
 
 function _cexpPopulateCompanySelects(companies) {
   const placeholder = `<option value="">${t('cexp.select_company')}</option>`;
+  const opts = companies.filter(c => c.is_active).map(c => `<option value="${c.id}">${c.name}</option>`).join('');
   ['cexp-paying', 'cexp-beneficiary'].forEach(id => {
     const sel = document.getElementById(id);
     if (!sel) return;
-    sel.innerHTML = placeholder + companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    sel.innerHTML = placeholder + opts;
   });
 }
 
@@ -4823,7 +4824,7 @@ async function loadCompanySettlements() {
 }
 
 function _settlePopulateFilter(companies) {
-  const opts = companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  const opts = companies.filter(c => c.is_active).map(c => `<option value="${c.id}">${c.name}</option>`).join('');
   const sel = document.getElementById('settle-filter-company');
   if (sel) sel.innerHTML = `<option value="">${t('settle.filter_company')}</option>` + opts;
   const selDebtor = document.getElementById('settle-filter-debtor');

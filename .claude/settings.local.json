@@ -50,7 +50,8 @@
       "Bash(node --check js/i18n.js)",
       "Bash(node -e ' *)",
       "Bash(python -c \"import ast; ast.parse\\(open\\('api.py', encoding='utf-8'\\).read\\(\\)\\); print\\('api.py OK'\\)\")",
-      "Bash(python -c \"import ast; ast.parse\\(open\\('api.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")"
+      "Bash(python -c \"import ast; ast.parse\\(open\\('api.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(node --check js/admin.js)"
     ]
   }
 }

@@ -556,10 +556,11 @@ async function loadSuperadmin() {
       const statsEl = document.getElementById('superadmin-stats');
       if (statsEl) {
         const cards = [
-          { label: t('superadmin.stats_orgs'),    value: stats.total_orgs },
-          { label: t('superadmin.stats_users'),   value: stats.active_users },
-          { label: t('superadmin.stats_records'), value: stats.total_records },
-          { label: t('superadmin.stats_storage'), value: stats.total_storage_mb + ' MB' },
+          { label: t('superadmin.stats_orgs'),      value: stats.total_orgs },
+          { label: t('superadmin.stats_users'),     value: stats.active_users },
+          { label: t('superadmin.stats_records'),   value: stats.total_records },
+          { label: t('superadmin.stats_companies'), value: stats.total_companies },
+          { label: t('superadmin.stats_storage'),   value: stats.total_storage_mb + ' MB' },
         ];
         statsEl.innerHTML = cards.map(c => `
           <div style="flex:1;min-width:120px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 18px">
