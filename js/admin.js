@@ -626,6 +626,7 @@ function _renderSAOrgs(orgs) {
           <span>${t('superadmin.col_members')}: <strong style="color:var(--text2)">${o.members_count}</strong></span>
           ${o.pending_count > 0 ? `<span>${t('superadmin.col_pending')}: <strong style="color:var(--yellow,#f59e0b)">${o.pending_count}</strong></span>` : ''}
           <span>${t('superadmin.col_records')}: <strong style="color:var(--text2)">${o.records_count}</strong></span>
+          <span>${t('superadmin.col_companies')}: <strong style="color:var(--text2)">${o.companies_count}</strong></span>
           <span>${t('superadmin.col_last_activity')}: <strong style="color:var(--text2)">${o.last_activity ? o.last_activity.slice(0, 10) : '—'}</strong></span>
           ${o.storage_mb > 0 ? `<span>${t('superadmin.col_storage')}: <strong style="color:var(--text2)">${o.storage_mb} MB</strong></span>` : ''}
           <span>${o.created_at ? o.created_at.slice(0, 10) : '—'}</span>
@@ -641,6 +642,7 @@ function _renderSAOrgs(orgs) {
             <th style="padding:10px 12px;text-align:center">${t('superadmin.col_members')}</th>
             <th style="padding:10px 12px;text-align:center">${t('superadmin.col_pending')}</th>
             <th style="padding:10px 12px;text-align:center">${t('superadmin.col_records')}</th>
+            <th style="padding:10px 12px;text-align:center">${t('superadmin.col_companies')}</th>
             <th style="padding:10px 12px;text-align:left">${t('superadmin.col_last_activity')}</th>
             <th style="padding:10px 12px;text-align:right">${t('superadmin.col_storage')}</th>
             <th style="padding:10px 12px;text-align:left">${t('superadmin.col_created')}</th>
@@ -655,6 +657,7 @@ function _renderSAOrgs(orgs) {
               <td style="padding:10px 12px;text-align:center">${o.members_count}</td>
               <td style="padding:10px 12px;text-align:center">${o.pending_count > 0 ? `<span style="color:var(--yellow,#f59e0b);font-weight:600">${o.pending_count}</span>` : '<span style="color:var(--text3)">—</span>'}</td>
               <td style="padding:10px 12px;text-align:center">${o.records_count}</td>
+              <td style="padding:10px 12px;text-align:center">${o.companies_count}</td>
               <td style="padding:10px 12px;color:var(--text3);font-size:11px">${o.last_activity ? o.last_activity.slice(0, 10) : '—'}</td>
               <td style="padding:10px 12px;text-align:right;font-size:11px;color:var(--text3)">${o.storage_mb > 0 ? o.storage_mb + ' MB' : '—'}</td>
               <td style="padding:10px 12px;color:var(--text3);font-size:11px">${o.created_at ? o.created_at.slice(0, 10) : '—'}</td>
@@ -748,11 +751,13 @@ function openCreateOrgModal() {
 
 async function openOrgMembersModal(orgId, orgName) {
   const overlay = document.createElement('div');
+  overlay.id = '_sa_org_members_overlay';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
   overlay.innerHTML = `
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:560px;width:100%;max-height:80vh;overflow-y:auto">
       <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:16px">${t('superadmin.org_members_title').replace('{name}', orgName)}</div>
       <div id="_sa_org_members_body">${t('loading.text')}</div>
+      <div id="_sa_org_add_member"></div>
       <div style="display:flex;justify-content:flex-end;margin-top:16px">
         <button id="_sa_org_members_close" class="btn btn-ghost">${t('org.delete_permanent_cancel')}</button>
       </div>
@@ -761,39 +766,227 @@ async function openOrgMembersModal(orgId, orgName) {
   overlay.querySelector('#_sa_org_members_close').onclick = () => overlay.remove();
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 
-  const body = overlay.querySelector('#_sa_org_members_body');
+  await _saRenderOrgMembersModal(orgId, orgName);
+}
+
+async function _saRenderOrgMembersModal(orgId, orgName) {
+  const overlay = document.getElementById('_sa_org_members_overlay');
+  if (!overlay) return;
+  const body   = overlay.querySelector('#_sa_org_members_body');
+  const addBox = overlay.querySelector('#_sa_org_add_member');
   try {
-    const res = await fetch(`/superadmin/orgs/${orgId}/members`, { credentials: 'include' });
-    const members = await res.json();
-    if (!res.ok || !members.length) {
-      body.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text3)">${t('superadmin.no_org_members')}</div>`;
+    const [res, usersRes] = await Promise.all([
+      fetch(`/superadmin/orgs/${orgId}/members`, { credentials: 'include' }),
+      fetch('/superadmin/users', { credentials: 'include' }),
+    ]);
+    const members  = await res.json();
+    const allUsers = usersRes.ok ? await usersRes.json() : [];
+    if (!res.ok) {
+      body.innerHTML = `<div style="padding:20px;text-align:center;color:var(--red)">${t('toast.error')}</div>`;
       return;
     }
-    const roleLabel   = { admin: t('org.role_admin'), manager: t('org.role_manager'), user: t('org.role_user') };
-    const statusStyle = { active: 'background:#dcfce7;color:#16a34a', pending: 'background:#fef9c3;color:#b45309', unverified: 'background:var(--bg3);color:var(--text3)' };
-    const statusLabel = { active: t('superadmin.status_active'), pending: t('superadmin.status_pending'), unverified: t('superadmin.status_unverified') };
+
+    if (!members.length) {
+      body.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text3)">${t('superadmin.no_org_members')}</div>`;
+    } else {
+      const roleLabel   = { admin: t('org.role_admin'), manager: t('org.role_manager'), user: t('org.role_user') };
+      const statusStyle = { active: 'background:#dcfce7;color:#16a34a', pending: 'background:#fef9c3;color:#b45309', unverified: 'background:var(--bg3);color:var(--text3)' };
+      const statusLabel = { active: t('superadmin.status_active'), pending: t('superadmin.status_pending'), unverified: t('superadmin.status_unverified') };
+      body.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="border-bottom:2px solid var(--border);color:var(--text3);font-size:11px;font-weight:600">
+              <th style="padding:8px 10px;text-align:left">${t('superadmin.col_email')}</th>
+              <th style="padding:8px 10px;text-align:left">${t('superadmin.col_fullname')}</th>
+              <th style="padding:8px 10px;text-align:left">${t('org.role_label')}</th>
+              <th style="padding:8px 10px;text-align:left">${t('superadmin.col_status')}</th>
+              <th style="padding:8px 10px;text-align:left"></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${members.map(m => `
+              <tr style="border-bottom:1px solid var(--border)">
+                <td style="padding:8px 10px;color:var(--text)">${m.email}${m.is_suspended ? ` <span style="font-size:10px;background:var(--red);color:#fff;border-radius:4px;padding:1px 5px">⏸</span>` : ''}</td>
+                <td style="padding:8px 10px;color:var(--text2)">${m.full_name || '—'}</td>
+                <td style="padding:8px 10px;color:var(--text2)">${m.role === 'admin'
+                  ? roleLabel[m.role]
+                  : `<select onchange="superadminSetOrgMemberRole('${orgId}','${orgName.replace(/'/g, "\\'")}','${m.id}', this.value)"
+                       style="font-size:12px;padding:2px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg3);color:var(--text2)">
+                       <option value="manager" ${m.role === 'manager' ? 'selected' : ''}>${t('org.role_manager')}</option>
+                       <option value="user" ${m.role === 'user' ? 'selected' : ''}>${t('org.role_user')}</option>
+                     </select>`
+                }</td>
+                <td style="padding:8px 10px"><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;${statusStyle[m.status]}">${statusLabel[m.status]}</span></td>
+                <td style="padding:8px 10px;white-space:nowrap">
+                  <button class="btn btn-secondary" style="font-size:11px;padding:3px 8px"
+                    onclick="superadminToggleMemberSuspend('${orgId}','${orgName.replace(/'/g, "\\'")}','${m.id}',${m.is_suspended})"
+                    title="${m.is_suspended ? t('superadmin.unsuspend_member_title') : t('superadmin.suspend_member_title')}">${m.is_suspended ? '▶' : '⏸'}</button>
+                  ${m.role !== 'admin' ? `
+                  <button class="btn btn-danger" style="font-size:11px;padding:3px 8px"
+                    onclick="superadminRemoveOrgMember('${orgId}','${orgName.replace(/'/g, "\\'")}','${m.id}','${(m.full_name || m.email).replace(/'/g, "\\'")}')">🗑</button>
+                  ` : ''}
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>`;
+    }
+
+    const memberIds = new Set(members.map(m => m.id));
+    const available = allUsers.filter(u => !memberIds.has(u.id));
+    if (!available.length) {
+      addBox.innerHTML = `<div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);font-size:12px;color:var(--text3)">${t('superadmin.add_member_none')}</div>`;
+    } else {
+      addBox.innerHTML = `
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+          <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px">${t('superadmin.add_member_label')}</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <select id="_sa_add_user_select" style="flex:2;min-width:160px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:13px">
+              <option value="">${t('superadmin.add_member_select_placeholder')}</option>
+              ${available.map(u => `<option value="${u.id}">${u.email}${u.full_name ? ' (' + u.full_name + ')' : ''}</option>`).join('')}
+            </select>
+            <select id="_sa_add_user_role" style="flex:1;min-width:100px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text);font-size:13px">
+              <option value="user">${t('org.role_user')}</option>
+              <option value="manager">${t('org.role_manager')}</option>
+            </select>
+            <button class="btn btn-primary" style="font-size:12px" onclick="superadminAddOrgMember('${orgId}','${orgName.replace(/'/g, "\\'")}')">${t('superadmin.add_member_btn')}</button>
+          </div>
+        </div>`;
+    }
+  } catch {
+    body.innerHTML = `<div style="padding:20px;text-align:center;color:var(--red)">${t('toast.error')}</div>`;
+  }
+}
+
+async function superadminAddOrgMember(orgId, orgName) {
+  const sel     = document.getElementById('_sa_add_user_select');
+  const roleSel = document.getElementById('_sa_add_user_role');
+  if (!sel || !sel.value) return;
+  try {
+    const resp = await fetch(`/superadmin/orgs/${orgId}/members`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: sel.value, role: roleSel.value }),
+    });
+    if (!resp.ok) { showToast(t('toast.error'), 'error'); return; }
+    showToast(t('superadmin.add_member_success'), 'success');
+    await _saRenderOrgMembersModal(orgId, orgName);
+  } catch {
+    showToast(t('toast.error'), 'error');
+  }
+}
+
+async function superadminSetOrgMemberRole(orgId, orgName, memberUserId, role) {
+  try {
+    const resp = await fetch(`/superadmin/orgs/${orgId}/members/${memberUserId}/role`, {
+      method: 'PUT', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role }),
+    });
+    if (!resp.ok) { showToast(t('toast.error'), 'error'); return; }
+    showToast(t('superadmin.role_changed_toast'), 'success');
+    await _saRenderOrgMembersModal(orgId, orgName);
+  } catch {
+    showToast(t('toast.error'), 'error');
+  }
+}
+
+async function superadminRemoveOrgMember(orgId, orgName, memberUserId, memberLabel) {
+  if (!confirm(t('superadmin.remove_member_confirm').replace('{name}', memberLabel))) return;
+  try {
+    const resp = await fetch(`/superadmin/orgs/${orgId}/members/${memberUserId}`, {
+      method: 'DELETE', credentials: 'include',
+    });
+    if (!resp.ok) { showToast(t('toast.error'), 'error'); return; }
+    showToast(t('superadmin.remove_member_success'), 'success');
+    await _saRenderOrgMembersModal(orgId, orgName);
+  } catch {
+    showToast(t('toast.error'), 'error');
+  }
+}
+
+async function superadminToggleMemberSuspend(orgId, orgName, memberUserId, isSuspended) {
+  try {
+    const resp = await fetch(`/superadmin/users/${memberUserId}/${isSuspended ? 'unsuspend' : 'suspend'}`, {
+      method: 'POST', credentials: 'include',
+    });
+    if (!resp.ok) { showToast(t('toast.error'), 'error'); return; }
+    showToast(isSuspended ? t('superadmin.unsuspend_user_toast') : t('superadmin.suspend_user_toast'), 'success');
+    await _saRenderOrgMembersModal(orgId, orgName);
+  } catch {
+    showToast(t('toast.error'), 'error');
+  }
+}
+
+// ── Storage cleanup (SA, всі org) ──
+
+async function openStorageCleanupModal() {
+  const overlay = document.createElement('div');
+  overlay.id = '_sa_cleanup_overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:520px;width:100%;max-height:80vh;overflow-y:auto">
+      <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:16px">${t('superadmin.cleanup_title')}</div>
+      <div id="_sa_cleanup_body">${t('loading.text')}</div>
+      <div id="_sa_cleanup_actions" style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+        <button id="_sa_cleanup_close" class="btn btn-ghost">${t('org.delete_permanent_cancel')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#_sa_cleanup_close').onclick = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  const body = overlay.querySelector('#_sa_cleanup_body');
+  const actions = overlay.querySelector('#_sa_cleanup_actions');
+  try {
+    const res = await fetch('/superadmin/storage-cleanup/preview', { credentials: 'include' });
+    const orgs = await res.json();
+    if (!res.ok) { body.innerHTML = `<div style="color:var(--red)">${t('toast.error')}</div>`; return; }
+
+    if (!orgs.length) {
+      body.innerHTML = `<div style="padding:12px 0;color:var(--text3);font-size:13px">${t('superadmin.cleanup_none')}</div>`;
+      return;
+    }
+
+    const totalFiles = orgs.reduce((s, o) => s + o.orphan_files, 0);
+    const totalMb    = orgs.reduce((s, o) => s + o.orphan_size_mb, 0);
+
     body.innerHTML = `
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead>
           <tr style="border-bottom:2px solid var(--border);color:var(--text3);font-size:11px;font-weight:600">
-            <th style="padding:8px 10px;text-align:left">${t('superadmin.col_email')}</th>
-            <th style="padding:8px 10px;text-align:left">${t('superadmin.col_fullname')}</th>
-            <th style="padding:8px 10px;text-align:left">${t('org.role_label')}</th>
-            <th style="padding:8px 10px;text-align:left">${t('superadmin.col_status')}</th>
+            <th style="padding:6px 8px;text-align:left">${t('superadmin.col_name')}</th>
+            <th style="padding:6px 8px;text-align:right">${t('superadmin.cleanup_col_files')}</th>
+            <th style="padding:6px 8px;text-align:right">${t('superadmin.cleanup_col_size')}</th>
           </tr>
         </thead>
         <tbody>
-          ${members.map(m => `
+          ${orgs.map(o => `
             <tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:8px 10px;color:var(--text)">${m.email}${m.is_suspended ? ` <span style="font-size:10px;background:var(--red);color:#fff;border-radius:4px;padding:1px 5px">⏸</span>` : ''}</td>
-              <td style="padding:8px 10px;color:var(--text2)">${m.full_name || '—'}</td>
-              <td style="padding:8px 10px;color:var(--text2)">${roleLabel[m.role] || m.role}</td>
-              <td style="padding:8px 10px"><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;${statusStyle[m.status]}">${statusLabel[m.status]}</span></td>
+              <td style="padding:6px 8px;color:var(--text)">${o.org_name}</td>
+              <td style="padding:6px 8px;text-align:right;color:var(--text2)">${o.orphan_files}</td>
+              <td style="padding:6px 8px;text-align:right;color:var(--text2)">${o.orphan_size_mb} MB</td>
             </tr>`).join('')}
         </tbody>
       </table>`;
+
+    actions.innerHTML = `
+      <button id="_sa_cleanup_close2" class="btn btn-ghost">${t('org.delete_permanent_cancel')}</button>
+      <button id="_sa_cleanup_confirm" class="btn btn-danger">${t('superadmin.cleanup_confirm_btn').replace('{files}', totalFiles).replace('{mb}', totalMb.toFixed(2))}</button>`;
+    overlay.querySelector('#_sa_cleanup_close2').onclick = () => overlay.remove();
+    overlay.querySelector('#_sa_cleanup_confirm').onclick = async (e) => {
+      e.target.disabled = true;
+      try {
+        const delRes = await fetch('/superadmin/storage-cleanup', { method: 'POST', credentials: 'include' });
+        if (!delRes.ok) { showToast(t('toast.error'), 'error'); return; }
+        const d = await delRes.json();
+        showToast(t('storage.cleanup_done').replace('{f}', d.deleted_files).replace('{d}', d.deleted_folders), 'success');
+        overlay.remove();
+      } catch {
+        showToast(t('toast.error'), 'error');
+      }
+    };
   } catch {
-    body.innerHTML = `<div style="padding:20px;text-align:center;color:var(--red)">${t('toast.error')}</div>`;
+    body.innerHTML = `<div style="color:var(--red)">${t('toast.error')}</div>`;
   }
 }
 

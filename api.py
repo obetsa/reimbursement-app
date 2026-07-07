@@ -927,6 +927,16 @@ def superadmin_delete_user(target_user_id):
     if owned_orgs:
         conn.close()
         return jsonify({'error': 'is_org_owner', 'orgs': [o['name'] for o in owned_orgs]}), 409
+    atts = conn.execute(
+        "SELECT file_path FROM attachments WHERE record_id IN (SELECT id FROM records WHERE user_id=%s) AND file_path IS NOT NULL",
+        (target_user_id,)
+    ).fetchall()
+    for att in atts:
+        try:
+            os.remove(os.path.join(UPLOAD_FOLDER, att['file_path'].replace('/', os.sep)))
+        except OSError:
+            pass
+
     conn.execute("DELETE FROM return_events WHERE record_id IN (SELECT id FROM records WHERE user_id=%s)", (target_user_id,))
     conn.execute("DELETE FROM attachments  WHERE record_id IN (SELECT id FROM records WHERE user_id=%s)", (target_user_id,))
     conn.execute("DELETE FROM records WHERE user_id=%s", (target_user_id,))
@@ -951,6 +961,8 @@ def superadmin_list_orgs():
                 WHERE m.org_id=o.id AND m.left_at IS NULL)          AS members_count,
                (SELECT COUNT(*) FROM records r
                 WHERE r.org_id=o.id AND (r.is_deleted=0 OR r.is_deleted IS NULL)) AS records_count,
+               (SELECT COUNT(*) FROM companies c
+                WHERE c.org_id=o.id AND (c.is_deleted=0 OR c.is_deleted IS NULL)) AS companies_count,
                (SELECT COUNT(*) FROM org_members m
                 JOIN users pu ON m.user_id=pu.id
                 WHERE m.org_id=o.id AND m.left_at IS NULL
@@ -1005,6 +1017,102 @@ def superadmin_org_members(org_id):
             'is_suspended': bool(r['is_suspended']),
         })
     return jsonify(result)
+
+
+@app.route('/superadmin/orgs/<org_id>/members', methods=['POST'])
+def superadmin_add_org_member(org_id):
+    conn = get_db()
+    sa_user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+
+    data = request.json or {}
+    target_user_id = (data.get('user_id') or '').strip()
+    role = (data.get('role') or '').strip()
+    if not target_user_id or role not in ('manager', 'user'):
+        conn.close()
+        return jsonify({'error': 'user_id_and_role_required'}), 400
+
+    org = conn.execute("SELECT id FROM organizations WHERE id=%s", (org_id,)).fetchone()
+    if not org:
+        conn.close()
+        return jsonify({'error': 'org_not_found'}), 404
+    user = conn.execute("SELECT id FROM users WHERE id=%s", (target_user_id,)).fetchone()
+    if not user:
+        conn.close()
+        return jsonify({'error': 'user_not_found'}), 404
+
+    existing = conn.execute(
+        "SELECT id, left_at FROM org_members WHERE org_id=%s AND user_id=%s",
+        (org_id, target_user_id)
+    ).fetchone()
+    if existing and existing['left_at'] is None:
+        conn.close()
+        return jsonify({'error': 'already_member'}), 409
+
+    if existing:
+        conn.execute(
+            "UPDATE org_members SET left_at=NULL, role=%s WHERE id=%s",
+            (role, existing['id'])
+        )
+    else:
+        conn.execute(
+            "INSERT INTO org_members (id, org_id, user_id, role) VALUES (%s,%s,%s,%s)",
+            (str(uuid.uuid4()), org_id, target_user_id, role)
+        )
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+@app.route('/superadmin/orgs/<org_id>/members/<member_user_id>/role', methods=['PUT'])
+def superadmin_set_org_member_role(org_id, member_user_id):
+    conn = get_db()
+    sa_user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+
+    new_role = (request.json or {}).get('role')
+    if new_role not in ('manager', 'user'):
+        conn.close()
+        return jsonify({'error': 'invalid_role'}), 400
+
+    member = conn.execute(
+        "SELECT id, role FROM org_members WHERE org_id=%s AND user_id=%s AND left_at IS NULL",
+        (org_id, member_user_id)
+    ).fetchone()
+    if not member:
+        conn.close()
+        return jsonify({'error': 'not_found'}), 404
+    if member['role'] == 'admin':
+        conn.close()
+        return jsonify({'error': 'cannot_change_admin_role'}), 400
+
+    conn.execute("UPDATE org_members SET role=%s WHERE id=%s", (new_role, member['id']))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+@app.route('/superadmin/orgs/<org_id>/members/<member_user_id>', methods=['DELETE'])
+def superadmin_remove_org_member(org_id, member_user_id):
+    conn = get_db()
+    sa_user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+
+    member = conn.execute(
+        "SELECT id, role FROM org_members WHERE org_id=%s AND user_id=%s AND left_at IS NULL",
+        (org_id, member_user_id)
+    ).fetchone()
+    if not member:
+        conn.close()
+        return jsonify({'error': 'not_found'}), 404
+    if member['role'] == 'admin':
+        conn.close()
+        return jsonify({'error': 'cannot_remove_admin'}), 400
+
+    conn.execute("UPDATE org_members SET left_at=now() WHERE id=%s", (member['id'],))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
 
 
 @app.route('/superadmin/stats', methods=['GET'])
@@ -2639,14 +2747,17 @@ def update_record(record_id):
 
                 old_abs = os.path.join(UPLOAD_FOLDER, old_path.replace('/', os.sep))
                 new_abs = os.path.join(UPLOAD_FOLDER, new_path.replace('/', os.sep))
+                moved = False
                 if os.path.exists(old_abs):
                     try:
                         os.makedirs(os.path.dirname(new_abs), exist_ok=True)
                         shutil.move(old_abs, new_abs)
+                        moved = True
                     except Exception:
                         pass
 
-                conn.execute("update attachments set file_path=%s where id=%s", (new_path, att['id']))
+                if moved:
+                    conn.execute("update attachments set file_path=%s where id=%s", (new_path, att['id']))
 
             conn.commit()
 
@@ -2847,9 +2958,13 @@ def serve_attachment(att_id):
     org_id, role, err = require_org(user_id, conn)
     if err: conn.close(); return err
     att = conn.execute(
-        "select a.* from attachments a join records r on a.record_id=r.id where a.id=%s and r.org_id=%s",
+        "select a.*, r.company_id from attachments a join records r on a.record_id=r.id where a.id=%s and r.org_id=%s",
         (att_id, org_id)
     ).fetchone()
+    if att:
+        accessible = get_accessible_companies(user_id, org_id, role, conn)
+        if accessible is not None and att['company_id'] not in accessible:
+            att = None
     conn.close()
 
     if not att or not att['file_path']:
@@ -2866,9 +2981,13 @@ def delete_attachment(att_id):
     org_id, role, err = require_org(user_id, conn, min_role='manager')
     if err: conn.close(); return err
     att = conn.execute(
-        "select a.* from attachments a join records r on a.record_id=r.id where a.id=%s and r.org_id=%s",
+        "select a.*, r.company_id from attachments a join records r on a.record_id=r.id where a.id=%s and r.org_id=%s",
         (att_id, org_id)
     ).fetchone()
+    if att:
+        accessible = get_accessible_companies(user_id, org_id, role, conn)
+        if accessible is not None and att['company_id'] not in accessible:
+            att = None
     if not att:
         conn.close()
         return jsonify({'error': 'Not found'}), 404
@@ -2892,7 +3011,13 @@ def get_gallery():
     conn = get_db()
     org_id, role, err = require_org(user_id, conn)
     if err: conn.close(); return err
-    att_rows = conn.execute('''
+
+    accessible = get_accessible_companies(user_id, org_id, role, conn)
+    if accessible is not None and not accessible:
+        conn.close()
+        return jsonify([])
+
+    query = '''
         select
             a.id, a.file_name, a.file_type, a.file_path, a.created_at,
             r.id as record_id,
@@ -2905,8 +3030,15 @@ def get_gallery():
         left join companies c on r.company_id = c.id
         left join payment_instruments p on r.card_id = p.id
         where r.org_id = %s and r.is_deleted = 0 and a.file_path is not null
-        order by r.date desc, a.created_at desc
-    ''', (org_id,)).fetchall()
+    '''
+    params = [org_id]
+    if accessible is not None:
+        placeholders = ','.join(['%s'] * len(accessible))
+        query += f" and r.company_id IN ({placeholders})"
+        params += accessible
+    query += " order by r.date desc, a.created_at desc"
+
+    att_rows = conn.execute(query, params).fetchall()
     conn.close()
     return jsonify([dict(r) for r in att_rows])
 
@@ -3443,6 +3575,56 @@ def get_profile():
 # STORAGE INFO
 # ══════════════════════════════════════════
 
+def _cleanup_org_files(org_id, conn, dry_run=False):
+    """Знаходить файли data/uploads/ReceiptsManager/{org_id}, яких немає серед
+    attachments.file_path у БД цієї org. dry_run=True — тільки рахує, нічого не чіпає."""
+    db_atts = conn.execute(
+        "select a.file_path from attachments a join records r on a.record_id=r.id "
+        "where r.org_id=%s and a.file_path is not null",
+        (org_id,)
+    ).fetchall()
+    db_paths = {row['file_path'] for row in db_atts}
+
+    orphan_files = 0
+    orphan_size_bytes = 0
+    deleted_folders = 0
+
+    org_dir = os.path.join(UPLOAD_FOLDER, DRIVE_ROOT, org_id)
+    if os.path.exists(org_dir):
+        for dirpath, dirnames, filenames in os.walk(org_dir):
+            for fname in filenames:
+                full_path = os.path.join(dirpath, fname)
+                rel_path  = os.path.relpath(full_path, UPLOAD_FOLDER).replace(os.sep, '/')
+                if rel_path not in db_paths:
+                    if dry_run:
+                        try:
+                            orphan_size_bytes += os.path.getsize(full_path)
+                            orphan_files += 1
+                        except OSError:
+                            pass
+                    else:
+                        try:
+                            os.remove(full_path)
+                            orphan_files += 1
+                        except OSError:
+                            pass
+
+        if not dry_run:
+            protected = {'Unprocessed Imports', 'Backup'}
+            for dirpath, dirnames, filenames in os.walk(org_dir, topdown=False):
+                if os.path.abspath(dirpath) == os.path.abspath(org_dir):
+                    continue
+                if os.path.basename(dirpath) in protected:
+                    continue
+                try:
+                    os.rmdir(dirpath)
+                    deleted_folders += 1
+                except OSError:
+                    pass
+
+    return {'files': orphan_files, 'size_bytes': orphan_size_bytes, 'folders': deleted_folders}
+
+
 @app.route('/storage-cleanup', methods=['POST'])
 def storage_cleanup():
     user_id = get_user_from_token(request)
@@ -3451,53 +3633,25 @@ def storage_cleanup():
     conn = get_db()
     org_id, role, err = require_org(user_id, conn, min_role='admin')
     if err: conn.close(); return err
-    db_atts = conn.execute(
-        "select a.file_path from attachments a join records r on a.record_id=r.id "
-        "where r.org_id=%s and a.file_path is not null",
-        (org_id,)
-    ).fetchall()
+    result = _cleanup_org_files(org_id, conn, dry_run=False)
     conn.close()
-    db_paths = {row['file_path'] for row in db_atts}
-
-    deleted_files   = 0
-    deleted_folders = 0
-
-    if os.path.exists(UPLOAD_FOLDER):
-        for dirpath, dirnames, filenames in os.walk(UPLOAD_FOLDER):
-            for fname in filenames:
-                full_path = os.path.join(dirpath, fname)
-                rel_path  = os.path.relpath(full_path, UPLOAD_FOLDER).replace(os.sep, '/')
-                if rel_path not in db_paths:
-                    try:
-                        os.remove(full_path)
-                        deleted_files += 1
-                    except OSError:
-                        pass
-
-        protected = {'Unprocessed Imports', 'Backup'}
-        for dirpath, dirnames, filenames in os.walk(UPLOAD_FOLDER, topdown=False):
-            if os.path.abspath(dirpath) == os.path.abspath(UPLOAD_FOLDER):
-                continue
-            if os.path.basename(dirpath) in protected:
-                continue
-            try:
-                os.rmdir(dirpath)
-                deleted_folders += 1
-            except OSError:
-                pass
-
-    return jsonify({'deleted_files': deleted_files, 'deleted_folders': deleted_folders})
+    return jsonify({'deleted_files': result['files'], 'deleted_folders': result['folders']})
 
 
 @app.route('/storage-info', methods=['GET'])
 def storage_info():
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn)
+    conn.close()
+    if err: return err
 
     uploads_size = 0
     file_count   = 0
-    if os.path.exists(UPLOAD_FOLDER):
-        for dirpath, dirnames, filenames in os.walk(UPLOAD_FOLDER):
+    org_dir = os.path.join(UPLOAD_FOLDER, DRIVE_ROOT, org_id)
+    if os.path.exists(org_dir):
+        for dirpath, dirnames, filenames in os.walk(org_dir):
             for fname in filenames:
                 try:
                     uploads_size += os.path.getsize(os.path.join(dirpath, fname))
@@ -3505,20 +3659,49 @@ def storage_info():
                 except OSError:
                     pass
 
-    db_size = 0
-    if os.path.exists(DB_PATH):
-        try:
-            db_size = os.path.getsize(DB_PATH)
-        except OSError:
-            pass
-
     return jsonify({
         'uploads_size': uploads_size,
-        'db_size':      db_size,
-        'total_size':   uploads_size + db_size,
+        'total_size':   uploads_size,
         'file_count':   file_count,
     })
 
+
+@app.route('/superadmin/storage-cleanup/preview', methods=['GET'])
+def superadmin_storage_cleanup_preview():
+    conn = get_db()
+    user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+
+    orgs = conn.execute("SELECT id, name FROM organizations ORDER BY name").fetchall()
+    result = []
+    for org in orgs:
+        r = _cleanup_org_files(org['id'], conn, dry_run=True)
+        if r['files'] > 0:
+            result.append({
+                'org_id': org['id'],
+                'org_name': org['name'],
+                'orphan_files': r['files'],
+                'orphan_size_mb': round(r['size_bytes'] / (1024 * 1024), 2),
+            })
+    conn.close()
+    return jsonify(result)
+
+
+@app.route('/superadmin/storage-cleanup', methods=['POST'])
+def superadmin_storage_cleanup():
+    conn = get_db()
+    user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+
+    orgs = conn.execute("SELECT id FROM organizations").fetchall()
+    total_files = 0
+    total_folders = 0
+    for org in orgs:
+        r = _cleanup_org_files(org['id'], conn, dry_run=False)
+        total_files += r['files']
+        total_folders += r['folders']
+    conn.close()
+    return jsonify({'deleted_files': total_files, 'deleted_folders': total_folders})
 
 
 @app.route('/records-stats', methods=['GET'])

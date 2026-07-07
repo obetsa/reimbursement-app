@@ -911,7 +911,7 @@ async function loadOrgMembers() {
           </div>` : ''}
         </div>
         ${orgData.is_owner ? `
-        <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:16px">
+        <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:16px;display:flex;justify-content:flex-end">
           <button onclick="openDeleteOrgModal('${orgData.name.replace(/'/g,"\\'")}') "
             class="btn btn-danger" style="font-size:12px">${t('org.delete_org_btn')}</button>
         </div>` : ''}`;
@@ -4374,8 +4374,8 @@ async function loadStorageInfo() {
     if(!resp.ok) throw new Error();
     const d = await resp.json();
     container.innerHTML = `
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div style="grid-column:1/-1;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;display:flex;align-items:center;gap:16px">
+      <div style="display:grid;grid-template-columns:1fr;gap:10px">
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;display:flex;align-items:center;gap:16px">
           <div style="font-size:28px">💾</div>
           <div>
             <div style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px">${t('storage.total')}</div>
@@ -4386,11 +4386,6 @@ async function loadStorageInfo() {
           <div style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">${t('storage.files')}</div>
           <div style="font-size:20px;font-weight:600;color:var(--text1)">${_formatBytes(d.uploads_size)}</div>
           <div style="font-size:12px;color:var(--text3);margin-top:4px">${d.file_count} ${t('storage.files_unit')}</div>
-        </div>
-        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px">
-          <div style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">${t('storage.db')}</div>
-          <div style="font-size:20px;font-weight:600;color:var(--text1)">${_formatBytes(d.db_size)}</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:4px">${t('storage.db_hint')}</div>
         </div>
       </div>
     `;

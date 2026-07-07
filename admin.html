@@ -73,7 +73,10 @@
     <div id="sa-orgs-content">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
         <div id="superadmin-stats" style="display:flex;gap:12px;flex-wrap:wrap"></div>
-        <button id="sa-btn-new-org" class="btn btn-primary" onclick="openCreateOrgModal()" data-i18n="superadmin.create_org_btn">+ Нова організація</button>
+        <div style="display:flex;gap:8px">
+          <button id="sa-btn-cleanup" class="btn btn-ghost" onclick="openStorageCleanupModal()" data-i18n="superadmin.cleanup_btn">🧹 Перевірити сміття</button>
+          <button id="sa-btn-new-org" class="btn btn-primary" onclick="openCreateOrgModal()" data-i18n="superadmin.create_org_btn">+ Нова організація</button>
+        </div>
       </div>
       <div style="margin-bottom:16px">
         <input id="superadmin-search" type="text"
