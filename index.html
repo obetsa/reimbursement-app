@@ -267,16 +267,12 @@
 
     <div class="nav-divider"></div>
 
-    <div class="nav-section" data-i18n="nav.section_expenses">Витрати</div>
+    <div class="nav-section" data-i18n="nav.section_companies">Компанії</div>
     <div class="nav-item" onclick="showPage('company-expenses', this)">
       <div class="nav-icon">📊</div>
       <span data-i18n="nav.company_expenses">Витрати по компаніях</span>
       <span class="nav-badge" id="cexp-count"></span>
     </div>
-
-    <div class="nav-divider"></div>
-
-    <div class="nav-section" data-i18n="nav.section_settlements">Розрахунки</div>
     <div class="nav-item" onclick="showPage('company-settlements', this)">
       <div class="nav-icon">🔄</div>
       <span data-i18n="nav.company_settlements">Розрахунки між компаніями</span>
@@ -557,6 +553,7 @@
     <div class="topbar">
       <div class="topbar-title" data-i18n="nav.company_expenses">Витрати по компаніях</div>
       <div class="topbar-actions">
+        <button class="btn btn-ghost" onclick="openCexpExportModal()" data-i18n="docs.export">↓ Експорт</button>
         <button class="btn btn-primary" id="cexp-new-btn" onclick="openCexpModal()" data-i18n="cexp.new">+ Новий запис</button>
       </div>
     </div>
@@ -629,6 +626,9 @@
   <div id="page-company-settlements" style="display:none">
     <div class="topbar">
       <div class="topbar-title" data-i18n="nav.company_settlements">Розрахунки між компаніями</div>
+      <div class="topbar-actions">
+        <button class="btn btn-ghost" onclick="openSettleExportModal()" data-i18n="docs.export">↓ Експорт</button>
+      </div>
     </div>
     <div class="content">
       <div class="filters-bar">
@@ -1467,6 +1467,104 @@
       <button class="btn btn-ghost" onclick="doExport('csv')" style="gap:6px" data-i18n="export.csv">📄 CSV</button>
       <button class="btn btn-ghost" onclick="doExport('pdf')" style="gap:6px" data-i18n="export.pdf">📕 PDF</button>
       <button class="btn btn-primary" onclick="doExport('xlsx')" style="gap:6px" data-i18n="export.xlsx">📊 XLSX</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── CEXP EXPORT MODAL ── -->
+<div class="modal-overlay" id="cexp-export-modal-overlay" onclick="if(event.target===this)closeCexpExportModal()">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <div class="modal-title" data-i18n="export.title">Експорт даних</div>
+      <button class="modal-close" onclick="closeCexpExportModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label class="form-label" data-i18n="export.period">Період</label>
+          <select class="form-select" id="cexp-export-period" onchange="onCexpExportPeriodChange()">
+            <option value="all" data-i18n="export.all">Всі записи</option>
+            <option value="custom" data-i18n="export.custom">Вибрати період</option>
+            <option value="this_month" data-i18n="export.this_month">Цей місяць</option>
+            <option value="last_month" data-i18n="export.last_month">Минулий місяць</option>
+            <option value="this_year" data-i18n="export.this_year">Цей рік</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="cexp-export-date-from-group" style="display:none">
+          <label class="form-label" data-i18n="export.from">Від</label>
+          <input class="form-input" type="date" id="cexp-export-date-from">
+        </div>
+        <div class="form-group" id="cexp-export-date-to-group" style="display:none">
+          <label class="form-label" data-i18n="export.to">До</label>
+          <input class="form-input" type="date" id="cexp-export-date-to">
+        </div>
+
+        <div class="form-group full">
+          <label class="form-label" data-i18n="export.status">Статус</label>
+          <select class="form-select" id="cexp-export-status" onchange="updateCexpExportCount()">
+            <option value="all" data-i18n="export.all_statuses">Всі статуси</option>
+            <option value="waiting" data-i18n="status.waiting_full">⏳ Очікує повернення коштів</option>
+            <option value="partial" data-i18n="status.partial_full">🔄 Частково повернуто</option>
+            <option value="done" data-i18n="status.done_full">✔️ Повністю повернуто</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" data-i18n="cexp.paying">Оплатив</label>
+          <select class="form-select" id="cexp-export-paying" onchange="updateCexpExportCount()">
+            <option value="" data-i18n="cexp.filter_paying_placeholder">Хто оплатив</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" data-i18n="cexp.beneficiary">Витрата для</label>
+          <select class="form-select" id="cexp-export-bene" onchange="updateCexpExportCount()">
+            <option value="" data-i18n="cexp.filter_bene_placeholder">Для кого</option>
+          </select>
+        </div>
+
+        <div class="form-group full" id="cexp-export-count-info" style="font-size:13px;color:var(--text3);text-align:center"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeCexpExportModal()" data-i18n="export.cancel">Скасувати</button>
+      <button class="btn btn-ghost" onclick="doCexpExport('csv')" style="gap:6px" data-i18n="export.csv">📄 CSV</button>
+      <button class="btn btn-ghost" onclick="doCexpExport('pdf')" style="gap:6px" data-i18n="export.pdf">📕 PDF</button>
+      <button class="btn btn-primary" onclick="doCexpExport('xlsx')" style="gap:6px" data-i18n="export.xlsx">📊 XLSX</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── SETTLE EXPORT MODAL ── -->
+<div class="modal-overlay" id="settle-export-modal-overlay" onclick="if(event.target===this)closeSettleExportModal()">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <div class="modal-title" data-i18n="export.title">Експорт даних</div>
+      <button class="modal-close" onclick="closeSettleExportModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label" data-i18n="settle.filter_debtor">Хто винен</label>
+          <select class="form-select" id="settle-export-debtor" onchange="updateSettleExportCount()">
+            <option value="" data-i18n="settle.filter_debtor">Хто винен</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" data-i18n="settle.filter_creditor">Кому винен</label>
+          <select class="form-select" id="settle-export-creditor" onchange="updateSettleExportCount()">
+            <option value="" data-i18n="settle.filter_creditor">Кому винен</option>
+          </select>
+        </div>
+
+        <div class="form-group full" id="settle-export-count-info" style="font-size:13px;color:var(--text3);text-align:center"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeSettleExportModal()" data-i18n="export.cancel">Скасувати</button>
+      <button class="btn btn-ghost" onclick="doSettleExport('csv')" style="gap:6px" data-i18n="export.csv">📄 CSV</button>
+      <button class="btn btn-ghost" onclick="doSettleExport('pdf')" style="gap:6px" data-i18n="export.pdf">📕 PDF</button>
+      <button class="btn btn-primary" onclick="doSettleExport('xlsx')" style="gap:6px" data-i18n="export.xlsx">📊 XLSX</button>
     </div>
   </div>
 </div>

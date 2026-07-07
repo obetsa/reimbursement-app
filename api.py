@@ -837,6 +837,23 @@ def superadmin_set_superadmin(target_user_id):
     return jsonify({'ok': True, 'is_superadmin': is_sa})
 
 
+@app.route('/superadmin/users/<target_user_id>/name', methods=['PUT'])
+def superadmin_set_user_name(target_user_id):
+    conn = get_db()
+    user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+    full_name = ((request.json or {}).get('full_name') or '').strip()
+    if not full_name:
+        conn.close()
+        return jsonify({'error': 'full_name_required'}), 400
+    target = conn.execute("SELECT id FROM users WHERE id=%s", (target_user_id,)).fetchone()
+    if not target:
+        conn.close(); return jsonify({'error': 'not_found'}), 404
+    conn.execute("UPDATE users SET full_name=%s WHERE id=%s", (full_name, target_user_id))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True, 'full_name': full_name})
+
+
 @app.route('/superadmin/users/<target_user_id>/reset-password', methods=['POST'])
 def superadmin_reset_user_password(target_user_id):
     conn = get_db()
@@ -3569,6 +3586,22 @@ def get_profile():
         'email':     row['email'] or '',
         'full_name': row['full_name'] or '',
     })
+
+
+@app.route('/profile', methods=['PUT'])
+def update_profile():
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+
+    full_name = ((request.json or {}).get('full_name') or '').strip()
+    if not full_name:
+        return jsonify({'error': 'full_name_required'}), 400
+
+    conn = get_db()
+    conn.execute("UPDATE users SET full_name=%s WHERE id=%s", (full_name, user_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True, 'full_name': full_name})
 
 
 # ══════════════════════════════════════════

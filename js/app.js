@@ -715,7 +715,10 @@ async function loadProfile() {
     container.innerHTML = `
       <div class="profile-row">
         <div class="profile-label">${t('settings.name')}</div>
-        <div class="profile-value">${data.full_name || '—'}</div>
+        <div class="profile-value" style="display:flex;align-items:center;gap:8px">
+          <span>${data.full_name || '—'}</span>
+          <button class="btn btn-ghost" style="font-size:11px;padding:2px 8px" onclick="openChangeNameModal('${(data.full_name || '').replace(/'/g, "\\'")}')">${t('profile.change_name_btn')}</button>
+        </div>
       </div>
       <div class="profile-row">
         <div class="profile-label">${t('settings.email')}</div>
@@ -2071,6 +2074,51 @@ function openRenameOrgModal(currentName) {
   setTimeout(() => { input.focus(); input.select(); }, 50);
 }
 
+function openChangeNameModal(currentName) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:400px;width:100%">
+      <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:16px">${t('profile.change_name_title')}</div>
+      <input id="_change_name_input" type="text" autocomplete="off"
+        style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box;margin-bottom:8px">
+      <div id="_change_name_error" style="font-size:12px;color:var(--red);margin-bottom:8px;display:none"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="_change_name_cancel" class="btn btn-ghost">${t('org.delete_permanent_cancel')}</button>
+        <button id="_change_name_confirm" class="btn btn-primary">${t('form.save')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const input      = overlay.querySelector('#_change_name_input');
+  const errorEl    = overlay.querySelector('#_change_name_error');
+  const cancelBtn  = overlay.querySelector('#_change_name_cancel');
+  const confirmBtn = overlay.querySelector('#_change_name_confirm');
+  input.value = currentName;
+  cancelBtn.onclick = () => overlay.remove();
+  overlay.addEventListener('click', e => { if(e.target === overlay) overlay.remove(); });
+  confirmBtn.onclick = async () => {
+    const full_name = input.value.trim();
+    if(!full_name || full_name === currentName) { overlay.remove(); return; }
+    confirmBtn.disabled = true;
+    errorEl.style.display = 'none';
+    const res = await fetch('/profile', {
+      method: 'PUT', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ full_name }),
+    });
+    if(res.ok) {
+      overlay.remove();
+      showToast(t('profile.change_name_success'), 'success');
+      loadProfile();
+    } else {
+      errorEl.textContent = t('toast.error');
+      errorEl.style.display = '';
+      confirmBtn.disabled = false;
+    }
+  };
+  setTimeout(() => { input.focus(); input.select(); }, 50);
+}
+
 function restoreSettingsTab() {
   const saved = localStorage.getItem('settingsTab') || 'companies';
   const el = document.querySelector(`.settings-nav-item[onclick*="'${saved}'"]`);
@@ -2966,7 +3014,7 @@ function exportCSV(rows, filename) {
   downloadBlob(blob, filename + '.csv');
 }
 
-function exportXLSX(rows, filename) {
+function exportXLSX(rows, filename, colWidths) {
   if(typeof XLSX === 'undefined') {
     showToast(t('toast.xlsx_missing'), 'error');
     return;
@@ -2975,9 +3023,9 @@ function exportXLSX(rows, filename) {
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(rows);
 
-  // Column widths — dynamic based on active fields
-  const activeFields = EXPORT_FIELDS.filter(f => _exportSelection[f.key] !== false);
-  ws['!cols'] = activeFields.map(f => ({wch: f.width || 14}));
+  // Column widths — explicit list, or dynamic based on active document-export fields
+  const widths = colWidths || EXPORT_FIELDS.filter(f => _exportSelection[f.key] !== false).map(f => f.width || 14);
+  ws['!cols'] = widths.map(w => ({wch: w}));
 
   // Style header row (bold)
   const range = XLSX.utils.decode_range(ws['!ref']);
@@ -3005,7 +3053,7 @@ async function loadPdfFont() {
   return _pdfFontBase64;
 }
 
-async function exportPDF(rows, filename) {
+async function exportPDF(rows, filename, colWidths, orientation) {
   if(typeof window.jspdf === 'undefined') {
     showToast(t('toast.pdf_missing'), 'error');
     return;
@@ -3022,7 +3070,7 @@ async function exportPDF(rows, filename) {
   }
 
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const doc = new jsPDF({ orientation: orientation || 'landscape', unit: 'mm', format: 'a4' });
 
   doc.addFileToVFS('Roboto-Regular.ttf', fontBase64);
   doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
@@ -3040,14 +3088,9 @@ async function exportPDF(rows, filename) {
   const head = [rows[0]];
   const body = rows.slice(1);
 
-  doc.autoTable({
-    head,
-    body,
-    startY: 25,
-    styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak', font: 'Roboto' },
-    headStyles: { fillColor: [60, 80, 160], textColor: 255, fontStyle: 'normal', font: 'Roboto' },
-    alternateRowStyles: { fillColor: [245, 246, 250] },
-    columnStyles: {
+  const columnStyles = colWidths
+    ? Object.fromEntries(colWidths.map((w, i) => [i, { cellWidth: w }]))
+    : {
       0: { cellWidth: 18 },
       1: { cellWidth: 18 },
       2: { cellWidth: 30 },
@@ -3063,7 +3106,16 @@ async function exportPDF(rows, filename) {
       12: { cellWidth: 16 },
       13: { cellWidth: 14 },
       14: { cellWidth: 14 },
-    },
+    };
+
+  doc.autoTable({
+    head,
+    body,
+    startY: 25,
+    styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak', font: 'Roboto' },
+    headStyles: { fillColor: [60, 80, 160], textColor: 255, fontStyle: 'normal', font: 'Roboto' },
+    alternateRowStyles: { fillColor: [245, 246, 250] },
+    columnStyles,
     margin: { left: 7, right: 7 },
     didDrawPage: (data) => {
       const pageCount = doc.internal.getNumberOfPages();
@@ -3089,6 +3141,181 @@ function downloadBlob(blob, filename) {
 
 // legacy alias
 function exportData() { openExportModal(); }
+
+// ── EXPORT: Витрати по компаніях ──
+
+function onCexpExportPeriodChange() {
+  const period = document.getElementById('cexp-export-period').value;
+  const isCustom = period === 'custom';
+  document.getElementById('cexp-export-date-from-group').style.display = isCustom ? '' : 'none';
+  document.getElementById('cexp-export-date-to-group').style.display = isCustom ? '' : 'none';
+  updateCexpExportCount();
+}
+
+function getCexpExportRecords() {
+  const period = document.getElementById('cexp-export-period').value;
+  const status = document.getElementById('cexp-export-status').value;
+  const paying = document.getElementById('cexp-export-paying')?.value || '';
+  const bene   = document.getElementById('cexp-export-bene')?.value || '';
+
+  let records = [..._cexpList];
+
+  const now = new Date();
+  if(period === 'this_month') {
+    const y = now.getFullYear(), m = now.getMonth();
+    records = records.filter(r => { const dt = new Date(r.date); return dt.getFullYear() === y && dt.getMonth() === m; });
+  } else if(period === 'last_month') {
+    const ref = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const y = ref.getFullYear(), m = ref.getMonth();
+    records = records.filter(r => { const dt = new Date(r.date); return dt.getFullYear() === y && dt.getMonth() === m; });
+  } else if(period === 'this_year') {
+    records = records.filter(r => new Date(r.date).getFullYear() === now.getFullYear());
+  } else if(period === 'custom') {
+    const from = document.getElementById('cexp-export-date-from').value;
+    const to   = document.getElementById('cexp-export-date-to').value;
+    if(from) records = records.filter(r => r.date >= from);
+    if(to)   records = records.filter(r => r.date <= to);
+  }
+
+  if(status !== 'all') records = records.filter(r => (r.status || 'waiting') === status);
+  if(paying) records = records.filter(r => r.paying_company_id === paying);
+  if(bene)   records = records.filter(r => r.beneficiary_company_id === bene);
+
+  return records;
+}
+
+function updateCexpExportCount() {
+  const records = getCexpExportRecords();
+  const el = document.getElementById('cexp-export-count-info');
+  if(el) el.textContent = `${t('export.count')} ${records.length} ${t('export.records')}`;
+}
+
+function openCexpExportModal() {
+  const opts = _cexpCompanies.filter(c => c.is_active).map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  const payingSel = document.getElementById('cexp-export-paying');
+  if(payingSel) payingSel.innerHTML = `<option value="">${t('cexp.filter_paying_placeholder')}</option>` + opts;
+  const beneSel = document.getElementById('cexp-export-bene');
+  if(beneSel) beneSel.innerHTML = `<option value="">${t('cexp.filter_bene_placeholder')}</option>` + opts;
+
+  document.getElementById('cexp-export-modal-overlay').classList.add('open');
+  lockScroll();
+  updateCexpExportCount();
+}
+
+function closeCexpExportModal() {
+  document.getElementById('cexp-export-modal-overlay').classList.remove('open');
+  unlockScroll();
+}
+
+function buildCexpExportRows(records) {
+  const headers = [
+    t('cexp.col_date'), t('cexp.col_paying'), t('cexp.col_beneficiary'),
+    t('cexp.col_amount'), t('cexp.col_status'), t('cexp.col_note'), t('cexp.col_entered_by'),
+  ];
+  const rows = records.map(r => [
+    formatDate(r.date),
+    r.paying_company_name || '',
+    r.beneficiary_company_name || '',
+    parseFloat(r.amount || 0),
+    getStatusLabel(r.status || 'waiting'),
+    r.note || '',
+    r.entered_by_name || '',
+  ]);
+  return [headers, ...rows];
+}
+
+async function doCexpExport(format) {
+  const records = getCexpExportRecords();
+  if(!records.length) { showToast(t('toast.no_data'), 'error'); return; }
+
+  const rows = buildCexpExportRows(records);
+  const dateStr = new Date().toISOString().split('T')[0];
+  const filename = `company-expenses-${dateStr}`;
+
+  if(format === 'csv') {
+    exportCSV(rows, filename);
+  } else if(format === 'pdf') {
+    await exportPDF(rows, filename, [15, 28, 28, 15, 30, 30, 20], 'portrait');
+  } else {
+    exportXLSX(rows, filename, [12, 22, 22, 10, 22, 30, 18]);
+  }
+
+  closeCexpExportModal();
+  showToast(`${t('toast.exported')} ${records.length} ${t('export.records')} ✓`, 'success');
+}
+
+// ── EXPORT: Розрахунки між компаніями ──
+
+async function openSettleExportModal() {
+  let companies = [];
+  try {
+    const resp = await fetch('/companies', { credentials: 'include' });
+    companies = resp.ok ? await resp.json() : [];
+  } catch(e) {}
+  const opts = companies.filter(c => c.is_active).map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  const debtorSel = document.getElementById('settle-export-debtor');
+  if(debtorSel) debtorSel.innerHTML = `<option value="">${t('settle.filter_debtor')}</option>` + opts;
+  const creditorSel = document.getElementById('settle-export-creditor');
+  if(creditorSel) creditorSel.innerHTML = `<option value="">${t('settle.filter_creditor')}</option>` + opts;
+
+  document.getElementById('settle-export-modal-overlay').classList.add('open');
+  lockScroll();
+  updateSettleExportCount();
+}
+
+function closeSettleExportModal() {
+  document.getElementById('settle-export-modal-overlay').classList.remove('open');
+  unlockScroll();
+}
+
+function getSettleExportPairs() {
+  const debtor   = document.getElementById('settle-export-debtor')?.value || '';
+  const creditor = document.getElementById('settle-export-creditor')?.value || '';
+  let pairs = [..._settleList];
+  if(debtor)   pairs = pairs.filter(r => r.debtor_id === debtor);
+  if(creditor) pairs = pairs.filter(r => r.creditor_id === creditor);
+  return pairs;
+}
+
+function updateSettleExportCount() {
+  const pairs = getSettleExportPairs();
+  const el = document.getElementById('settle-export-count-info');
+  if(el) el.textContent = `${t('export.count')} ${pairs.length} ${t('export.records')}`;
+}
+
+function buildSettleExportRows(pairs) {
+  const headers = [t('settle.debtor'), t('settle.creditor'), t('settle.open'), t('settle.total'), t('settle.returned'), t('settle.count')];
+  const fmt = v => parseFloat(v || 0).toFixed(2);
+  const rows = pairs.map(r => [
+    r.debtor_name || '',
+    r.creditor_name || '',
+    fmt(r.open_amount),
+    fmt(r.total_amount),
+    fmt(r.total_returned),
+    r.expense_count,
+  ]);
+  return [headers, ...rows];
+}
+
+async function doSettleExport(format) {
+  const pairs = getSettleExportPairs();
+  if(!pairs.length) { showToast(t('toast.no_data'), 'error'); return; }
+
+  const rows = buildSettleExportRows(pairs);
+  const dateStr = new Date().toISOString().split('T')[0];
+  const filename = `company-settlements-${dateStr}`;
+
+  if(format === 'csv') {
+    exportCSV(rows, filename);
+  } else if(format === 'pdf') {
+    await exportPDF(rows, filename, [32, 32, 20, 20, 20, 16], 'portrait');
+  } else {
+    exportXLSX(rows, filename, [35, 35, 22, 22, 22, 18]);
+  }
+
+  closeSettleExportModal();
+  showToast(`${t('toast.exported')} ${pairs.length} ${t('export.records')} ✓`, 'success');
+}
 
 // ── BADGES ──
 async function updateBadges() {
@@ -3803,12 +4030,12 @@ function renderCompaniesList() {
   const list = document.getElementById('companies-list');
   if(!list) return;
   const items = companiesCache.slice().reverse().map(c => `
-    <div class="settings-item ${!c.is_active ? 'deactivated' : ''}">
+    <div class="settings-item ${!c.is_active ? 'deactivated' : ''}" style="cursor:pointer" onclick="openCompanyBalanceModal('${c.id}','${c.name.replace(/'/g, "\\'")}')">
       <div class="settings-item-icon">🏢</div>
       <div class="settings-item-info">
         <div class="settings-item-name">${c.name}</div>
       </div>
-      <div class="settings-item-actions">
+      <div class="settings-item-actions" onclick="event.stopPropagation()">
         ${canWrite() ? `<button class="icon-btn" title="${t('detail.edit')}" onclick="openCompanyModal('${c.id}')">✏️</button>
         <button class="icon-btn" title="${c.is_active ? t('btn.deactivate') : t('btn.activate')}"
           onclick="toggleCompanyActive('${c.id}', ${c.is_active})">
@@ -4880,6 +5107,14 @@ function _settleRender() {
       <td style="text-align:center;color:var(--text3);font-size:12px"><span class="settle-mobile-label">${t('settle.count')}: </span>${countLink}</td>
     </tr>`;
   }).join('');
+}
+
+async function openCompanyBalanceModal(companyId, companyName) {
+  try {
+    const resp = await fetch('/company-settlements', { credentials: 'include' });
+    _settleList = resp.ok ? await resp.json() : [];
+  } catch(e) { _settleList = []; }
+  openSettleCompanyModal(companyId, companyName);
 }
 
 function openSettleCompanyModal(companyId, companyName) {

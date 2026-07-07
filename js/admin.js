@@ -403,10 +403,13 @@ async function openUserDetailModal(userId) {
         <div style="font-size:12px;color:var(--text3);margin-bottom:2px">Email</div>
         <div style="font-size:14px;font-weight:600;color:var(--text)">${u.email}</div>
       </div>
-      ${u.full_name ? `<div style="margin-bottom:16px">
+      <div style="margin-bottom:16px">
         <div style="font-size:12px;color:var(--text3);margin-bottom:2px">${t('superadmin.col_fullname')}</div>
-        <div style="font-size:13px;color:var(--text2)">${u.full_name}</div>
-      </div>` : ''}
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:13px;color:var(--text2)">${u.full_name || '—'}</span>
+          <button class="btn btn-ghost" style="font-size:11px;padding:2px 8px" onclick="openChangeUserNameModal('${u.id}','${(u.full_name || '').replace(/'/g, "\\'")}')">${t('profile.change_name_btn')}</button>
+        </div>
+      </div>
       <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
         <div>
           <div style="font-size:12px;color:var(--text3);margin-bottom:2px">${t('superadmin.col_status')}</div>
@@ -459,6 +462,53 @@ async function openUserDetailModal(userId) {
   // Close on backdrop click
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   document.body.appendChild(overlay);
+}
+
+function openChangeUserNameModal(userId, currentName) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:400px;width:100%">
+      <div style="font-size:15px;font-weight:600;color:var(--text1);margin-bottom:16px">${t('profile.change_name_title')}</div>
+      <input id="_change_uname_input" type="text" autocomplete="off"
+        style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg3);color:var(--text1);font-size:13px;box-sizing:border-box;margin-bottom:8px">
+      <div id="_change_uname_error" style="font-size:12px;color:var(--red);margin-bottom:8px;display:none"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="_change_uname_cancel" class="btn btn-ghost">${t('org.delete_permanent_cancel')}</button>
+        <button id="_change_uname_confirm" class="btn btn-primary">${t('form.save')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const input      = overlay.querySelector('#_change_uname_input');
+  const errorEl    = overlay.querySelector('#_change_uname_error');
+  const cancelBtn  = overlay.querySelector('#_change_uname_cancel');
+  const confirmBtn = overlay.querySelector('#_change_uname_confirm');
+  input.value = currentName;
+  cancelBtn.onclick = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  confirmBtn.onclick = async () => {
+    const full_name = input.value.trim();
+    if (!full_name || full_name === currentName) { overlay.remove(); return; }
+    confirmBtn.disabled = true;
+    errorEl.style.display = 'none';
+    const res = await fetch(`/superadmin/users/${userId}/name`, {
+      method: 'PUT', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ full_name }),
+    });
+    if (res.ok) {
+      overlay.remove();
+      showToast(t('profile.change_name_success'), 'success');
+      document.querySelector('.ud-overlay')?.remove();
+      openUserDetailModal(userId);
+      loadSAUsers();
+    } else {
+      errorEl.textContent = t('toast.error');
+      errorEl.style.display = '';
+      confirmBtn.disabled = false;
+    }
+  };
+  setTimeout(() => { input.focus(); input.select(); }, 50);
 }
 
 async function superadminToggleSA(userId, isSA, checkbox) {
