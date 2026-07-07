@@ -516,7 +516,7 @@
     <div class="topbar">
       <div class="topbar-title" data-i18n="nav.trash">Корзина</div>
       <div class="topbar-actions">
-        <button class="btn btn-ghost" style="color:var(--red)" onclick="emptyTrash()" data-i18n="trash.clear">Очистити корзину</button>
+        <button class="btn btn-ghost" id="trash-clear-btn" style="color:var(--red)" onclick="emptyTrash()" data-i18n="trash.clear">Очистити корзину</button>
       </div>
     </div>
     <div class="content">
@@ -660,6 +660,9 @@
           <tbody id="settle-tbody"></tbody>
         </table>
       </div>
+
+      <!-- CARDS (тільки мобільний, керується CSS) -->
+      <div id="settle-cards-view" class="cards-grid" style="display:none"></div>
 
       <div id="settle-empty" style="display:none;text-align:center;padding:64px;color:var(--text3);font-size:13px" data-i18n="settle.no_data">Розрахунків ще немає</div>
     </div>

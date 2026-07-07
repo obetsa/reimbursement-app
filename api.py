@@ -2370,10 +2370,20 @@ def get_companies_trash():
     conn = get_db()
     org_id, role, err = require_org(user_id, conn)
     if err: conn.close(); return err
-    rows = conn.execute(
-        "select * from companies where org_id=%s and is_deleted=1 order by deleted_at desc",
-        (org_id,)
-    ).fetchall()
+    accessible = get_accessible_companies(user_id, org_id, role, conn)
+    if accessible is None:
+        rows = conn.execute(
+            "select * from companies where org_id=%s and is_deleted=1 order by deleted_at desc",
+            (org_id,)
+        ).fetchall()
+    elif not accessible:
+        rows = []
+    else:
+        placeholders = ','.join(['%s'] * len(accessible))
+        rows = conn.execute(
+            f"select * from companies where org_id=%s and id IN ({placeholders}) and is_deleted=1 order by deleted_at desc",
+            [org_id] + accessible
+        ).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
 
@@ -2384,6 +2394,10 @@ def restore_company(company_id):
     conn = get_db()
     org_id, role, err = require_org(user_id, conn, min_role='manager')
     if err: conn.close(); return err
+    accessible = get_accessible_companies(user_id, org_id, role, conn)
+    if accessible is not None and company_id not in accessible:
+        conn.close()
+        return jsonify({'error': 'forbidden'}), 403
     conn.execute(
         "update companies set is_deleted=0, deleted_at=null where id=%s and org_id=%s",
         (company_id, org_id)
@@ -2397,7 +2411,7 @@ def permanent_delete_company(company_id):
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
     conn = get_db()
-    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    org_id, role, err = require_org(user_id, conn, min_role='admin')
     if err: conn.close(); return err
     exists = conn.execute(
         "select id from companies where id=%s and org_id=%s", (company_id, org_id)
@@ -2500,10 +2514,16 @@ def get_instruments_trash():
     conn = get_db()
     org_id, role, err = require_org(user_id, conn)
     if err: conn.close(); return err
-    rows = conn.execute(
-        "select * from payment_instruments where org_id=%s and is_deleted=1 order by deleted_at desc",
-        (org_id,)
-    ).fetchall()
+    if role == 'admin':
+        rows = conn.execute(
+            "select * from payment_instruments where org_id=%s and is_deleted=1 order by deleted_at desc",
+            (org_id,)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "select * from payment_instruments where org_id=%s and user_id=%s and is_deleted=1 order by deleted_at desc",
+            (org_id, user_id)
+        ).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
 
@@ -2514,6 +2534,14 @@ def restore_instrument(inst_id):
     conn = get_db()
     org_id, role, err = require_org(user_id, conn, min_role='manager')
     if err: conn.close(); return err
+    if role != 'admin':
+        owned = conn.execute(
+            "select id from payment_instruments where id=%s and org_id=%s and user_id=%s",
+            (inst_id, org_id, user_id)
+        ).fetchone()
+        if not owned:
+            conn.close()
+            return jsonify({'error': 'forbidden'}), 403
     conn.execute(
         "update payment_instruments set is_deleted=0, deleted_at=null where id=%s and org_id=%s",
         (inst_id, org_id)
@@ -2527,7 +2555,7 @@ def permanent_delete_instrument(inst_id):
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
     conn = get_db()
-    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    org_id, role, err = require_org(user_id, conn, min_role='admin')
     if err: conn.close(); return err
     conn.execute("delete from payment_instruments where id=%s and org_id=%s", (inst_id, org_id))
     conn.commit()
@@ -2794,7 +2822,7 @@ def delete_record_permanent(record_id):
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
     conn = get_db()
-    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    org_id, role, err = require_org(user_id, conn, min_role='admin')
     if err: conn.close(); return err
 
     exists = conn.execute(
@@ -3299,7 +3327,7 @@ def permanent_delete_company_expense(exp_id):
     user_id = get_user_from_token(request)
     if not user_id: return jsonify({'error': 'Unauthorized'}), 401
     conn = get_db()
-    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    org_id, role, err = require_org(user_id, conn, min_role='admin')
     if err: conn.close(); return err
     conn.execute("DELETE FROM company_expenses WHERE id=%s AND org_id=%s", (exp_id, org_id))
     conn.commit()

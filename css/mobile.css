@@ -48,7 +48,9 @@
 
   /* ── MAIN ── */
   .main { margin-left: 60px; }
-  .topbar { padding: 0 12px; height: 56px; }
+  .topbar { padding: 8px 12px; height: auto; min-height: 56px; }
+  .topbar-title { font-size: 14px; line-height: 1.3; }
+  .topbar-actions .btn { padding: 5px 10px; font-size: 12px; gap: 4px; }
   .content { padding: 12px; }
   .dashboard .content { padding: 12px; }
 
@@ -66,7 +68,7 @@
   .card { padding: 12px 14px; }
   .section-title { font-size: 11px; margin-bottom: 8px; }
 
-  .company-row { padding: 7px 0; }
+  .company-row { padding: 7px 8px; margin: 0 -8px; }
   .company-name { font-size: 12px; }
   .company-amount { font-size: 12px; }
   .company-dot { width: 7px; height: 7px; }
@@ -175,20 +177,23 @@
   .export-field-chip { font-size: 10px; padding: 2px 7px; }
   .verify-banner { font-size: 12px; padding: 10px 12px; }
 
-  /* settings-item → картка на мобільному */
-  #companies-list .settings-section { border-radius: var(--radius-sm); }
-  #companies-list .settings-item { background: var(--bg3); border-bottom: none; border-top: 1px solid var(--border); }
-  #companies-list .settings-item:first-child { border-top: none; }
-  #companies-list .settings-item:hover { background: var(--bg4); }
-  #companies-list .settings-item-icon { background: var(--bg2); }
-  #companies-list .icon-btn { background: var(--bg2); border-color: var(--border2); }
-
-  #instruments-list { display: flex; flex-direction: column; gap: 12px; }
-  #instruments-list .settings-section { border-radius: var(--radius-sm); }
-  #instruments-list .settings-item { background: var(--bg3); border-bottom: none; border-top: 1px solid var(--border); }
-  #instruments-list .settings-item:first-child { border-top: none; }
+  /* settings-item → окрема картка на мобільному (companies + instruments), а не суцільний список */
+  #companies-list .settings-section,
+  #instruments-list .settings-section { background: transparent; border: none; padding: 0; }
+  #companies-list .settings-item,
+  #instruments-list .settings-item {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-bottom: 8px;
+  }
+  #companies-list .settings-item:last-child,
+  #instruments-list .settings-item:last-child { margin-bottom: 0; }
+  #companies-list .settings-item:hover,
   #instruments-list .settings-item:hover { background: var(--bg4); }
+  #companies-list .settings-item-icon,
   #instruments-list .settings-item-icon { background: var(--bg2); }
+  #companies-list .icon-btn,
   #instruments-list .icon-btn { background: var(--bg2); border-color: var(--border2); }
   #trash-list { display: flex; flex-direction: column; gap: 7px; }
   #trash-list .card { display: flex; flex-direction: column; gap: 9px; padding: 10px; }
@@ -224,7 +229,12 @@
   #settle-filter-debtor,
   #settle-filter-creditor { flex: 1 1 100%; min-width: 0; }
 
-  /* table → картки */
+  /* Справжні картки замість таблиці (settle-cards-view, окремий рендер у JS: _settleRender()) */
+  #settle-table-wrap { display: none; }
+  #settle-cards-view { display: grid; }
+
+  /* Старий "таблиця→flex" підхід — більше не активний на мобільному (#settle-table-wrap
+     схований правилом вище), лишено закоментованим на випадок відкату
   #settle-table-wrap { overflow-x: unset; }
   #settle-table-wrap table { min-width: unset; display: block; }
   #settle-table-wrap thead { display: none; }
@@ -241,17 +251,14 @@
     gap: 0;
   }
 
-  /* Боржник */
   #settle-table-wrap td:nth-child(1) { font-size: 13px; font-weight: 600; padding: 0; flex-shrink: 0; }
-  /* → */
   #settle-table-wrap td:nth-child(2) { padding: 0 5px; font-size: 11px; color: var(--text3); flex-shrink: 0; }
-  /* Кредитор */
   #settle-table-wrap td:nth-child(3) { flex: 1; font-size: 12px; padding: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 40px; }
-  /* Відкрито — справа */
   #settle-table-wrap td:nth-child(4) { margin-left: auto; padding: 0 0 0 8px; font-size: 14px !important; flex-shrink: 0; text-align: right !important; }
 
-  /* Другий рядок: загалом + кількість */
-  #settle-table-wrap td:nth-child(5) {
+  #settle-table-wrap .settle-row-break { display: block; flex-basis: 100%; width: 0; height: 0; padding: 0; margin: 0; }
+
+  #settle-table-wrap td:nth-child(6) {
     width: 50%;
     padding: 6px 0 0 !important;
     margin-top: 6px;
@@ -260,8 +267,8 @@
     color: var(--text3) !important;
     text-align: left !important;
   }
-  #settle-table-wrap td:nth-child(6) { display: none !important; }
-  #settle-table-wrap td:nth-child(7) {
+  #settle-table-wrap td:nth-child(7) { display: none !important; }
+  #settle-table-wrap td:nth-child(8) {
     width: 50%;
     padding: 6px 0 0 !important;
     margin-top: 6px;
@@ -272,6 +279,7 @@
   }
 
   #settle-table-wrap .settle-mobile-label { display: inline; font-weight: 400; }
+  */
 
   /* ── GALLERY ── */
   .gallery-list { padding: 4px 6px; }

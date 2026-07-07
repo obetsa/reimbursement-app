@@ -3763,60 +3763,72 @@ async function loadAndRenderTrash() {
   }
   const typeIcon = { private_card: '💳', company_card: '🏢', cash: '💵' };
   const fmt = v => parseFloat(v || 0).toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const isAdmin = currentOrg && currentOrg.role === 'admin';
+  const canRestore = currentOrg && currentOrg.role !== 'user';
+
+  const clearBtn = document.getElementById('trash-clear-btn');
+  if (clearBtn) clearBtn.style.display = isAdmin ? '' : 'none';
 
   const sectionLabel = title => `<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin:16px 0 6px">${title}</div>`;
   const card = html => `<div class="card" style="margin-bottom:12px">${html}</div>`;
+  const permBtn = (title, onclick) => isAdmin
+    ? `<button class="icon-btn danger" title="${title}" onclick="${onclick}">✕</button>`
+    : '';
+  const restoreBtn = onclick => canRestore
+    ? `<button class="btn btn-ghost" style="font-size:12px" onclick="${onclick}">${t('trash.restore')}</button>`
+    : '';
 
   let html = '';
 
-  // ── Документи ──
-  const hasDocsItems = companies.length || instruments.length || records.length;
-  if(hasDocsItems) {
+  // ── Документи (тільки записи) ──
+  if(records.length) {
     html += sectionLabel(t('nav.documents'));
-    let docsHtml = '';
-    if(companies.length) {
-      docsHtml += companies.map(c => `
-        <div class="settings-item">
-          <div class="settings-item-icon" style="opacity:0.5">🏢</div>
-          <div class="settings-item-info">
-            <div class="settings-item-name" style="opacity:0.6">${c.name}</div>
-            <div class="settings-item-sub">${t('table.company')}</div>
-          </div>
-          <div class="settings-item-actions">
-            <button class="btn btn-ghost" style="font-size:12px" onclick="restoreCompany('${c.id}')">${t('trash.restore')}</button>
-            <button class="icon-btn danger" title="${t('trash.delete_perm')}" onclick="permanentDeleteCompany('${c.id}')">✕</button>
-          </div>
-        </div>`).join('');
-    }
-    if(instruments.length) {
-      docsHtml += instruments.map(i => `
-        <div class="settings-item">
-          <div class="settings-item-icon" style="opacity:0.5">${typeIcon[i.type] || '💳'}</div>
-          <div class="settings-item-info">
-            <div class="settings-item-name" style="opacity:0.6">${i.name}</div>
-            <div class="settings-item-sub">${t('settings.instrument_single')}</div>
-          </div>
-          <div class="settings-item-actions">
-            <button class="btn btn-ghost" style="font-size:12px" onclick="restoreInstrument('${i.id}')">${t('trash.restore')}</button>
-            <button class="icon-btn danger" title="${t('trash.delete_perm')}" onclick="permanentDeleteInstrument('${i.id}')">✕</button>
-          </div>
-        </div>`).join('');
-    }
-    if(records.length) {
-      docsHtml += records.map(r => `
-        <div class="settings-item">
-          <div class="settings-item-icon" style="opacity:0.5">📄</div>
-          <div class="settings-item-info">
-            <div class="settings-item-name" style="opacity:0.6">${r.title}</div>
-            <div class="settings-item-sub">${formatDate(r.date)} · €${r.amount.toFixed(2)} · ${r.company}</div>
-          </div>
-          <div class="settings-item-actions">
-            <button class="btn btn-ghost" style="font-size:12px" onclick="restoreRecord('${r.id}', '${r.status}')">${t('trash.restore')}</button>
-            <button class="icon-btn danger" title="${t('trash.delete_perm')}" onclick="permanentDelete('${r.id}')">✕</button>
-          </div>
-        </div>`).join('');
-    }
-    html += card(docsHtml);
+    html += card(records.map(r => `
+      <div class="settings-item">
+        <div class="settings-item-icon" style="opacity:0.5">📄</div>
+        <div class="settings-item-info">
+          <div class="settings-item-name" style="opacity:0.6">${r.title}</div>
+          <div class="settings-item-sub">${formatDate(r.date)} · €${r.amount.toFixed(2)} · ${r.company}</div>
+        </div>
+        <div class="settings-item-actions">
+          ${restoreBtn(`restoreRecord('${r.id}', '${r.status}')`)}
+          ${permBtn(t('trash.delete_perm'), `permanentDelete('${r.id}')`)}
+        </div>
+      </div>`).join(''));
+  }
+
+  // ── Компанії ──
+  if(companies.length) {
+    html += sectionLabel(t('settings.companies'));
+    html += card(companies.map(c => `
+      <div class="settings-item">
+        <div class="settings-item-icon" style="opacity:0.5">🏢</div>
+        <div class="settings-item-info">
+          <div class="settings-item-name" style="opacity:0.6">${c.name}</div>
+          <div class="settings-item-sub">${t('table.company')}</div>
+        </div>
+        <div class="settings-item-actions">
+          ${restoreBtn(`restoreCompany('${c.id}')`)}
+          ${permBtn(t('trash.delete_perm'), `permanentDeleteCompany('${c.id}')`)}
+        </div>
+      </div>`).join(''));
+  }
+
+  // ── Платіжні інструменти ──
+  if(instruments.length) {
+    html += sectionLabel(t('settings.payments'));
+    html += card(instruments.map(i => `
+      <div class="settings-item">
+        <div class="settings-item-icon" style="opacity:0.5">${typeIcon[i.type] || '💳'}</div>
+        <div class="settings-item-info">
+          <div class="settings-item-name" style="opacity:0.6">${i.name}</div>
+          <div class="settings-item-sub">${t('settings.instrument_single')}</div>
+        </div>
+        <div class="settings-item-actions">
+          ${restoreBtn(`restoreInstrument('${i.id}')`)}
+          ${permBtn(t('trash.delete_perm'), `permanentDeleteInstrument('${i.id}')`)}
+        </div>
+      </div>`).join(''));
   }
 
   // ── Витрати по компаніях ──
@@ -3833,8 +3845,8 @@ async function loadAndRenderTrash() {
             <div class="settings-item-sub">${formatDate(ce.date)} · ${fmt(ce.amount)}</div>
           </div>
           <div class="settings-item-actions">
-            <button class="btn btn-ghost" style="font-size:12px" onclick="restoreCexp('${ce.id}')">${t('trash.restore')}</button>
-            <button class="icon-btn danger" title="${t('trash.delete_perm')}" onclick="permanentDeleteCexp('${ce.id}')">✕</button>
+            ${restoreBtn(`restoreCexp('${ce.id}')`)}
+            ${permBtn(t('trash.delete_perm'), `permanentDeleteCexp('${ce.id}')`)}
           </div>
         </div>`;
     }).join(''));
@@ -4695,6 +4707,8 @@ let _cexpMembers = [];
 let _cexpPairFilter = null;  // {a, b} — unordered пара company id (з "Розрахунків"), або null
 
 async function loadCompanyExpenses() {
+  const newBtn = document.getElementById('cexp-new-btn');
+  if (newBtn) newBtn.style.display = _cexpCanEdit() ? '' : 'none';
   _cexpPairFilter = null;
   const pairBanner = document.getElementById('cexp-pair-banner');
   if (pairBanner) pairBanner.style.display = 'none';
@@ -5069,22 +5083,25 @@ function settleApplyFilter() {
 }
 
 function _settleRender() {
-  const tbody = document.getElementById('settle-tbody');
-  const empty = document.getElementById('settle-empty');
-  const wrap  = document.getElementById('settle-table-wrap');
+  const tbody     = document.getElementById('settle-tbody');
+  const empty     = document.getElementById('settle-empty');
+  const wrap      = document.getElementById('settle-table-wrap');
+  const cardsView = document.getElementById('settle-cards-view');
   if (!tbody) return;
 
   if (_settleFiltered.length === 0) {
-    if (wrap)  wrap.style.display  = 'none';
-    if (empty) empty.style.display = '';
+    if (wrap)      wrap.style.display  = 'none';
+    if (cardsView) cardsView.style.display = 'none';
+    if (empty)     empty.style.display = '';
     return;
   }
-  if (wrap)  wrap.style.display  = '';
-  if (empty) empty.style.display = 'none';
+  if (wrap)      wrap.style.display  = '';
+  if (cardsView) cardsView.style.display = '';
+  if (empty)     empty.style.display = 'none';
 
   const fmt = v => parseFloat(v || 0).toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  tbody.innerHTML = _settleFiltered.map(r => {
+  const built = _settleFiltered.map(r => {
     const isSettled = r.open_amount === 0;
     const openCell = isSettled
       ? `<span class="badge badge-done">${t('settle.settled')}</span>`
@@ -5097,16 +5114,36 @@ function _settleRender() {
     const debtorNameEsc = (r.debtor_name || '').replace(/'/g, "\\'");
     const creditorNameEsc = (r.creditor_name || '').replace(/'/g, "\\'");
     const countLink = `<span class="settle-company-link" onclick="cexpFilterByPair('${r.debtor_id}','${r.creditor_id}','${debtorNameEsc}','${creditorNameEsc}')">${r.expense_count}</span>`;
-    return `<tr>
+
+    const tr = `<tr>
       <td>${debtorLink}</td>
       <td style="text-align:center;color:var(--text3)">→</td>
       <td>${creditorLink} ${netBadge}</td>
       <td style="text-align:center">${openCell}</td>
+      <td class="settle-row-break"></td>
       <td style="text-align:center;font-family:'DM Mono',monospace;color:var(--text2);font-size:13px"><span class="settle-mobile-label">${t('settle.total')}: </span>${fmt(r.total_amount)}</td>
       <td style="text-align:center;font-family:'DM Mono',monospace;color:var(--text3);font-size:13px"><span class="settle-mobile-label">${t('settle.returned')}: </span>${fmt(r.total_returned)}</td>
       <td style="text-align:center;color:var(--text3);font-size:12px"><span class="settle-mobile-label">${t('settle.count')}: </span>${countLink}</td>
     </tr>`;
-  }).join('');
+
+    const card = `<div class="doc-card">
+      <div class="doc-card-top">
+        <div class="doc-card-title">${debtorLink} <span style="color:var(--text3);font-size:11px">→</span> ${creditorLink} ${netBadge}</div>
+      </div>
+      <div class="doc-card-meta">
+        <span class="meta-chip">${t('settle.total')}: ${fmt(r.total_amount)}</span>
+        <span class="meta-chip">${t('settle.count')}: ${countLink}</span>
+      </div>
+      <div class="doc-card-footer">
+        <div class="doc-card-amount">${openCell}</div>
+      </div>
+    </div>`;
+
+    return { tr, card };
+  });
+
+  tbody.innerHTML = built.map(b => b.tr).join('');
+  if (cardsView) cardsView.innerHTML = built.map(b => b.card).join('');
 }
 
 async function openCompanyBalanceModal(companyId, companyName) {
