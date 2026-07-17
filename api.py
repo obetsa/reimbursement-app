@@ -3206,7 +3206,17 @@ def create_company_expense():
     conn = get_db()
     org_id, role, err = require_org(user_id, conn, min_role='manager')
     if err: conn.close(); return err
-    data = request.json
+    data = request.json or {}
+
+    if not data.get('date'):
+        conn.close()
+        return jsonify({'error': 'missing_fields', 'fields': ['date']}), 400
+    try:
+        amount = float(data.get('amount') if data.get('amount') is not None else 0)
+        returned_amount = float(data.get('returned_amount') if data.get('returned_amount') is not None else 0)
+    except (TypeError, ValueError):
+        conn.close()
+        return jsonify({'error': 'invalid_amount'}), 400
 
     if role != 'admin':
         company_ids = _get_accessible_company_ids(user_id, org_id, conn)
@@ -3224,11 +3234,11 @@ def create_company_expense():
         (exp_id, org_id, data['date'],
          data.get('paying_company_id') or None,
          data.get('beneficiary_company_id') or None,
-         data.get('amount', 0),
+         amount,
          data.get('note') or None,
          data.get('entered_by') or None,
          data.get('status', 'waiting'),
-         data.get('returned_amount', 0),
+         returned_amount,
          user_id)
     )
     conn.commit()
@@ -3249,7 +3259,17 @@ def update_company_expense(exp_id):
     ).fetchone()
     if not row: conn.close(); return jsonify({'error': 'not_found'}), 404
 
-    data = request.json
+    data = request.json or {}
+
+    if not data.get('date'):
+        conn.close()
+        return jsonify({'error': 'missing_fields', 'fields': ['date']}), 400
+    try:
+        amount = float(data.get('amount') if data.get('amount') is not None else 0)
+        returned_amount = float(data.get('returned_amount') if data.get('returned_amount') is not None else 0)
+    except (TypeError, ValueError):
+        conn.close()
+        return jsonify({'error': 'invalid_amount'}), 400
 
     if role != 'admin':
         company_ids = _get_accessible_company_ids(user_id, org_id, conn)
@@ -3267,11 +3287,11 @@ def update_company_expense(exp_id):
         (data['date'],
          data.get('paying_company_id') or None,
          data.get('beneficiary_company_id') or None,
-         data.get('amount', 0),
+         amount,
          data.get('note') or None,
          data.get('entered_by') or None,
          data.get('status', 'waiting'),
-         data.get('returned_amount', 0),
+         returned_amount,
          user_id, exp_id, org_id)
     )
     conn.commit()
