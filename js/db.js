@@ -239,6 +239,29 @@ async function deleteAttachmentDB(id) {
   return await apiDelete('/attachments/' + id);
 }
 
+// ── COMPANY-EXPENSE ATTACHMENTS ──
+async function uploadCexpAttachment(cexpId, file) {
+  const token = localStorage.getItem('auth_token');
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch(API_URL + '/company-expenses/' + cexpId + '/attachments', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + token },
+    body: formData
+  });
+  if(!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    const e = new Error(err.error || res.statusText);
+    e.data = err;
+    throw e;
+  }
+  return res.json();
+}
+
+async function deleteCexpAttachmentDB(id) {
+  return await apiDelete('/cexp-attachments/' + id);
+}
+
 async function deleteReturnEventDB(eventId, recordId) {
   await apiDelete('/returns/' + eventId);
   const doc = sampleDocs.find(d => d.id === recordId);

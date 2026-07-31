@@ -4439,8 +4439,11 @@ function renderGallery(items) {
     if (!tree[year]) tree[year] = {};
     if (!tree[year][month]) tree[year][month] = {};
     if (!tree[year][month][day]) tree[year][month][day] = {};
+    const title = item.item_type === 'cexp'
+      ? `${t('cexp.gallery_label')}: ${item.record_title || '—'}`
+      : (item.record_title || '—');
     if (!tree[year][month][day][recId]) tree[year][month][day][recId] = {
-      title: item.record_title || '—',
+      title,
       meta: [item.company_name, item.card_name].filter(Boolean).join(' · '),
       files: []
     };
@@ -4509,15 +4512,16 @@ function openGalleryPreview(idx) {
   const isPdf   = /pdf/i.test(item.file_type || '') || /\.pdf$/i.test(item.file_name);
   const isImage = /^image\//i.test(item.file_type || '') && !/heic/i.test(item.file_type || '');
   const isHeic  = /heic/i.test(item.file_type || '') || /\.heic$/i.test(item.file_name);
+  const fileUrl = item.item_type === 'cexp' ? `/cexp-attachments/${item.id}/file` : `/attachments/${item.id}/file`;
 
   if (isPdf || isHeic || !isImage) {
-    const url = item.file_path ? `/attachments/${item.id}/file` : null;
+    const url = item.file_path ? fileUrl : null;
     if (url) { window.open(url, '_blank'); return; }
     return;
   }
 
   if (isImage && item.file_path) {
-    content.innerHTML = `<img src="/attachments/${item.id}/file" alt="${item.file_name}">`;
+    content.innerHTML = `<img src="${fileUrl}" alt="${item.file_name}">`;
   } else {
     content.innerHTML = `<div class="gallery-preview-placeholder"><div class="icon">${fileIcon(item.file_name)}</div></div>`;
   }
@@ -4705,6 +4709,7 @@ let _cexpView = window.innerWidth <= 768 ? 'cards' : 'table';  // 'table' | 'car
 let _cexpCompanies = [];
 let _cexpMembers = [];
 let _cexpPairFilter = null;  // {a, b} — unordered пара company id (з "Розрахунків"), або null
+let _cexpPendingFiles = [];
 
 async function loadCompanyExpenses() {
   const newBtn = document.getElementById('cexp-new-btn');
@@ -4853,6 +4858,7 @@ function _cexpRenderTable() {
     const note = r.note || '';
     const enteredBy = r.entered_by_name || '';
     const badge = statusBadge(r.status || 'waiting');
+    const fileCount = (r.attachments || []).length;
     const actions = canEdit ? `
       <button class="btn btn-ghost" onclick="event.stopPropagation();openCexpModal('${r.id}')" style="padding:2px 8px;font-size:12px">✏️</button>
       <button class="btn btn-ghost" onclick="event.stopPropagation();deleteCexp('${r.id}')" style="padding:2px 8px;font-size:12px;color:var(--red)">🗑</button>
@@ -4865,6 +4871,7 @@ function _cexpRenderTable() {
       <td>${badge}</td>
       <td style="color:var(--text3);font-size:12px">${note}</td>
       <td style="color:var(--text3);font-size:12px">${enteredBy}</td>
+      <td class="attachment-icon ${fileCount > 0 ? 'has' : ''}">${fileCount > 0 ? '📎' + (fileCount > 1 ? fileCount : '') : '—'}</td>
       <td style="white-space:nowrap" onclick="event.stopPropagation()">${actions}</td>
     </tr>`;
   }).join('');
@@ -4880,6 +4887,7 @@ function _cexpRenderCards() {
     const bene = r.beneficiary_company_name || '—';
     const enteredBy = r.entered_by_name || '';
     const badge = statusBadge(r.status || 'waiting');
+    const fileCount = (r.attachments || []).length;
     const editBtns = canEdit ? `
       <button class="btn btn-ghost" onclick="event.stopPropagation();openCexpModal('${r.id}')" style="padding:2px 8px;font-size:11px">✏️</button>
       <button class="btn btn-ghost" onclick="event.stopPropagation();deleteCexp('${r.id}')" style="padding:2px 8px;font-size:11px;color:var(--red)">🗑</button>
@@ -4887,7 +4895,10 @@ function _cexpRenderCards() {
     return `<div class="doc-card" onclick="openCexpModal('${r.id}')">
       <div class="doc-card-top">
         <div class="doc-card-title">${paying} → ${bene}</div>
-        <div style="display:flex;align-items:center;gap:4px">${editBtns}</div>
+        <div style="display:flex;align-items:center;gap:4px">
+          ${fileCount > 0 ? '<span class="attachment-icon has" style="font-size:15px">📎</span>' : ''}
+          ${editBtns}
+        </div>
       </div>
       <div class="doc-card-meta">
         <span class="meta-chip">📅 ${formatDate(r.date)}</span>
@@ -4925,6 +4936,69 @@ function _cexpPopulateMemberSelect(members) {
   if (!sel) return;
   sel.innerHTML = `<option value="">${t('cexp.select_member')}</option>` +
     members.map(m => `<option value="${m.user_id}">${m.display_name}</option>`).join('');
+}
+
+// ── COMPANY-EXPENSE ATTACHMENTS ──
+function cexpHandleFiles(input) {
+  const files = Array.from(input.files);
+  _cexpPendingFiles = [..._cexpPendingFiles, ...files];
+  if (_cexpPendingFiles.length > 5) {
+    _cexpPendingFiles = _cexpPendingFiles.slice(-5);
+    showToast(t('toast.max_files'), 'error');
+  }
+  _cexpRenderFilesPreview();
+  input.value = '';
+}
+
+function cexpRemovePendingFile(index) {
+  _cexpPendingFiles.splice(index, 1);
+  _cexpRenderFilesPreview();
+}
+
+function _cexpRenderFilesPreview() {
+  const preview = document.getElementById('cexp-files-preview');
+  if (!preview) return;
+  preview.innerHTML = _cexpPendingFiles.map((f, i) => `
+    <div style="background:var(--bg4);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;">
+      ${f.type.includes('pdf') ? '📄' : '🖼️'} ${f.name.substring(0,20)}${f.name.length>20?'...':''}
+      <span style="cursor:pointer;color:var(--text3)" onclick="cexpRemovePendingFile(${i})">✕</span>
+    </div>
+  `).join('');
+}
+
+function _cexpRenderExistingAttachments(atts, readOnly) {
+  const container = document.getElementById('cexp-existing-attachments-preview');
+  if (!container) return;
+  atts = atts || [];
+  if (atts.length === 0) { container.innerHTML = ''; return; }
+  container.innerHTML = atts.map(f => {
+    const isPdf = (f.file_type || '') === 'application/pdf';
+    const name = f.file_name || '';
+    const shortName = name.length > 20 ? name.substring(0,18) + '…' : name;
+    return `
+      <div style="background:var(--bg4);border:1px solid var(--green,#34c759);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;cursor:pointer" onclick="cexpViewAttachment('${f.id}')">
+        ${isPdf ? '📄' : '🖼️'} ${shortName}
+        ${readOnly ? '' : `<span style="cursor:pointer;color:var(--text3)" onclick="event.stopPropagation();cexpRemoveExistingAttachment('${f.id}')">✕</span>`}
+      </div>
+    `;
+  }).join('');
+}
+
+function cexpViewAttachment(id) {
+  window.open(API_URL + '/cexp-attachments/' + id + '/file', '_blank');
+}
+
+async function cexpRemoveExistingAttachment(id) {
+  try {
+    await deleteCexpAttachmentDB(id);
+    const rec = _cexpList.find(r => r.id === _cexpEditId);
+    if (rec) {
+      rec.attachments = (rec.attachments || []).filter(a => a.id !== id);
+      _cexpRenderExistingAttachments(rec.attachments, !_cexpCanEdit());
+    }
+  } catch (e) {
+    showToast(t('toast.file_delete_error'), 'error');
+  }
 }
 
 function _cexpSetTitle(key) {
@@ -4967,6 +5041,13 @@ async function openCexpModal(editId = null) {
     cancelBtn.textContent = t(cancelKey);
   }
 
+  _cexpPendingFiles = [];
+  const filesPreview = document.getElementById('cexp-files-preview');
+  if (filesPreview) filesPreview.innerHTML = '';
+  _cexpRenderExistingAttachments(rec?.attachments, readOnly);
+  setDisplay('cexp-upload-zone', readOnly ? 'none' : '');
+  setDisplay('cexp-upload-actions', readOnly ? 'none' : '');
+
   _cexpToggleReturnedField();
   document.getElementById('cexp-status').onchange = _cexpToggleReturnedField;
 
@@ -4982,6 +5063,7 @@ function _cexpToggleReturnedField() {
 function closeCexpModal() {
   document.getElementById('cexp-modal-overlay').style.display = 'none';
   _cexpEditId = null;
+  _cexpPendingFiles = [];
 }
 
 async function saveCexp() {
@@ -5019,6 +5101,23 @@ async function saveCexp() {
       body: JSON.stringify(body)
     });
     if (!resp.ok) { showToast(t('toast.error'), 'error'); return; }
+
+    if (_cexpPendingFiles.length > 0) {
+      const data = await resp.json().catch(() => null);
+      const targetId = _cexpEditId || data?.id;
+      if (targetId) {
+        setBusy(true, 'busy.uploading');
+        try {
+          for (const file of _cexpPendingFiles) {
+            await uploadCexpAttachment(targetId, file);
+          }
+        } finally {
+          setBusy(false);
+        }
+      }
+      _cexpPendingFiles = [];
+    }
+
     closeCexpModal();
     await loadCompanyExpenses();
     showToast(t('toast.saved'), 'success');

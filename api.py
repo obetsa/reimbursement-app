@@ -2775,7 +2775,7 @@ def update_record(record_id):
             new_safe = re.sub(r'[^\w\s\-]', '', new_company_name).strip().replace(' ', '_') or 'Unassigned'
             new_year  = new_date[:4]
             new_month = new_date[5:7]
-            new_folder = '/'.join([DRIVE_ROOT, org_id, new_year, new_month, new_safe])
+            new_folder = '/'.join([DRIVE_ROOT, org_id, 'records', new_year, new_month, new_safe])
 
             atts = conn.execute(
                 "select * from attachments where record_id=%s and file_path is not null",
@@ -2972,8 +2972,8 @@ def upload_attachment(record_id):
             conn.close()
             return jsonify({'error': 'limit_reached', 'resource': 'storage', 'limit': limits['storage_mb']}), 403
 
-    rel_folder = '/'.join([DRIVE_ROOT, org_id, year, month, safe_company])
-    abs_folder = os.path.join(UPLOAD_FOLDER, DRIVE_ROOT, org_id, year, month, safe_company)
+    rel_folder = '/'.join([DRIVE_ROOT, org_id, 'records', year, month, safe_company])
+    abs_folder = os.path.join(UPLOAD_FOLDER, DRIVE_ROOT, org_id, 'records', year, month, safe_company)
     os.makedirs(abs_folder, exist_ok=True)
 
     att_id = str(uuid.uuid4())
@@ -3084,8 +3084,49 @@ def get_gallery():
     query += " order by r.date desc, a.created_at desc"
 
     att_rows = conn.execute(query, params).fetchall()
+    result = []
+    for r in att_rows:
+        d = dict(r)
+        d['item_type'] = 'record'
+        result.append(d)
+
+    cexp_query = '''
+        select
+            a.id, a.file_name, a.file_type, a.file_path, a.created_at,
+            ce.id as record_id,
+            ce.date as record_date,
+            cp.name as paying_name,
+            cb.name as bene_name
+        from company_expense_attachments a
+        join company_expenses ce on a.cexp_id = ce.id
+        left join companies cp on ce.paying_company_id = cp.id
+        left join companies cb on ce.beneficiary_company_id = cb.id
+        where ce.org_id = %s and (ce.is_deleted IS NULL OR ce.is_deleted = FALSE) and a.file_path is not null
+    '''
+    cexp_params = [org_id]
+    if accessible is not None:
+        cexp_query += " and (ce.paying_company_id = ANY(%s) or ce.beneficiary_company_id = ANY(%s))"
+        cexp_params += [accessible, accessible]
+
+    cexp_rows = conn.execute(cexp_query, cexp_params).fetchall()
     conn.close()
-    return jsonify([dict(r) for r in att_rows])
+
+    for r in cexp_rows:
+        d = dict(r)
+        d['item_type'] = 'cexp'
+        d['record_title'] = ' → '.join(filter(None, [d.pop('paying_name', None), d.pop('bene_name', None)])) or '—'
+        d['company_name'] = None
+        d['card_name'] = None
+        # ce.date/a.created_at — справжні SQL DATE/TIMESTAMP, Flask серіалізує їх не в ISO
+        # (на відміну від records.date, який зберігається як TEXT) — приводимо явно.
+        if d.get('record_date') is not None:
+            d['record_date'] = str(d['record_date'])
+        if d.get('created_at') is not None:
+            d['created_at'] = d['created_at'].isoformat()
+        result.append(d)
+
+    result.sort(key=lambda x: (str(x.get('record_date') or ''), str(x.get('created_at') or '')), reverse=True)
+    return jsonify(result)
 
 # ══════════════════════════════════════════
 # BACKUP
@@ -3144,6 +3185,34 @@ def _get_accessible_company_ids(user_id, org_id, conn):
     ).fetchall()
     return [r['company_id'] for r in rows]
 
+
+def _cexp_user_has_access(user_id, org_id, role, conn, paying_id, beneficiary_id):
+    if role == 'admin':
+        return True
+    company_ids = _get_accessible_company_ids(user_id, org_id, conn)
+    return (paying_id in company_ids) or (beneficiary_id in company_ids)
+
+
+def _cexp_safe_company(name):
+    return re.sub(r'[^\w\s\-]', '', name or '').strip().replace(' ', '_') or 'Unassigned'
+
+
+def _attach_cexp_attachments(rows, conn):
+    """Мутує список dict-ів company_expense — додає 'attachments': [...] кожному."""
+    if not rows:
+        return rows
+    ids = [r['id'] for r in rows]
+    atts = conn.execute(
+        "SELECT * FROM company_expense_attachments WHERE cexp_id = ANY(%s) ORDER BY created_at",
+        (ids,)
+    ).fetchall()
+    by_cexp = {}
+    for a in atts:
+        by_cexp.setdefault(a['cexp_id'], []).append(dict(a))
+    for r in rows:
+        r['attachments'] = by_cexp.get(r['id'], [])
+    return rows
+
 @app.route('/company-expenses', methods=['GET'])
 def get_company_expenses():
     user_id = get_user_from_token(request)
@@ -3170,8 +3239,9 @@ def get_company_expenses():
             (org_id, company_ids, company_ids)
         ).fetchall()
 
+    result = _attach_cexp_attachments([_cexp_row_to_dict(r) for r in rows], conn)
     conn.close()
-    return jsonify([_cexp_row_to_dict(r) for r in rows])
+    return jsonify(result)
 
 @app.route('/company-expenses/trash', methods=['GET'])
 def get_company_expenses_trash():
@@ -3196,8 +3266,9 @@ def get_company_expenses_trash():
               ORDER BY ce.deleted_at DESC""",
             (org_id, company_ids, company_ids)
         ).fetchall()
+    result = _attach_cexp_attachments([_cexp_row_to_dict(r) for r in rows], conn)
     conn.close()
-    return jsonify([_cexp_row_to_dict(r) for r in rows])
+    return jsonify(result)
 
 @app.route('/company-expenses', methods=['POST'])
 def create_company_expense():
@@ -3349,9 +3420,147 @@ def permanent_delete_company_expense(exp_id):
     conn = get_db()
     org_id, role, err = require_org(user_id, conn, min_role='admin')
     if err: conn.close(); return err
+
+    atts = conn.execute(
+        "SELECT file_path FROM company_expense_attachments WHERE cexp_id=%s", (exp_id,)
+    ).fetchall()
+    for a in atts:
+        if a['file_path']:
+            try:
+                os.remove(os.path.join(UPLOAD_FOLDER, a['file_path'].replace('/', os.sep)))
+            except OSError:
+                pass
+
     conn.execute("DELETE FROM company_expenses WHERE id=%s AND org_id=%s", (exp_id, org_id))
     conn.commit()
     conn.close()
+    return jsonify({'ok': True})
+
+
+@app.route('/company-expenses/<exp_id>/attachments', methods=['POST'])
+def upload_cexp_attachment(exp_id):
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file'}), 400
+    file = request.files['file']
+    if not file.filename:
+        return jsonify({'error': 'Empty filename'}), 400
+
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    if err: conn.close(); return err
+
+    exp = conn.execute(
+        "select ce.date, ce.paying_company_id, ce.beneficiary_company_id, "
+        "cp.name as paying_name, cb.name as bene_name "
+        "from company_expenses ce "
+        "left join companies cp on ce.paying_company_id=cp.id "
+        "left join companies cb on ce.beneficiary_company_id=cb.id "
+        "where ce.id=%s and ce.org_id=%s",
+        (exp_id, org_id)
+    ).fetchone()
+    if not exp:
+        conn.close()
+        return jsonify({'error': 'Not found'}), 404
+
+    if not _cexp_user_has_access(user_id, org_id, role, conn, exp['paying_company_id'], exp['beneficiary_company_id']):
+        conn.close()
+        return jsonify({'error': 'forbidden'}), 403
+
+    exp_date = str(exp['date']) if exp['date'] else datetime.utcnow().strftime('%Y-%m-%d')
+    year  = exp_date[:4]
+    month = exp_date[5:7]
+    pair_folder = f"{_cexp_safe_company(exp['paying_name'])}_to_{_cexp_safe_company(exp['bene_name'])}"
+
+    limits = get_org_limits(org_id, conn)
+    if limits is not None:
+        file.seek(0, os.SEEK_END)
+        file_size_mb = file.tell() / (1024 * 1024)
+        file.seek(0)
+        if get_org_storage_mb(org_id) + file_size_mb > limits['storage_mb']:
+            conn.close()
+            return jsonify({'error': 'limit_reached', 'resource': 'storage', 'limit': limits['storage_mb']}), 403
+
+    rel_folder = '/'.join([DRIVE_ROOT, org_id, 'cexp', year, month, pair_folder])
+    abs_folder = os.path.join(UPLOAD_FOLDER, DRIVE_ROOT, org_id, 'cexp', year, month, pair_folder)
+    os.makedirs(abs_folder, exist_ok=True)
+
+    att_id = str(uuid.uuid4())
+    orig_name = file.filename
+    ext = os.path.splitext(orig_name)[1].lower()
+    stored_name = att_id + ext
+    file_path = rel_folder + '/' + stored_name
+    file.save(os.path.join(abs_folder, stored_name))
+
+    file_type = file.content_type or 'application/octet-stream'
+
+    conn.execute(
+        "insert into company_expense_attachments (id, cexp_id, file_name, file_type, file_path) values (%s,%s,%s,%s,%s)",
+        (att_id, exp_id, orig_name, file_type, file_path)
+    )
+    conn.commit()
+    conn.close()
+
+    return jsonify({'id': att_id, 'cexp_id': exp_id, 'file_name': orig_name, 'file_type': file_type})
+
+
+@app.route('/cexp-attachments/<att_id>/file', methods=['GET'])
+def serve_cexp_attachment(att_id):
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn)
+    if err: conn.close(); return err
+    att = conn.execute(
+        "select a.*, ce.paying_company_id, ce.beneficiary_company_id "
+        "from company_expense_attachments a join company_expenses ce on a.cexp_id=ce.id "
+        "where a.id=%s and ce.org_id=%s",
+        (att_id, org_id)
+    ).fetchone()
+    if att and not _cexp_user_has_access(user_id, org_id, role, conn, att['paying_company_id'], att['beneficiary_company_id']):
+        att = None
+    conn.close()
+
+    if not att or not att['file_path']:
+        return jsonify({'error': 'Not found'}), 404
+
+    return send_from_directory(UPLOAD_FOLDER, att['file_path'])
+
+
+@app.route('/cexp-attachments/<att_id>', methods=['DELETE'])
+def delete_cexp_attachment(att_id):
+    user_id = get_user_from_token(request)
+    if not user_id: return jsonify({'error': 'Unauthorized'}), 401
+
+    conn = get_db()
+    org_id, role, err = require_org(user_id, conn, min_role='manager')
+    if err: conn.close(); return err
+    att = conn.execute(
+        "select a.*, ce.paying_company_id, ce.beneficiary_company_id "
+        "from company_expense_attachments a join company_expenses ce on a.cexp_id=ce.id "
+        "where a.id=%s and ce.org_id=%s",
+        (att_id, org_id)
+    ).fetchone()
+    if not att:
+        conn.close()
+        return jsonify({'error': 'Not found'}), 404
+    if not _cexp_user_has_access(user_id, org_id, role, conn, att['paying_company_id'], att['beneficiary_company_id']):
+        conn.close()
+        return jsonify({'error': 'forbidden'}), 403
+
+    if att['file_path']:
+        try:
+            os.remove(os.path.join(UPLOAD_FOLDER, att['file_path'].replace('/', os.sep)))
+        except OSError:
+            pass
+
+    conn.execute("delete from company_expense_attachments where id=%s", (att_id,))
+    conn.commit()
+    conn.close()
+
     return jsonify({'ok': True})
 
 
@@ -3658,13 +3867,19 @@ def update_profile():
 
 def _cleanup_org_files(org_id, conn, dry_run=False):
     """Знаходить файли data/uploads/ReceiptsManager/{org_id}, яких немає серед
-    attachments.file_path у БД цієї org. dry_run=True — тільки рахує, нічого не чіпає."""
+    attachments.file_path/company_expense_attachments.file_path у БД цієї org.
+    dry_run=True — тільки рахує, нічого не чіпає."""
     db_atts = conn.execute(
         "select a.file_path from attachments a join records r on a.record_id=r.id "
         "where r.org_id=%s and a.file_path is not null",
         (org_id,)
     ).fetchall()
-    db_paths = {row['file_path'] for row in db_atts}
+    db_cexp_atts = conn.execute(
+        "select a.file_path from company_expense_attachments a join company_expenses ce on a.cexp_id=ce.id "
+        "where ce.org_id=%s and a.file_path is not null",
+        (org_id,)
+    ).fetchall()
+    db_paths = {row['file_path'] for row in db_atts} | {row['file_path'] for row in db_cexp_atts}
 
     orphan_files = 0
     orphan_size_bytes = 0

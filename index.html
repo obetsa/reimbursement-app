@@ -607,6 +607,7 @@
               <th data-i18n="cexp.col_status">Статус</th>
               <th data-i18n="cexp.col_note">Примітка</th>
               <th data-i18n="cexp.col_entered_by">Хто вніс</th>
+              <th title="Вкладення">📎</th>
               <th style="width:80px"></th>
             </tr>
           </thead>
@@ -688,6 +689,22 @@
       </div>
       <div class="modal-body">
         <div class="form-grid">
+          <div class="form-group full" id="cexp-attachments-group">
+            <label class="form-label" data-i18n="form.attachments">Вкладення</label>
+            <div class="upload-zone" id="cexp-upload-zone" onclick="document.getElementById('cexp-file-input').click()">
+              <div class="upload-icon">📎</div>
+              <div class="upload-text" data-i18n="form.drop_files">Перетягніть файли або натисніть для вибору</div>
+              <div class="upload-sub" data-i18n="form.files_hint">JPG, PNG, PDF · до 5 файлів за раз</div>
+            </div>
+            <input type="file" id="cexp-file-input" multiple accept="image/*,.pdf" style="display:none" onchange="cexpHandleFiles(this)">
+            <div class="upload-actions" id="cexp-upload-actions">
+              <button class="upload-btn" onclick="document.getElementById('cexp-file-input').click()" data-i18n="form.camera">📷 Камера</button>
+              <button class="upload-btn" onclick="document.getElementById('cexp-file-input').click()" data-i18n="form.gallery">🖼️ Галерея</button>
+              <button class="upload-btn" onclick="document.getElementById('cexp-file-input').click()" data-i18n="form.files">📁 Файли</button>
+            </div>
+            <div id="cexp-existing-attachments-preview" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"></div>
+            <div id="cexp-files-preview" style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap"></div>
+          </div>
           <div class="form-group full">
             <label class="form-label" data-i18n="cexp.date">Дата <span class="required">*</span></label>
             <input class="form-input" type="date" id="cexp-date">

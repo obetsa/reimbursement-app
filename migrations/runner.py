@@ -36,6 +36,13 @@ ORDERED_FILES = [
     'migrate_022_cexp_entered_by.sql',
     'migrate_023_cexp_status.sql',
     'migrate_024_cexp_soft_delete.sql',
+    'migrate_025_cexp_attachments.sql',
+]
+
+# Python-міграції (не тільки SQL) — напр. переміщення файлів на диску.
+# Трекаються в тій самій schema_migrations по імені "<module>.py".
+PYTHON_MIGRATIONS = [
+    'migrate_026_records_folder',
 ]
 
 
@@ -67,6 +74,23 @@ def run_pending_migrations(database_url):
         try:
             cur.execute(sql)
             cur.execute("INSERT INTO schema_migrations (filename) VALUES (%s)", (filename,))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            cur.close()
+            conn.close()
+            raise
+
+    for module_name in PYTHON_MIGRATIONS:
+        marker = module_name + '.py'
+        if marker in applied:
+            continue
+        print(f"[migrations] застосовую {marker}...")
+        try:
+            import importlib
+            mod = importlib.import_module(f'migrations.{module_name}')
+            mod.run(cur)
+            cur.execute("INSERT INTO schema_migrations (filename) VALUES (%s)", (marker,))
             conn.commit()
         except Exception:
             conn.rollback()
