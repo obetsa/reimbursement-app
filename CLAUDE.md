@@ -67,6 +67,9 @@ migrations/
   migrate_022_cexp_entered_by.sql  # company_expenses.entered_by
   migrate_023_cexp_status.sql      # company_expenses.status + returned_amount
   migrate_024_cexp_soft_delete.sql # company_expenses.is_deleted + deleted_at
+  migrate_025_cexp_attachments.sql # company_expense_attachments — вкладення до витрат по компаніях
+  migrate_026_records_folder.py    # python-міграція: документи → records/ підпапка (авто, runner.py)
+  runner.py                        # накатує SQL + python-міграції автоматично при старті (schema_migrations)
 tests/
   test_api.py                      # базові API тести (16/16)
   test_hierarchy.py                # тести ієрархії org (22/24)
@@ -125,7 +128,7 @@ records                       — записи витрат
 ├── → companies.id
 └── → payment_instruments.id (card_id)
 
-attachments                   — файли до запису
+attachments                   — файли до запису (шлях: ReceiptsManager/{org_id}/records/...)
 └── → records.id
 
 return_events                 — події повернення коштів
@@ -137,6 +140,9 @@ company_expenses              — витрати між компаніями (х
 ├── → users.id (entered_by, created_by, updated_by)
 ├── status: waiting | partial | done
 └── is_deleted BOOLEAN / deleted_at TIMESTAMP — soft delete (корзина)
+
+company_expense_attachments   — файли до витрати по компаніях (шлях: ReceiptsManager/{org_id}/cexp/...)
+└── → company_expenses.id
 
 unprocessed_imports            — таблиця лишилась в схемі, але неактивна (Drive-функціонал видалено 30.06.2026)
 └── → users.id
@@ -216,6 +222,10 @@ unprocessed_imports            — таблиця лишилась в схемі
 - Мобільні фікси ✅ (07.07.2026): топбар (заголовок 18→14px, кнопки менші, `min-height` замість `height`), Settings→Компанії/Платіжні інструменти — окремі картки замість "на купу" (старі ID-scoped правила мовчки перекривали генеричну спробу), `.company-row` hover-зсув синхронізовано з мобільним CSS
 - Розрахунки між компаніями — справжні картки на мобільному ✅ (07.07.2026): `#settle-cards-view` (`.doc-card`), перемикання чисто CSS-медіазапитом (не JS width-check), замінює попередній CSS-хак "таблиця→flex" (закоментований, не видалений — `css/mobile.css`)
 - Корзина — довірчі фікси ✅ (07.07.2026): permanent-delete (`records`/`companies`/`instruments`/`company_expenses`) тепер тільки `admin` (був `manager`); `GET /companies|instruments/trash` фільтрують по доступу (IDOR-фікс, той самий баг що й у Галереї раніше); `restore_company`/`restore_instrument` перевіряють доступ на бекенді; корзина розбита на окремі блоки (Документи/Компанії/Інструменти/Витрати); `user` не бачить restore/delete-perm кнопок і кнопку "+ Новий запис" в cexp (бекенд і так вимагав `manager`)
+- **Вкладення (фото/файли) для "Витрати по компаніях"** ✅ (30.07.2026): нова таблиця `company_expense_attachments` (`migrate_025_cexp_attachments.sql`, окрема від `attachments`, а не розширення — щоб не чіпати ~15 місць коду, які припускають `attachments.record_id NOT NULL`). Шляхи файлів розділено на два простори: документи → `ReceiptsManager/{org_id}/records/...`, cexp-вкладення → `ReceiptsManager/{org_id}/cexp/{YYYY}/{MM}/{Платник}_to_{Бенефіціар}/...`. Існуючі документи перенесені автоматично: `migrations/runner.py` тепер підтримує не тільки SQL, а й **python-міграції** (`PYTHON_MIGRATIONS`, той самий трекінг у `schema_migrations`) — `migrate_026_records_folder.py` рухає файли на диску при старті застосунку, без ручного запуску на проді (на відміну від старого `migrate_004_file_paths.py`, повністю ручного). Ендпоінти `POST /company-expenses/<id>/attachments`, `GET /cexp-attachments/<id>/file`, `DELETE /cexp-attachments/<id>` — 1-в-1 копія документного паттерну, доступ через ту саму paying/beneficiary-company перевірку, що й інші cexp-ендпоінти. Галерея чеків (`GET /gallery`) — UNION записів з cexp, підпис у дереві "Витрата: КомпаніяА → КомпаніяБ" (`cexp.gallery_label`). Orphan-checker (`_cleanup_org_files`) звіряється і з новою таблицею — інакше свіжі cexp-файли видалялись би як сміття. Таблиця "Витрати по компаніях" отримала колонку 📎 (кількість вкладень) — той самий патерн, що в Документах. UI вкладень у модалці cexp — копія блоку з модалки документа (`.upload-zone` та решта класів вже мають mobile.css правила, мобільна версія успадковується автоматично). Ліміт 5 файлів (client-side) — як у документах. **Знайдений і виправлений баг під час тестування:** `ce.date`/`company_expense_attachments.created_at` — справжні SQL DATE/TIMESTAMP (на відміну від `records.date`, який TEXT) — Flask jsonify серіалізував їх у RFC-1123 формат замість ISO, що ламало групування дерева галереї ("Invalid Date"). Виправлено явним `str()`/`.isoformat()` перед `jsonify`
+
+- **Статистика вкладень розділена документи/витрати + SA storage breakdown + галерея на рівень нижче** ✅ (05.08.2026): 1) Налаштування→Пам'ять→"Перевірити кількість записів і чеків" — секція "Чеки" тепер показує "Документи"/"Витрати" окремо (`/records-stats` рахує `company_expense_attachments` окремим запитом, `cexp_total` в JSON), замість спільного "Всього"; повністю переведено на i18n (`stats.*`, `storage.check_stats_btn`) — раніше вся ця модалка була хардкоджена українською. 2) Перевірено, що obsyg (МБ) в Пам'яті/SA і orphan-cleanup вже й так рахують cexp-вкладення правильно (файли фізично лежать в тій самій `ReceiptsManager/{org_id}` папці, яку код і так обходить рекурсивно) — змін не знадобилось. 3) SA-панель → клік на org → нова секція "Файли по org" (`/superadmin/orgs/<id>/storage-breakdown`, count+MB окремо для документів і витрат) + модалка розбита на три чіткі частини з роздільниками: Файли по org / Учасники / Додати учасника (i18n `superadmin.storage_*`, перевикористано `limit.label_members` для заголовка "Учасники"). 4) Галерея чеків — рівень "Дата" тепер одразу розгорнутий (`open` на `<details class="gt-day">`), видно записи без зайвого кліку.
+- Всі зміни цієї сесії протестовано вживу в браузері (localhost:5500, реальний акаунт obetsa + тестова org для сідування), включно з перемиканням мови uk↔en для перевірки нових i18n-ключів.
 
 Відкладено / наступне: див. Roadmap нижче.
 
@@ -492,4 +502,4 @@ Frontend ✅: usage-бари в Settings → Організація тепер �
 
 Не робити версійність автоматично "про всяк випадок" при звичайному проханні пушнути — тільки коли явно попросили.
 
-**Поточні теги на Docker Hub:** `v1` (30.04) → `v2` (12.05) → `v3` (19.06) → `v4` (30.06) → `v5` (07.07) → `v6` (07.07) → `v7` (07.07, архів latest до фіксів корзини/мобільного дизайну) → `latest` (07.07, коміт `286d46d`, поточний код). Наступний архівний тег (тільки якщо попросять версійність) — `v8`. Що саме в кожному тегу — `CHANGELOG.md` в корені репо.
+**Поточні теги на Docker Hub:** `v1` (30.04) → `v2` (12.05) → `v3` (19.06) → `v4` (30.06) → `v5` (07.07) → `v6` (07.07) → `v7` (07.07, архів latest до фіксів корзини/мобільного дизайну) → `latest` (30.07, коміт `80de781`, вкладення для company_expenses + колонка 📎). Наступний архівний тег (тільки якщо попросять версійність) — `v8`. Що саме в кожному тегу — `CHANGELOG.md` в корені репо.

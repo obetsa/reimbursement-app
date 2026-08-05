@@ -1036,6 +1036,37 @@ def superadmin_org_members(org_id):
     return jsonify(result)
 
 
+@app.route('/superadmin/orgs/<org_id>/storage-breakdown', methods=['GET'])
+def superadmin_org_storage_breakdown(org_id):
+    conn = get_db()
+    user_id, err = require_superadmin(request, conn)
+    if err: conn.close(); return err
+
+    rec_atts = conn.execute(
+        "SELECT a.file_path FROM attachments a JOIN records r ON a.record_id=r.id "
+        "WHERE r.org_id=%s AND a.file_path IS NOT NULL", (org_id,)
+    ).fetchall()
+    cexp_atts = conn.execute(
+        "SELECT a.file_path FROM company_expense_attachments a JOIN company_expenses ce ON a.cexp_id=ce.id "
+        "WHERE ce.org_id=%s AND a.file_path IS NOT NULL", (org_id,)
+    ).fetchall()
+    conn.close()
+
+    def _sum_size(rows):
+        total = 0
+        for r in rows:
+            try:
+                total += os.path.getsize(os.path.join(UPLOAD_FOLDER, r['file_path']))
+            except OSError:
+                pass
+        return total
+
+    return jsonify({
+        'records': {'count': len(rec_atts),  'size_mb': round(_sum_size(rec_atts) / (1024 * 1024), 2)},
+        'cexp':    {'count': len(cexp_atts), 'size_mb': round(_sum_size(cexp_atts) / (1024 * 1024), 2)},
+    })
+
+
 @app.route('/superadmin/orgs/<org_id>/members', methods=['POST'])
 def superadmin_add_org_member(org_id):
     conn = get_db()
@@ -4018,11 +4049,14 @@ def records_stats():
         "SELECT COUNT(*) FROM attachments a JOIN records r ON a.record_id=r.id "
         "WHERE r.org_id=%s AND a.file_path IS NOT NULL",
         (org_id,)).fetchone()['count']
+    cexp_att_total = conn.execute(
+        "SELECT COUNT(*) FROM company_expense_attachments a JOIN company_expenses ce ON a.cexp_id=ce.id "
+        "WHERE ce.org_id=%s", (org_id,)).fetchone()['count']
     conn.close()
 
     return jsonify({
         'records':     {'total': rec_total, 'active': rec_active, 'archived': rec_archived, 'deleted': rec_deleted},
-        'attachments': {'total': att_total, 'local': att_local},
+        'attachments': {'total': att_total, 'local': att_local, 'cexp_total': cexp_att_total},
     })
 
 

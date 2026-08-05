@@ -1092,7 +1092,7 @@
                 <div style="text-align:center;padding:20px;color:var(--text3);font-size:13px" data-i18n="loading.text">Завантаження...</div>
               </div>
               <div style="padding:0 18px 18px;display:flex;flex-direction:column;gap:8px">
-                <button class="btn btn-ghost" style="font-size:13px" onclick="checkRecordsStats()">📊 Перевірити кількість записів і чеків</button>
+                <button class="btn btn-ghost" style="font-size:13px" onclick="checkRecordsStats()" data-i18n="storage.check_stats_btn">📊 Перевірити кількість записів і чеків</button>
                 <button class="btn btn-ghost" style="font-size:13px" onclick="runStorageCleanup()" id="cleanup-btn" data-i18n="storage.cleanup_btn">🧹 Очистити зайві файли та порожні папки</button>
               </div>
             </div>
@@ -1107,7 +1107,7 @@
   <div class="stats-overlay" id="stats-overlay" onclick="closeStatsModal()">
     <div class="stats-modal" onclick="event.stopPropagation()">
       <div class="stats-modal-header">
-        <div class="stats-modal-title">Статистика</div>
+        <div class="stats-modal-title" data-i18n="stats.title">Статистика</div>
         <button class="icon-btn" onclick="closeStatsModal()">✕</button>
       </div>
       <div id="stats-modal-body" class="stats-modal-body"></div>

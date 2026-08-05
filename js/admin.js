@@ -806,6 +806,10 @@ async function openOrgMembersModal(orgId, orgName) {
   overlay.innerHTML = `
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:560px;width:100%;max-height:80vh;overflow-y:auto">
       <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:16px">${t('superadmin.org_members_title').replace('{name}', orgName)}</div>
+      <div id="_sa_org_storage_body" style="margin-bottom:16px"></div>
+      <div style="padding-top:16px;border-top:1px solid var(--border);margin-bottom:8px">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em">${t('limit.label_members')}</div>
+      </div>
       <div id="_sa_org_members_body">${t('loading.text')}</div>
       <div id="_sa_org_add_member"></div>
       <div style="display:flex;justify-content:flex-end;margin-top:16px">
@@ -822,18 +826,40 @@ async function openOrgMembersModal(orgId, orgName) {
 async function _saRenderOrgMembersModal(orgId, orgName) {
   const overlay = document.getElementById('_sa_org_members_overlay');
   if (!overlay) return;
-  const body   = overlay.querySelector('#_sa_org_members_body');
-  const addBox = overlay.querySelector('#_sa_org_add_member');
+  const body      = overlay.querySelector('#_sa_org_members_body');
+  const addBox    = overlay.querySelector('#_sa_org_add_member');
+  const storageEl = overlay.querySelector('#_sa_org_storage_body');
   try {
-    const [res, usersRes] = await Promise.all([
+    const [res, usersRes, storageRes] = await Promise.all([
       fetch(`/superadmin/orgs/${orgId}/members`, { credentials: 'include' }),
       fetch('/superadmin/users', { credentials: 'include' }),
+      fetch(`/superadmin/orgs/${orgId}/storage-breakdown`, { credentials: 'include' }),
     ]);
     const members  = await res.json();
     const allUsers = usersRes.ok ? await usersRes.json() : [];
     if (!res.ok) {
       body.innerHTML = `<div style="padding:20px;text-align:center;color:var(--red)">${t('toast.error')}</div>`;
       return;
+    }
+
+    if (storageEl) {
+      if (storageRes.ok) {
+        const s = await storageRes.json();
+        storageEl.innerHTML = `
+          <div style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">${t('superadmin.storage_breakdown_title')}</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <div style="flex:1;min-width:140px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px">
+              <div style="font-size:12px;color:var(--text3)">${t('superadmin.storage_docs')}</div>
+              <div style="font-size:15px;font-weight:600;color:var(--text)">${s.records.count} · ${s.records.size_mb} MB</div>
+            </div>
+            <div style="flex:1;min-width:140px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px">
+              <div style="font-size:12px;color:var(--text3)">${t('superadmin.storage_cexp')}</div>
+              <div style="font-size:15px;font-weight:600;color:var(--text)">${s.cexp.count} · ${s.cexp.size_mb} MB</div>
+            </div>
+          </div>`;
+      } else {
+        storageEl.innerHTML = '';
+      }
     }
 
     if (!members.length) {

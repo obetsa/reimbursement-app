@@ -4467,7 +4467,7 @@ function renderGallery(items) {
         const d = new Date(+year, parseInt(month) - 1, +day);
         const dayLabel = d.toLocaleString(locale, { day: 'numeric', month: 'long' });
         const records = Object.keys(tree[year][month][day]);
-        html += `<details class="gt-day"><summary class="gt-node gt-day-node"><span class="gt-arrow"></span><span class="gt-lbl">${_gesc(dayLabel)}</span></summary>`;
+        html += `<details class="gt-day" open><summary class="gt-node gt-day-node"><span class="gt-arrow"></span><span class="gt-lbl">${_gesc(dayLabel)}</span></summary>`;
 
         records.forEach(recId => {
           const rec = tree[year][month][day][recId];
@@ -4652,20 +4652,21 @@ async function checkRecordsStats() {
     const a = data.attachments;
     body.innerHTML = `
       <div>
-        <div class="stats-section-title">Записи</div>
-        <div class="stats-row"><span class="stats-row-label">Всього</span><span class="stats-row-value">${r.total}</span></div>
-        <div class="stats-row"><span class="stats-row-label">Активних</span><span class="stats-row-value">${r.active}</span></div>
-        <div class="stats-row"><span class="stats-row-label">Архів</span><span class="stats-row-value">${r.archived}</span></div>
-        <div class="stats-row"><span class="stats-row-label">Корзина</span><span class="stats-row-value">${r.deleted}</span></div>
+        <div class="stats-section-title">${t('stats.section_records')}</div>
+        <div class="stats-row"><span class="stats-row-label">${t('stats.row_total')}</span><span class="stats-row-value">${r.total}</span></div>
+        <div class="stats-row"><span class="stats-row-label">${t('stats.row_active')}</span><span class="stats-row-value">${r.active}</span></div>
+        <div class="stats-row"><span class="stats-row-label">${t('stats.row_archived')}</span><span class="stats-row-value">${r.archived}</span></div>
+        <div class="stats-row"><span class="stats-row-label">${t('stats.row_deleted')}</span><span class="stats-row-value">${r.deleted}</span></div>
       </div>
       <div>
-        <div class="stats-section-title">Чеки</div>
-        <div class="stats-row"><span class="stats-row-label">Всього</span><span class="stats-row-value">${a.total}</span></div>
+        <div class="stats-section-title">${t('stats.section_receipts')}</div>
+        <div class="stats-row"><span class="stats-row-label">${t('stats.row_docs')}</span><span class="stats-row-value">${a.total}</span></div>
+        <div class="stats-row"><span class="stats-row-label">${t('stats.row_cexp')}</span><span class="stats-row-value">${a.cexp_total}</span></div>
       </div>
     `;
   } catch(e) {
     setBusy(false);
-    body.innerHTML = '<div style="text-align:center;padding:24px;color:var(--red)">Помилка завантаження</div>';
+    body.innerHTML = `<div style="text-align:center;padding:24px;color:var(--red)">${t('stats.load_error')}</div>`;
     overlay.classList.add('open');
     document.body.style.overflow = 'hidden';
   }

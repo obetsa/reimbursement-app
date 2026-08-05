@@ -453,6 +453,9 @@ const TRANSLATIONS = {
     'superadmin.plan_toggle_hint': 'Натисніть щоб змінити план',
     'superadmin.org_members_title': 'Члени організації «{name}»',
     'superadmin.no_org_members': 'Немає членів',
+    'superadmin.storage_breakdown_title': 'Файли по org',
+    'superadmin.storage_docs': 'Документи',
+    'superadmin.storage_cexp': 'Витрати',
     'superadmin.add_member_label': 'Додати учасника',
     'superadmin.add_member_select_placeholder': '-Вибрати учасника-',
     'superadmin.add_member_btn': '+ Додати',
@@ -744,6 +747,19 @@ const TRANSLATIONS = {
     'storage.db_hint':        'Записи, повернення, налаштування',
     'storage.cleanup_btn':    '🧹 Очистити зайві файли та порожні папки',
     'storage.cleanup_done':   'Видалено файлів: {f}, папок: {d}',
+    'storage.check_stats_btn': '📊 Перевірити кількість записів і чеків',
+
+    // Stats modal
+    'stats.title':            'Статистика',
+    'stats.section_records':  'Записи',
+    'stats.row_total':        'Всього',
+    'stats.row_active':       'Активних',
+    'stats.row_archived':     'Архів',
+    'stats.row_deleted':      'Корзина',
+    'stats.section_receipts': 'Чеки',
+    'stats.row_docs':         'Документи',
+    'stats.row_cexp':         'Витрати',
+    'stats.load_error':       'Помилка завантаження',
   },
 
   de: {
@@ -1181,6 +1197,9 @@ const TRANSLATIONS = {
     'superadmin.plan_toggle_hint': 'Klicken um Plan zu ändern',
     'superadmin.org_members_title': 'Mitglieder der Organisation «{name}»',
     'superadmin.no_org_members': 'Keine Mitglieder',
+    'superadmin.storage_breakdown_title': 'Dateien nach Org',
+    'superadmin.storage_docs': 'Dokumente',
+    'superadmin.storage_cexp': 'Ausgaben',
     'superadmin.add_member_label': 'Mitglied hinzufügen',
     'superadmin.add_member_select_placeholder': '-Mitglied wählen-',
     'superadmin.add_member_btn': '+ Hinzufügen',
@@ -1454,6 +1473,19 @@ const TRANSLATIONS = {
     'storage.db_hint':        'Einträge, Erstattungen, Einstellungen',
     'storage.cleanup_btn':    '🧹 Verwaiste Dateien und leere Ordner bereinigen',
     'storage.cleanup_done':   'Gelöscht: {f} Dateien, {d} Ordner',
+    'storage.check_stats_btn': '📊 Anzahl der Einträge und Belege prüfen',
+
+    // Stats modal
+    'stats.title':            'Statistik',
+    'stats.section_records':  'Einträge',
+    'stats.row_total':        'Gesamt',
+    'stats.row_active':       'Aktiv',
+    'stats.row_archived':     'Archiv',
+    'stats.row_deleted':      'Papierkorb',
+    'stats.section_receipts': 'Belege',
+    'stats.row_docs':         'Dokumente',
+    'stats.row_cexp':         'Ausgaben',
+    'stats.load_error':       'Fehler beim Laden',
 
   },
 
@@ -1892,6 +1924,9 @@ const TRANSLATIONS = {
     'superadmin.plan_toggle_hint': 'Click to change plan',
     'superadmin.org_members_title': 'Members of organization «{name}»',
     'superadmin.no_org_members': 'No members',
+    'superadmin.storage_breakdown_title': 'Files by org',
+    'superadmin.storage_docs': 'Documents',
+    'superadmin.storage_cexp': 'Expenses',
     'superadmin.add_member_label': 'Add member',
     'superadmin.add_member_select_placeholder': '-Select member-',
     'superadmin.add_member_btn': '+ Add',
@@ -2165,6 +2200,19 @@ const TRANSLATIONS = {
     'storage.db_hint':        'Records, reimbursements, settings',
     'storage.cleanup_btn':    '🧹 Clean up orphan files and empty folders',
     'storage.cleanup_done':   'Deleted: {f} files, {d} folders',
+    'storage.check_stats_btn': '📊 Check records and receipts count',
+
+    // Stats modal
+    'stats.title':            'Statistics',
+    'stats.section_records':  'Records',
+    'stats.row_total':        'Total',
+    'stats.row_active':       'Active',
+    'stats.row_archived':     'Archived',
+    'stats.row_deleted':      'Trash',
+    'stats.section_receipts': 'Receipts',
+    'stats.row_docs':         'Documents',
+    'stats.row_cexp':         'Expenses',
+    'stats.load_error':       'Loading error',
 
   }
 };
